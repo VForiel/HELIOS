@@ -145,6 +145,15 @@ result = context.observe()
 - Implement `process(wavefront, context)` method
 - Register in appropriate module `__init__.py`
 
+## Notebook development guidance
+
+- When adding or modifying notebook cells that create objects or compute data (e.g., SEDs), first run the same code in a plain Python script to validate data shapes, units, and types before adding plotting commands.
+- Example workflow:
+  1. Create a small script `tools/run_demo_seds.py` reproducing the notebook cells that build `Scene`, `Star`, `Planet`, etc.
+ 2. Print summaries of arrays (length, min/max, sample values) and `astropy.Quantity` units.
+ 3. Once the outputs look correct, copy the plotting code into the notebook cell.
+- Rationale: plotting functions may hide unit/shape issues; running a headless script first makes debugging easier and is reproducible in CI.
+
 ## Current Implementation Status
 This is **v0.1** - a structural foundation. The architecture (Context, Layers, C++ hooks) is established, but physics implementation is minimal. Future iterations will add:
 - Actual wavefront propagation (Fresnel/Fraunhofer)
