@@ -1,4 +1,5 @@
 import numpy as np
+import math
 from astropy import units as u
 from typing import Tuple, List, Union, Optional
 from ..core.context import Layer, Context
@@ -607,6 +608,186 @@ class FiberOut(Layer):
 
     def process(self, wavefront: Wavefront, context: Context) -> Wavefront:
         # Light exiting fiber
+        return wavefront
+
+
+class Atmosphere(Layer):
+    """Simple Kolmogorov atmosphere layer producing a random phase screen.
+
+    Parameters
+    - rms: desired RMS of the phase screen in radians (float or astropy.Quantity)
+    - seed: optional RNG seed for reproducibility
+    """
+    def __init__(self, rms: Union[float, u.Quantity] = 0.2, seed: Optional[int] = None,
+                 inner_scale: Optional[Union[float, u.Quantity]] = None,
+                 outer_scale: Optional[Union[float, u.Quantity]] = None):
+        super().__init__()
+        if hasattr(rms, 'to'):
+            self.rms = float(rms.to(u.rad).value)
+        else:
+            self.rms = float(rms)
+        self.seed = seed
+        # inner/outer scale in meters (optional). These shape the PSD (Von Karman style)
+        self.inner_scale = None
+        self.outer_scale = None
+        if inner_scale is not None:
+            if hasattr(inner_scale, 'to'):
+                self.inner_scale = float(inner_scale.to(u.m).value)
+            else:
+                self.inner_scale = float(inner_scale)
+        if outer_scale is not None:
+            if hasattr(outer_scale, 'to'):
+                self.outer_scale = float(outer_scale.to(u.m).value)
+            else:
+                self.outer_scale = float(outer_scale)
+
+    def _kolmogorov_phase(self, N: int, rng: np.random.Generator) -> np.ndarray:
+        # generate frequency grid (cycles per pixel)
+        fx = np.fft.fftfreq(N)
+        fy = fx.copy()
+        fxg, fyg = np.meshgrid(fx, fy)
+        f = np.sqrt(fxg ** 2 + fyg ** 2)
+
+        # avoid zero frequency singularity: set f(0,0) to smallest non-zero frequency
+        nonzero = f[f > 0]
+        if nonzero.size == 0:
+            fmin = 1.0 / float(N)
+        else:
+            fmin = float(nonzero.min())
+        f[0, 0] = fmin
+
+        # filter amplitude ~ f^{-11/6} (sqrt of PSD ~ f^{-11/3})
+        with np.errstate(divide='ignore', invalid='ignore'):
+            filt = f ** (-11.0 / 6.0)
+        # cap extreme values
+        filt = np.nan_to_num(filt, nan=filt.max(), posinf=filt.max(), neginf=0.0)
+
+        # generate complex gaussian white noise in Fourier domain and apply filter
+        real = rng.normal(size=(N, N))
+        imag = rng.normal(size=(N, N))
+        fourier = (real + 1j * imag) * filt
+
+        # ensure zero DC
+        fourier[0, 0] = 0.0 + 0.0j
+
+        # enforce Hermitian symmetry so inverse FFT yields real phase
+        fourier = (fourier + np.conj(np.flipud(np.fliplr(fourier)))) / 2.0
+
+        # inverse FFT to get phase screen (real)
+        phase = np.fft.ifft2(fourier).real
+
+        # normalize to requested RMS
+        ph_rms = float(np.std(phase))
+        if ph_rms <= 0 or not np.isfinite(ph_rms):
+            return np.zeros((N, N), dtype=float)
+        phase = phase / ph_rms * float(self.rms)
+        return phase
+
+    def process(self, wavefront: Wavefront, context: Context) -> Wavefront:
+        try:
+            N = wavefront.field.shape[0]
+        except Exception:
+            return wavefront
+
+        rng = np.random.default_rng(self.seed)
+        phase = self._kolmogorov_phase(N, rng)
+        # apply phase screen (pure phase)
+        wavefront.field = wavefront.field * np.exp(1j * phase).astype(wavefront.field.dtype)
+        return wavefront
+
+
+class AdaptiveOptics(Layer):
+    """Adaptive optics layer applying Zernike-based correction.
+
+    - `coeffs`: mapping from (n,m) -> coefficient in radians. `n` >= 0, `m` integer with |m|<=n and (n-|m|) even.
+      Example: {(1,1): 0.1} for Zernike n=1,m=1.
+    - `normalize`: whether to evaluate Zernikes on unit pupil mapped to array size.
+    """
+    def __init__(self, coeffs: Optional[dict] = None, normalize: bool = True):
+        super().__init__()
+        self.coeffs = coeffs or {}
+        self.normalize = normalize
+
+    @staticmethod
+    def noll_to_nm(j: int) -> Tuple[int, int]:
+        """Convert Noll index (1-based) to Zernike (n,m).
+
+        This uses the standard Noll ordering. Returns (n,m).
+        """
+        if j < 1:
+            raise ValueError("Noll index must be >= 1")
+        # Noll indexing: j=1 -> (0,0); j=2 -> (1,-1); j=3 -> (1,1); j=4 -> (2,-2) ...
+        # We'll compute by enumerating until reach index j.
+        count = 0
+        n = 0
+        while True:
+            for m in range(-n, n + 1, 2):
+                count += 1
+                if count == j:
+                    return (n, m)
+            n += 1
+
+    def _radial_polynomial(self, n: int, m: int, r: np.ndarray) -> np.ndarray:
+        m = abs(m)
+        if (n - m) % 2 != 0:
+            return np.zeros_like(r)
+        R = np.zeros_like(r)
+        kmax = (n - m) // 2
+        for k in range(kmax + 1):
+            num = (-1) ** k * math.factorial(n - k)
+            den = math.factorial(k) * math.factorial((n + m) // 2 - k) * math.factorial((n - m) // 2 - k)
+            R += num / den * r ** (n - 2 * k)
+        return R
+
+    def _zernike_nm(self, n: int, m: int, rho: np.ndarray, theta: np.ndarray) -> np.ndarray:
+        # m may be negative: negative -> sin component
+        if m == 0:
+            R = self._radial_polynomial(n, 0, rho)
+            return R
+        elif m > 0:
+            R = self._radial_polynomial(n, m, rho)
+            return R * np.cos(m * theta)
+        else:
+            R = self._radial_polynomial(n, -m, rho)
+            return R * np.sin((-m) * theta)
+
+    def process(self, wavefront: Wavefront, context: Context) -> Wavefront:
+        try:
+            N = wavefront.field.shape[0]
+        except Exception:
+            return wavefront
+
+        # coordinates normalized to unit disk
+        ys = np.linspace(-1.0, 1.0, N)
+        xs = ys.copy()
+        xg, yg = np.meshgrid(xs, ys)
+        rho = np.hypot(xg, yg)
+        theta = np.arctan2(yg, xg)
+        mask = rho <= 1.0
+
+        # build AO correction phase
+        phase = np.zeros((N, N), dtype=float)
+        # allow coeff keys to be either (n,m) tuples or Noll integer indices
+        items = []
+        for k, coeff in self.coeffs.items():
+            if isinstance(k, int):
+                nm = self.noll_to_nm(k)
+            else:
+                nm = tuple(k)
+            items.append((nm, coeff))
+
+        for (n, m), coeff in items:
+            if hasattr(coeff, 'to'):
+                c = float(coeff.to(u.rad).value)
+            else:
+                c = float(coeff)
+            Z = self._zernike_nm(n, m, rho, theta)
+            phase += c * Z
+
+        # apply only inside pupil (unit disk)
+        phase = phase * mask
+        # AO subtracts estimated phase (apply negative phase)
+        wavefront.field = wavefront.field * np.exp(-1j * phase).astype(wavefront.field.dtype)
         return wavefront
 
 def test_collectors():
