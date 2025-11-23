@@ -23,15 +23,28 @@ class Pupil:
     # --- element adders -------------------------------------------------
     def add_disk(self, radius: float, center: Tuple[float, float] = (0.0, 0.0), value: float = 1.0):
         """Add a filled disk (radius in same units as `diameter`)."""
-        self.elements.append({"type": "disk", "radius": float(radius), "center": tuple(center), "value": float(value)})
+        # accept astropy.Quantity for radius
+        if hasattr(radius, 'to'):
+            r = float(radius.to(u.m).value)
+        else:
+            r = float(radius)
+        self.elements.append({"type": "disk", "radius": r, "center": tuple(center), "value": float(value)})
 
     def add_hexagon(self, radius: float, center: Tuple[float, float] = (0.0, 0.0), value: float = 1.0, rotation: float = 0.0):
         """Add a regular hexagon (radius = circumradius)."""
-        self.elements.append({"type": "hex", "radius": float(radius), "center": tuple(center), "value": float(value), "rotation": float(rotation)})
+        if hasattr(radius, 'to'):
+            r = float(radius.to(u.m).value)
+        else:
+            r = float(radius)
+        self.elements.append({"type": "hex", "radius": r, "center": tuple(center), "value": float(value), "rotation": float(rotation)})
 
     def add_central_obscuration(self, diameter: float):
         """Add central obscuration (diameter)."""
-        self.elements.append({"type": "secondary", "diameter": float(diameter)})
+        if hasattr(diameter, 'to'):
+            d = float(diameter.to(u.m).value)
+        else:
+            d = float(diameter)
+        self.elements.append({"type": "secondary", "diameter": d})
 
     def add_spiders(self, arms: int = 4, width: float = 0.01, angle: float = 0.0, angles: Optional[List[float]] = None):
         """Add radially extended rectangular spider vanes.
@@ -39,7 +52,12 @@ class Pupil:
         - `width` is in same linear units as `diameter`.
         - `angle` is rotation offset in degrees.
         """
-        entry = {"type": "spiders", "arms": int(arms), "width": float(width), "angle": float(angle)}
+        # allow width as Quantity
+        if hasattr(width, 'to'):
+            w = float(width.to(u.m).value)
+        else:
+            w = float(width)
+        entry = {"type": "spiders", "arms": int(arms), "width": float(w), "angle": float(angle)}
         if angles is not None:
             # store explicit angles (degrees)
             entry["angles"] = [float(a) for a in angles]
@@ -51,7 +69,15 @@ class Pupil:
         - `seg_flat`: flat-to-flat size of one segment (same units as `diameter`).
         - `rings`: number of hex rings around center (rings=0 -> 1 segment)
         """
-        self.elements.append({"type": "segments", "seg_flat": float(seg_flat), "rings": int(rings), "rotation": float(rotation), "gap": float(gap)})
+        if hasattr(seg_flat, 'to'):
+            sf = float(seg_flat.to(u.m).value)
+        else:
+            sf = float(seg_flat)
+        if hasattr(gap, 'to'):
+            g = float(gap.to(u.m).value)
+        else:
+            g = float(gap)
+        self.elements.append({"type": "segments", "seg_flat": float(sf), "rings": int(rings), "rotation": float(rotation), "gap": float(g)})
 
     # --- masks/rasterization helpers ------------------------------------
     def _make_grid(self, npix: int, oversample: int = 1) -> Tuple[np.ndarray, np.ndarray, float]:
@@ -446,8 +472,125 @@ class Coronagraph(Layer):
         super().__init__()
 
     def process(self, wavefront: Wavefront, context: Context) -> Wavefront:
-        # Apply coronagraphic mask
+        # Apply a simple focal-plane coronagraph mask to the incoming wavefront.
+        # Algorithm (Fraunhofer approximation, monochromatic):
+        # 1. FFT(wavefront.field) -> focal plane field
+        # 2. Multiply by focal-plane mask (phase and/or amplitude)
+        # 3. inverse FFT -> back to pupil/image plane
+        try:
+            field = wavefront.field
+            N = field.shape[0]
+        except Exception:
+            return wavefront
+
+        # focal-plane field
+        ffield = np.fft.fftshift(np.fft.fft2(np.fft.ifftshift(field)))
+
+        # build mask
+        mask = self.mask_array(npix=N)
+
+        # apply mask in focal plane
+        ffield_masked = ffield * mask
+
+        # back to pupil/image plane
+        field_after = np.fft.fftshift(np.fft.ifft2(np.fft.ifftshift(ffield_masked)))
+        wavefront.field = field_after.astype(wavefront.field.dtype)
         return wavefront
+
+    def mask_array(self, npix: int = 512, kind: str = None, charge: int = 2,
+                   lam: Optional[u.Quantity] = None,
+                   diameter: Optional[u.Quantity] = None,
+                   fov: Optional[u.Quantity] = None) -> np.ndarray:
+        """Return a complex focal-plane mask array (shape npix x npix).
+
+        - `kind`: overrides self.phase_mask if provided.
+        - `lam` and `diameter` (both astropy Quantities) can be provided to express
+          coordinates in units of lambda/D (angular units). In that case `fov`
+          (angular total field-of-view, e.g. `4*u.arcsec`) should also be provided
+          so the mask pixels can be mapped to angular coordinates.
+        - Supported masks: '4quadrants' (pi phase shifts), 'vortex' (charge >=1,
+          phase exp(i*charge*theta)). If no `lam`/`diameter` are given the mask
+          is generated on a normalized [-1,1] grid as before.
+        """
+        k = kind or self.phase_mask or '4quadrants'
+
+        # Build coordinate grid. If physical angular scaling provided, map pixels
+        # to angular coordinates and then to units of lambda/D; otherwise use
+        # a normalized [-1,1] grid as legacy behavior.
+        if (lam is not None) and (diameter is not None) and (fov is not None):
+            # ensure astropy quantities
+            lam = lam.to(u.m)
+            diameter = diameter.to(u.m)
+            # fov is expected to be an angle (e.g., arcsec)
+            fov_angle = fov.to(u.rad).value
+            # angular resolution per pixel (radians)
+            xs = np.linspace(-fov_angle / 2.0, fov_angle / 2.0, npix)
+            ys = xs.copy()
+            xg_ang, yg_ang = np.meshgrid(xs, ys)
+            # lambda/D in radians
+            lam_over_D = (lam / diameter).decompose().value
+            # coordinates in units of lambda/D
+            xg = xg_ang / lam_over_D
+            yg = yg_ang / lam_over_D
+        else:
+            xs = np.linspace(-1.0, 1.0, npix)
+            ys = xs.copy()
+            xg, yg = np.meshgrid(xs, ys)
+
+        if k.lower() in ('4quadrants', '4q'):
+            # 4QPM: alternate quadrants have pi phase (i.e., -1 complex multiplier)
+            mask = np.ones((npix, npix), dtype=np.complex64)
+            mask[(xg < 0) & (yg > 0)] = -1.0
+            mask[(xg > 0) & (yg < 0)] = -1.0
+            return mask
+        elif k.lower() in ('vortex',):
+            theta = np.arctan2(yg, xg)
+            phase = np.exp(1j * charge * theta)
+            return phase.astype(np.complex64)
+        else:
+            # identity (no mask)
+            return np.ones((npix, npix), dtype=np.complex64)
+
+    def image_from_scene(self, scene_array: np.ndarray, soft: bool = True, oversample: int = 4, normalize: bool = True,
+                         lam: Optional[u.Quantity] = None, diameter: Optional[u.Quantity] = None, fov: Optional[u.Quantity] = None) -> np.ndarray:
+        """Compute the image obtained after placing this coronagraph in the focal plane.
+
+        Simplified pipeline (monochromatic, Fraunhofer):
+        - FFT(scene_array) -> focal plane field
+        - apply coronagraph focal-plane mask
+        - inverse FFT -> image field, return intensity
+        """
+        arr = np.asarray(scene_array, dtype=np.complex64)
+        if arr.ndim != 2 or arr.shape[0] != arr.shape[1]:
+            raise ValueError('scene_array must be a square 2D array')
+        N = arr.shape[0]
+        # field in focal plane
+        ffield = np.fft.fftshift(np.fft.fft2(np.fft.ifftshift(arr)))
+        # build mask, forwarding physical scaling if provided
+        mask = self.mask_array(npix=N, lam=lam, diameter=diameter, fov=fov)
+        ffield_masked = ffield * mask
+        img_field = np.fft.fftshift(np.fft.ifft2(np.fft.ifftshift(ffield_masked)))
+        intensity = np.abs(img_field) ** 2
+        if normalize:
+            m = intensity.max()
+            if m > 0:
+                intensity = intensity / float(m)
+        return intensity
+
+    def plot_image_from_scene(self, scene_array: np.ndarray, ax: Optional[_plt.Axes] = None, cmap: str = 'inferno', normalize: bool = True, log: bool = False) -> _plt.Axes:
+        """Compute and plot the image after coronagraphic mask. Returns Matplotlib Axes."""
+        intensity = self.image_from_scene(scene_array, normalize=normalize)
+        disp = intensity
+        if log:
+            disp = np.log10(disp + 1e-12)
+        if ax is None:
+            fig, ax = _plt.subplots()
+        im = ax.imshow(disp, origin='lower', cmap=cmap)
+        ax.set_xlabel('Image x (pixels)')
+        ax.set_ylabel('Image y (pixels)')
+        ax.set_aspect('equal')
+        _plt.colorbar(im, ax=ax)
+        return ax
 
 class FiberIn(Layer):
     def __init__(self, modes: int = 1, **kwargs):
