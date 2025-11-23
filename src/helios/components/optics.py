@@ -234,6 +234,58 @@ class Pupil:
         ax.set_aspect('equal')
         return ax
 
+    def diffraction_pattern(self, npix: int = 1024, soft: bool = True, oversample: int = 4, wavelength: float = 550e-9) -> np.ndarray:
+        """Compute the (monochromatic) diffraction pattern (PSF intensity) of the pupil.
+
+        - Returns a 2D NumPy array of shape (npix, npix) with values normalized to peak = 1.
+        - This is a simple Fraunhofer-propagation via FFT of the pupil amplitude (pupil mask treated as amplitude transmission).
+        - `soft` and `oversample` are forwarded to `get_array` to control anti-aliasing on the pupil.
+        """
+        # get pupil amplitude (transmission) array
+        pup = self.get_array(npix=npix, soft=soft, oversample=oversample)
+        # ensure float32 for fft speed
+        pupf = np.asarray(pup, dtype=np.complex64)
+        # compute FFT; use ifftshift/fftshift for correct centering
+        field = np.fft.fftshift(np.fft.fft2(np.fft.ifftshift(pupf)))
+        intensity = np.abs(field) ** 2
+        # normalize to peak 1
+        maxv = intensity.max()
+        if maxv > 0:
+            intensity = intensity / float(maxv)
+        return intensity
+
+    def plot_diffraction_pattern(self, npix: int = 1024, soft: bool = True, oversample: int = 4, ax: Optional[_plt.Axes] = None, cmap: str = 'viridis', log: bool = True, vmax: Optional[float] = None, wavelength: float = 550e-9) -> _plt.Axes:
+        """Plot the diffraction pattern (PSF) and return the Matplotlib Axes.
+
+        - By default the intensity is shown on a log scale (dB-like) for dynamic range.
+        - `vmax` can be used to clip the displayed maximum (after normalization).
+        """
+        intensity = self.diffraction_pattern(npix=npix, soft=soft, oversample=oversample, wavelength=wavelength)
+        if ax is None:
+            fig, ax = _plt.subplots()
+        disp = intensity
+        if log:
+            # add tiny floor to avoid log(0)
+            disp = np.log10(disp + 1e-12)
+        # compute extent in units of lambda/D
+        # frequency axis fx = (i - N/2) / (N * dx) cycles/m
+        # units lambda/D = fx * D
+        N = intensity.shape[0]
+        # dx used when building pupil: size / N_pixels where size = self.diameter
+        dx = self.diameter / float(N)
+        fx = (np.arange(N) - N // 2) / (N * dx)
+        # lambda/D units
+        lamD = fx * self.diameter
+        extent = [lamD[0], lamD[-1], lamD[0], lamD[-1]]
+        im = ax.imshow(disp, origin='lower', cmap=cmap, extent=extent)
+        ax.set_xlabel('Focal plane (arb. units)')
+        ax.set_ylabel('Focal plane (arb. units)')
+        ax.set_aspect('equal')
+        if vmax is not None:
+            im.set_clim(vmin=disp.min(), vmax=vmax)
+        _plt.colorbar(im, ax=ax)
+        return ax
+
     # --- presets --------------------------------------------------------
     @staticmethod
     def jwst() -> 'Pupil':
