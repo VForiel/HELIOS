@@ -286,6 +286,52 @@ class Pupil:
         _plt.colorbar(im, ax=ax)
         return ax
 
+    def image_through_pupil(self, scene_array: np.ndarray, soft: bool = True, oversample: int = 4, normalize: bool = True) -> np.ndarray:
+        """Compute the image formed by the optical system when the given `scene_array` is observed through this pupil.
+
+        Assumptions / algorithm (simple Fraunhofer imaging, monochromatic):
+        - `scene_array` is a 2D real array representing the object intensity in object plane (image of object at infinite distance).
+        - We compute the Fourier transform of the object, multiply by the pupil amplitude (transmission), then inverse FT to obtain the complex image field. The output is the intensity (|field|^2).
+
+        Returns a 2D NumPy array (float) with same shape as `scene_array`.
+        """
+        # validate input
+        arr = np.asarray(scene_array, dtype=np.complex64)
+        if arr.ndim != 2 or arr.shape[0] != arr.shape[1]:
+            raise ValueError("scene_array must be a square 2D array")
+        N = arr.shape[0]
+        # get pupil amplitude at same sampling
+        pup = self.get_array(npix=N, soft=soft, oversample=oversample)
+        pup_amp = np.asarray(pup, dtype=np.complex64)
+
+        # object -> pupil plane (FT)
+        obj_field = np.fft.fftshift(np.fft.fft2(np.fft.ifftshift(arr)))
+        # apply pupil (amplitude transmission)
+        field_after = obj_field * pup_amp
+        # back to image plane (inverse FT)
+        img_field = np.fft.fftshift(np.fft.ifft2(np.fft.ifftshift(field_after)))
+        intensity = np.abs(img_field) ** 2
+        if normalize:
+            m = intensity.max()
+            if m > 0:
+                intensity = intensity / float(m)
+        return intensity
+
+    def plot_image_through_pupil(self, scene_array: np.ndarray, soft: bool = True, oversample: int = 4, ax: Optional[_plt.Axes] = None, cmap: str = 'gray', normalize: bool = True, log: bool = False) -> _plt.Axes:
+        """Compute and plot the image of `scene_array` formed through this pupil. Returns the Matplotlib Axes."""
+        intensity = self.image_through_pupil(scene_array, soft=soft, oversample=oversample, normalize=normalize)
+        if ax is None:
+            fig, ax = _plt.subplots()
+        disp = intensity
+        if log:
+            disp = np.log10(disp + 1e-12)
+        im = ax.imshow(disp, origin='lower', cmap=cmap)
+        ax.set_xlabel('Image x (pixels)')
+        ax.set_ylabel('Image y (pixels)')
+        ax.set_aspect('equal')
+        _plt.colorbar(im, ax=ax)
+        return ax
+
     # --- presets --------------------------------------------------------
     @staticmethod
     def jwst() -> 'Pupil':
@@ -359,7 +405,30 @@ class Collectors(Layer):
 
     def process(self, wavefront: Wavefront, context: Context) -> Wavefront:
         # Apply pupil mask to wavefront
-        # Placeholder logic
+        # For each configured collector, if a `shape` (Pupil) is provided,
+        # rasterize it to the wavefront sampling and multiply the complex
+        # field by the pupil amplitude (transmission).
+        try:
+            N = wavefront.field.shape[0]
+        except Exception:
+            return wavefront
+
+        total_mask = np.ones((N, N), dtype=float)
+        for col in self.collectors:
+            shape = col.get("shape", None)
+            if isinstance(shape, Pupil):
+                # Assume the shape was created with the collector diameter in meters
+                # If not, users should construct the Pupil with the collector size.
+                try:
+                    mask = shape.get_array(npix=N, soft=True)
+                except Exception:
+                    # fallback: try without anti-aliasing
+                    mask = shape.get_array(npix=N, soft=False)
+                # combine masks multiplicatively (multiple collectors/telescopes)
+                total_mask = total_mask * mask
+
+        # apply mask to complex field (amplitude transmission)
+        wavefront.field = wavefront.field * total_mask.astype(wavefront.field.dtype)
         return wavefront
 
 class BeamSplitter(Layer):

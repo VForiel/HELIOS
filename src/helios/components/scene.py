@@ -171,6 +171,87 @@ class Scene(Layer):
         # Placeholder: Create a wavefront
         wf = Wavefront(wavelength=1.0*u.um, size=512) 
         return wf
+    def render(self, npix: int = 256, fov: u.Quantity = 1.0 * u.arcsec, return_coords: bool = False):
+        """Render the scene to a 2D intensity array in angular units and centered on (0,0).
+
+        - `npix`: output image size (square)
+        - `fov`: field of view (astropy Quantity, e.g., in arcsec)
+        - `return_coords`: if True, return a tuple `(img, x, y)` where `x` and `y`
+          are 1D `astropy.Quantity` arrays (arcsec) giving the pixel centers and
+          the image is centered on (0,0).
+
+        Returns either:
+        - `img` (np.ndarray) when `return_coords` is False (legacy behavior), or
+        - `(img, xq, yq)` when `return_coords` is True.
+
+        The renderer places the origin (0,0) at the central pixel and uses
+        arcsecond units for coordinates.
+        """
+        # prepare grid in arcsec (pixel centers)
+        fov_val = float(fov.to(u.arcsec).value)
+        xs = np.linspace(-fov_val / 2.0, fov_val / 2.0, npix)
+        ys = xs.copy()
+        xg, yg = np.meshgrid(xs, ys)
+        img = np.zeros_like(xg, dtype=float)
+
+        # helper to convert position to arcsec
+        def pos_to_arcsec(pos):
+            px, py = pos
+            if isinstance(px, u.Quantity) and px.unit.is_equivalent(u.m) and self.distance is not None:
+                x = (px / self.distance).to(u.arcsec, equivalencies=u.dimensionless_angles()).value
+                y = (py / self.distance).to(u.arcsec, equivalencies=u.dimensionless_angles()).value
+            elif isinstance(px, u.Quantity) and px.unit.is_equivalent(u.deg):
+                x = px.to(u.arcsec).value
+                y = py.to(u.arcsec).value
+            elif isinstance(px, u.Quantity):
+                x = px.to(u.arcsec).value
+                y = py.to(u.arcsec).value
+            else:
+                # assume raw numbers are arcsec
+                x = float(px)
+                y = float(py)
+            return x, y
+
+        for obj in self.objects:
+            # star at center
+            if isinstance(obj, Star):
+                x_arc, y_arc = 0.0, 0.0
+                intensity = 1.0
+            else:
+                x_arc, y_arc = pos_to_arcsec(obj.position)
+                intensity = getattr(obj, 'brightness', 0.1)
+
+            # simple point rendering as Gaussian with sigma = 0.02 arcsec
+            sigma = 0.02
+            gauss = intensity * np.exp(-(((xg - x_arc) ** 2 + (yg - y_arc) ** 2) / (2 * sigma ** 2)))
+            img += gauss
+
+        # zodiacal/exozodiacal backgrounds
+        for obj in self.objects:
+            if isinstance(obj, (Zodiacal, ExoZodiacal)):
+                b = getattr(obj, 'brightness', 0.1)
+                if obj.radius is None:
+                    # fill whole field
+                    img += b * 0.1
+                else:
+                    try:
+                        r_arc = float(obj.radius.to(u.arcsec).value)
+                    except Exception:
+                        r_arc = float(obj.radius)
+                    mask = (xg ** 2 + yg ** 2) <= (r_arc ** 2)
+                    img[mask] += b * 0.1
+
+        # normalize
+        m = img.max()
+        if m > 0:
+            img = img / float(m)
+
+        if return_coords:
+            # return image and coordinate axes as astropy Quantities in arcsec
+            xq = (xs * u.arcsec)
+            yq = (ys * u.arcsec)
+            return img, xq, yq
+        return img
 
 
 
