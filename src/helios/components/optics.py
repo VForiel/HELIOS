@@ -552,6 +552,70 @@ class Coronagraph(Layer):
             # identity (no mask)
             return np.ones((npix, npix), dtype=np.complex64)
 
+    def plot_mask(self, npix: int = 512, kind: str = None, charge: int = 2,
+                  lam: Optional[u.Quantity] = None,
+                  diameter: Optional[u.Quantity] = None,
+                  fov: Optional[u.Quantity] = None,
+                  ax: Optional[_plt.Axes] = None,
+                  cmap: str = 'gray',
+                  vmin: Optional[float] = None,
+                  vmax: Optional[float] = None,
+                  display: Optional[str] = None) -> _plt.Axes:
+        """Plot the coronagraph focal-plane mask phase (in radians) as a grayscale image.
+
+        - The mask is built via `mask_array(...)`. The plotted quantity is the
+          wrapped phase angle `np.angle(mask)` in radians. For purely real masks
+          (e.g. 4-quadrant), values will be 0 or pi.
+        - Parameters are forwarded to `mask_array` to allow physical scaling.
+        - Returns the Matplotlib Axes containing the image.
+        """
+        mask = self.mask_array(npix=npix, kind=kind, charge=charge, lam=lam, diameter=diameter, fov=fov)
+        # compute phase in range [-pi, pi]
+        phase = np.angle(mask)
+        if ax is None:
+            fig, ax = _plt.subplots()
+        # Determine extent (so image axes are in physical units centered on 0,0)
+        extent = None
+        xlabel = 'Focal plane x (pixels)'
+        ylabel = 'Focal plane y (pixels)'
+        if (lam is not None) and (diameter is not None) and (fov is not None):
+            # physical scaling available
+            # default display is lambda/D
+            display_mode = (display or 'lambda/D').lower()
+            # fov in radians
+            fov_rad = float(fov.to(u.rad).value)
+            lam_over_D = float((lam / diameter).to(u.dimensionless_unscaled).value)
+            if display_mode in ('lambda/d', 'lambda/d', 'lambdad', 'lambda/d)') or display_mode == 'lambda/d':
+                # extent in units of lambda/D
+                half = (fov_rad / 2.0) / lam_over_D
+                extent = [-half, half, -half, half]
+                xlabel = 'Focal plane x (lambda/D)'
+                ylabel = 'Focal plane y (lambda/D)'
+            elif display_mode in ('arcsec', 'arcseconds'):
+                half = float(fov.to(u.arcsec).value) / 2.0
+                extent = [-half, half, -half, half]
+                xlabel = 'Focal plane x (arcsec)'
+                ylabel = 'Focal plane y (arcsec)'
+            elif display_mode in ('rad', 'radians'):
+                half = fov_rad / 2.0
+                extent = [-half, half, -half, half]
+                xlabel = 'Focal plane x (rad)'
+                ylabel = 'Focal plane y (rad)'
+            else:
+                # fallback to pixels if unknown
+                extent = [-npix/2.0, npix/2.0, -npix/2.0, npix/2.0]
+        else:
+            extent = [-npix/2.0, npix/2.0, -npix/2.0, npix/2.0]
+
+        im = ax.imshow(phase, origin='lower', cmap=cmap, extent=extent)
+        if vmin is not None or vmax is not None:
+            im.set_clim(vmin=vmin if vmin is not None else phase.min(), vmax=vmax if vmax is not None else phase.max())
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
+        ax.set_aspect('equal')
+        _plt.colorbar(im, ax=ax, label='Phase (rad)')
+        return ax
+
     def image_from_scene(self, scene_array: np.ndarray, soft: bool = True, oversample: int = 4, normalize: bool = True,
                          lam: Optional[u.Quantity] = None, diameter: Optional[u.Quantity] = None, fov: Optional[u.Quantity] = None) -> np.ndarray:
         """Compute the image obtained after placing this coronagraph in the focal plane.
