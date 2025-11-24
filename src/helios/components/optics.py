@@ -78,11 +78,10 @@ class Pupil:
             g = float(gap.to(u.m).value)
         else:
             g = float(gap)
-        self.elements.append({"type": "segments", "seg_flat": float(sf), "rings": int(rings), "rotation": float(rotation), "gap": float(g)})
+        self.elements.append({"type": "segments", "seg_flat": float(sf), "rings": int(rings), "rotation": float(rotation), "gap": float(g), "value": 1.0})
 
-    # --- masks/rasterization helpers ------------------------------------
+    # --- helpers rasterisation -----------------------------------------
     def _make_grid(self, npix: int, oversample: int = 1) -> Tuple[np.ndarray, np.ndarray, float]:
-        # grid in meters centered at 0
         size_m = self.diameter
         N = npix * oversample
         half = size_m / 2.0
@@ -93,8 +92,7 @@ class Pupil:
 
     def _hex_verts(self, cx: float, cy: float, R: float, rotation: float = 0.0):
         thetas = np.linspace(0, 2 * np.pi, 7) + np.deg2rad(rotation)
-        verts = np.column_stack((cx + R * np.cos(thetas), cy + R * np.sin(thetas)))
-        return verts
+        return np.column_stack((cx + R * np.cos(thetas), cy + R * np.sin(thetas)))
 
     def _rasterize_path(self, path: Path, xg: np.ndarray, yg: np.ndarray) -> np.ndarray:
         pts = np.column_stack((xg.ravel(), yg.ravel()))
@@ -102,15 +100,10 @@ class Pupil:
         return mask.reshape(xg.shape)
 
     def get_array(self, npix: int = 256, soft: bool = False, oversample: int = 4) -> np.ndarray:
-        """Return the pupil as a 2D NumPy array (values in [0,1]).
-
-        - `npix`: desired output pixels (square array)
-        - `soft`: if True use `oversample` subpixels to anti-alias edges
-        """
+        """Retourne la pupille en tableau 2D (valeurs dans [0,1])."""
         ov = oversample if soft and oversample >= 2 else 1
         xg, yg, dx = self._make_grid(npix, oversample=ov)
         im = np.zeros_like(xg, dtype=float)
-
         for el in self.elements:
             t = el.get("type")
             if t == "disk":
@@ -118,137 +111,68 @@ class Pupil:
                 r = el["radius"]
                 mask = ((xg - cx) ** 2 + (yg - cy) ** 2) <= (r ** 2)
                 val = float(el.get("value", 1.0))
-                if val < 1.0:
-                    # occluding disk: overwrite
-                    im[mask] = val
-                else:
-                    im[mask] = np.maximum(im[mask], val)
+                im[mask] = np.maximum(im[mask], val) if val >= 1.0 else val
             elif t == "hex":
                 verts = self._hex_verts(el["center"][0], el["center"][1], el["radius"], el.get("rotation", 0.0))
-                p = Path(verts)
-                mask = self._rasterize_path(p, xg, yg)
+                pth = Path(verts)
+                mask = self._rasterize_path(pth, xg, yg)
                 val = float(el.get("value", 1.0))
-                if val < 1.0:
-                    im[mask] = val
-                else:
-                    im[mask] = np.maximum(im[mask], val)
+                im[mask] = np.maximum(im[mask], val) if val >= 1.0 else val
             elif t == "secondary":
                 d = el["diameter"]
-                mask = ((xg) ** 2 + (yg) ** 2) <= ((d / 2.0) ** 2)
+                mask = (xg**2 + yg**2) <= (d/2.0)**2
                 im[mask] = 0.0
             elif t == "spiders":
                 arms = el["arms"]
                 width = el["width"]
                 angle0 = float(el.get("angle", 0.0))
-                rmax = np.hypot(xg, yg).max()
                 angles_list = el.get("angles", None)
                 if angles_list is not None:
-                    # explicit angles in degrees
                     use_angles = [np.deg2rad(a) for a in angles_list]
                 else:
-                    # evenly spaced arms around the circle
-                    angle0_rad = np.deg2rad(angle0)
-                    use_angles = [angle0_rad + 2 * np.pi * k / arms for k in range(arms)]
-                # determine inner cutoff per-angle where spiders should start (e.g., secondary radius or central hex edge)
-                inner_cuts = []
-                # helper: ray-edge intersection for polygon centered at origin
-                def ray_intersect_polygon(verts, dx, dy):
-                    # verts: Nx2 array, polygon vertices in order
-                    t_min = np.inf
-                    for i in range(len(verts)):
-                        p = verts[i]
-                        q = verts[(i + 1) % len(verts)]
-                        r = q - p
-                        A = np.array([[dx, -r[0]], [dy, -r[1]]])
-                        b = np.array([p[0], p[1]])
-                        det = np.linalg.det(A)
-                        if abs(det) < 1e-12:
-                            continue
-                        sol = np.linalg.solve(A, b)
-                        t, u = sol[0], sol[1]
-                        if t >= 0 and u >= 0 and u <= 1:
-                            if t < t_min:
-                                t_min = t
-                    return t_min
-
-                # precompute central occluder geometry if present
-                central_hex_verts = None
+                    base = np.deg2rad(angle0)
+                    use_angles = [base + 2*np.pi*k/arms for k in range(arms)]
+                # inner cutoff estimation (secondary radius if present)
+                sec_rad = 0.0
                 for e2 in self.elements:
-                    if e2 is el:
-                        continue
-                    if e2.get("type") == "hex":
-                        center2 = tuple(e2.get("center", (None, None)))
-                        if center2 == (0.0, 0.0) and float(e2.get("value", 1.0)) < 1.0:
-                            R = float(e2.get("radius", 0.0))
-                            rot2 = float(e2.get("rotation", 0.0))
-                            central_hex_verts = np.asarray(self._hex_verts(0.0, 0.0, R, rotation=rot2))
                     if e2.get("type") == "secondary":
-                        # already handled below per-angle
-                        pass
-
+                        sec_rad = max(sec_rad, float(e2.get("diameter",0.0))/2.0)
                 for ang in use_angles:
-                    # default inner cut from circular secondary if present
-                    cut = 0.0
-                    for e2 in self.elements:
-                        if e2 is el:
-                            continue
-                        if e2.get("type") == "secondary":
-                            cut = max(cut, float(e2.get("diameter", 0.0)) / 2.0)
-                    # if there is a central hex occluder, compute ray intersection distance
-                    dx, dy = np.cos(ang), np.sin(ang)
-                    if central_hex_verts is not None:
-                        t_hex = ray_intersect_polygon(central_hex_verts, dx, dy)
-                        if np.isfinite(t_hex):
-                            cut = max(cut, float(t_hex))
-                    inner_cuts.append(float(cut))
-
-                # now draw spiders using per-angle inner cut
-                for ang, cut in zip(use_angles, inner_cuts):
                     xr = xg * np.cos(-ang) - yg * np.sin(-ang)
                     yr = xg * np.sin(-ang) + yg * np.cos(-ang)
-                    mask = (np.abs(yr) <= (width / 2.0)) & (xr >= (cut - 1e-12))
+                    mask = (np.abs(yr) <= width/2.0) & (xr >= sec_rad - 1e-12)
                     im[mask] = 0.0
             elif t == "segments":
-                # generate hex centers and vertices for a flat-top hex layout
                 seg_flat = el["seg_flat"]
                 rings = el["rings"]
                 rot = el.get("rotation", 0.0)
-                gap = el.get("gap", 0.0)
-                # circumradius (center->vertex) from flat-to-flat: a = seg_flat / sqrt(3)
+                gapv = el.get("gap", 0.0)
+                val = float(el.get("value", 1.0))
                 a = seg_flat / np.sqrt(3.0)
-                # drawn flat-to-flat reduced by gap, then compute draw circumradius
-                drawn_flat = max(0.0, seg_flat - gap)
+                drawn_flat = max(0.0, seg_flat - gapv)
                 a_draw = drawn_flat / np.sqrt(3.0)
-                # generate centers using flat-top axial->cartesian conversion
                 centers = []
                 N = rings
-                for q in range(-N, N + 1):
+                for q in range(-N, N+1):
                     r1 = max(-N, -q - N)
                     r2 = min(N, -q + N)
-                    for r in range(r1, r2 + 1):
-                        x = a * 3.0 / 2.0 * q
-                        y = a * np.sqrt(3.0) * (r + q / 2.0)
-                        centers.append((x, y))
-                # clip to primary diameter and draw hexes rotated so they are flat-top
-                primR = self.diameter / 2.0
+                    for r in range(r1, r2+1):
+                        cx = a * 1.5 * q
+                        cy = a * np.sqrt(3.0) * (r + q/2.0)
+                        centers.append((cx, cy))
+                primR = self.diameter/2.0
                 for (cx, cy) in centers:
                     if np.hypot(cx, cy) <= primR + 1e-12:
                         verts = self._hex_verts(cx, cy, a_draw, rotation=rot)
-                        p = Path(verts)
-                        mask = self._rasterize_path(p, xg, yg)
-                        im[mask] = 1.0
+                        pth = Path(verts)
+                        mask = self._rasterize_path(pth, xg, yg)
+                        im[mask] = np.maximum(im[mask], val) if val >= 1.0 else val
             else:
-                # unknown element
                 continue
-
         if ov > 1:
-            # downsample by averaging blocks of size ov x ov
             H, W = im.shape
-            im = im.reshape(H // ov, ov, W // ov, ov).mean(axis=(1, 3))
-
-        # clip to [0,1]
-        im = np.clip(im, 0.0, 1.0)
-        return im
+            im = im.reshape(H//ov, ov, W//ov, ov).mean(axis=(1,3))
+        return np.clip(im, 0.0, 1.0)
 
     def plot(self, npix: int = 512, soft: bool = True, oversample: int = 4, ax: Optional[_plt.Axes] = None, cmap: str = 'gray') -> _plt.Axes:
         """Plot the pupil and return the Matplotlib Axes."""
@@ -401,14 +325,166 @@ class Pupil:
 
     @staticmethod
     def elt() -> 'Pupil':
-        """Return a Pupil approximating ELT: 39.3 m primary segmented, M2~4.2 m, spiders approx 6."""
+        """Construire une pupille ELT selon les nouvelles règles:
+
+        - Taille coin-à-coin d'un segment (primaire & secondaire): 1.45 m (circumradius = 0.725 m)
+        - Secondaire: 4 anneaux hexagonaux (total 61) tous occultants (value=0)
+        - Primaire: exactement 798 segments transmissifs formant un dodécagone minimal
+          obtenu par recherche binaire sur l'apothème puis éventuel trimming intérieur.
+        - Araignées: 6 bras conservés (angles définis).
+        """
         p = Pupil(39.3 * u.m)
-        p.add_disk(radius=39.3 / 2.0)
-        # choose moderate segment size so many segments appear; this is only illustrative
-        seg_flat = 1.45
-        p.add_segmented_primary(seg_flat=seg_flat, rings=6)
-        p.add_central_obscuration(diameter=4.2)
-        p.add_spiders(arms=6, width=0.15)
+
+        corner_to_corner = 1.45
+        R_circum = corner_to_corner / 2.0
+        a_draw = R_circum
+        a = R_circum
+
+        def generate_centers(rings: int) -> List[Tuple[float, float]]:
+            centers = []
+            N = rings
+            for q in range(-N, N + 1):
+                r1 = max(-N, -q - N)
+                r2 = min(N, -q + N)
+                for r in range(r1, r2 + 1):
+                    cx = a * 1.5 * q
+                    cy = a * np.sqrt(3.0) * (r + q / 2.0)
+                    centers.append((cx, cy))
+            return centers
+
+        # (Ancien) test d'inclusion complète non utilisé désormais.
+        def center_inside(cx: float, cy: float, poly: Path) -> bool:
+            return poly.contains_point((cx, cy))
+
+        rings_primary = 40
+        lattice = generate_centers(rings_primary)
+
+        n_sides = 12
+        angle_step = 2.0 * np.pi / n_sides
+        max_center_radius = max(np.hypot(cx, cy) for cx, cy in lattice)
+        lower_ap = (4 + 1) * 1.5 * a * 0.5
+        upper_ap = max_center_radius + a_draw
+
+        best_sel = None
+        best_ap = None
+
+        # Rotation choisie pour avoir deux côtés horizontaux (haut & bas): rot = 5π/12
+        rot = 5.0 * np.pi / 12.0
+
+        def build_polygon(ap):
+            circum = ap / np.cos(np.pi / n_sides)
+            return [(circum * np.cos(rot + k * angle_step), circum * np.sin(rot + k * angle_step)) for k in range(n_sides)]
+
+        def center_inside_tol(cx, cy, verts, tol=1e-9):
+            vp = np.asarray(verts, dtype=float)
+            edges = list(zip(vp, np.roll(vp, -1, axis=0)))
+            dmins = []
+            for (p1, p2) in edges:
+                ex, ey = p2 - p1
+                nx, ny = -ey, ex
+                L = np.hypot(nx, ny)
+                if L == 0:
+                    continue
+                nx /= L; ny /= L
+                d = (cx - p1[0]) * nx + (cy - p1[1]) * ny
+                dmins.append(d)
+            return (len(dmins) > 0) and (min(dmins) >= -tol)
+
+        # Recherche binaire pour obtenir 859 hexagones totaux (798 primaire + 61 secondaire)
+        target_total = 859
+        for _ in range(60):
+            mid = 0.5 * (lower_ap + upper_ap)
+            poly_verts = build_polygon(mid)
+            inside = [c for c in lattice if center_inside_tol(c[0], c[1], poly_verts)]
+            if len(inside) >= target_total:
+                best_sel = inside
+                best_ap = mid
+                upper_ap = mid
+            else:
+                lower_ap = mid
+
+        if best_sel is None:
+            raise RuntimeError(f"Impossible de trouver un dodécagone contenant >={target_total} segments.")
+
+        # Appliquer facteur d'échelle 1.03 pour ajustement fin
+        best_ap = best_ap * 1.03
+        poly_verts_final = build_polygon(best_ap)
+        best_sel = [c for c in lattice if center_inside_tol(c[0], c[1], poly_verts_final)]
+
+        if len(best_sel) > 798:
+            # Sélection par groupes de symétrie (x,y) -> (±x, ±y)
+            target = 798
+            # Regrouper par valeurs absolues pour identifier les familles de symétrie
+            groups = {}
+            for (cx, cy) in best_sel:
+                key = (round(abs(cx), 6), round(abs(cy), 6))
+                groups.setdefault(key, []).append((cx, cy))
+            # Ordonner les groupes du bord vers le centre par rayon
+            ordered_keys = sorted(groups.keys(), key=lambda k: k[0]*k[0] + k[1]*k[1], reverse=True)
+            selected = []
+            remaining = target
+            for key in ordered_keys:
+                pts = groups[key]
+                # Si groupe passe entièrement
+                if len(pts) <= remaining:
+                    selected.extend(pts)
+                    remaining -= len(pts)
+                    if remaining == 0:
+                        break
+                else:
+                    # Sélection partielle dans un groupe trop grand : essayer de prendre des paires symétriques
+                    # Indexation par signature de signes
+                    sign_map = {}
+                    for (cx, cy) in pts:
+                        sign_map.setdefault((int(np.sign(cx)), int(np.sign(cy))), []).append((cx, cy))
+                    chosen = []
+                    # Chercher d'abord paires miroir horizontal (x et -x)
+                    for (sx, sy), lst in list(sign_map.items()):
+                        opp = (-sx, sy)
+                        if opp in sign_map and sx != 0:  # paire horizontale
+                            chosen.append(lst[0]); chosen.append(sign_map[opp][0])
+                            if len(chosen) >= remaining:
+                                break
+                    # Puis paires miroir vertical (y et -y) si nécessaire
+                    if len(chosen) < remaining:
+                        for (sx, sy), lst in list(sign_map.items()):
+                            opp = (sx, -sy)
+                            if opp in sign_map and sy != 0:
+                                # éviter doublons déjà pris
+                                cand1, cand2 = lst[0], sign_map[opp][0]
+                                if cand1 not in chosen and cand2 not in chosen:
+                                    chosen.append(cand1); chosen.append(cand2)
+                                    if len(chosen) >= remaining:
+                                        break
+                    # Si encore insuffisant, compléter arbitrairement (mais toujours symétrique si possible)
+                    if len(chosen) < remaining:
+                        for (cx, cy) in pts:
+                            if (cx, cy) not in chosen:
+                                chosen.append((cx, cy))
+                                if len(chosen) >= remaining:
+                                    break
+                    selected.extend(chosen[:remaining])
+                    remaining = 0
+                    break
+            # Si pour une raison quelconque il reste des places (rare), compléter par rayon décroissant restant
+            if remaining > 0:
+                leftover = [c for c in best_sel if c not in selected]
+                leftover_sorted = sorted(leftover, key=lambda c: c[0]*c[0] + c[1]*c[1], reverse=True)
+                selected.extend(leftover_sorted[:remaining])
+            primary_final = selected
+        else:
+            primary_final = best_sel
+
+        for (cx, cy) in primary_final:
+            p.add_hexagon(radius=a_draw, center=(cx, cy), value=1.0)
+
+        central_rings = 4
+        for (cx, cy) in generate_centers(central_rings):
+            p.add_hexagon(radius=a_draw, center=(cx, cy), value=0.0)
+
+        angles = [90.0, 270.0, 30.0, 150.0, 210.0, 330.0]
+        p.add_spiders(arms=6, width=0.25, angles=angles)
+
         return p
 
 class Collectors(Layer):
