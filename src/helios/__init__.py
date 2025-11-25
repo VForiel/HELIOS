@@ -13,9 +13,40 @@ except PackageNotFoundError:
     __version__ = "unknown"
 
 # Expose core components
-from .core.context import Context
+from .core.context import Context, Layer
 from .core.simulation import Simulation
 
 # Expose submodules
 from . import components
 from . import core
+
+# Expose all component classes directly at package level for convenience
+from .components import (
+    # Scene components
+    Scene, Star, Planet, ExoZodiacal, Zodiacal,
+    # Optical components
+    Collectors, Pupil, Coronagraph, BeamSplitter, FiberIn, FiberOut, Atmosphere, AdaptiveOptics,
+    # Detector components
+    Camera,
+    # Photonic components
+    PhotonicChip, TOPS, MMI
+)
+
+# Define public API
+__all__ = [
+    # Version
+    '__version__',
+    # Core
+    'Context', 'Layer', 'Simulation',
+    # Submodules
+    'components', 'core',
+    # Scene components
+    'Scene', 'Star', 'Planet', 'ExoZodiacal', 'Zodiacal',
+    # Optical components
+    'Collectors', 'Pupil', 'Coronagraph', 'BeamSplitter', 'FiberIn', 'FiberOut', 'Atmosphere', 'AdaptiveOptics',
+    # Detector components
+    'Camera',
+    # Photonic components
+    'PhotonicChip', 'TOPS', 'MMI',
+]
+

@@ -20,19 +20,19 @@ import helios
 from astropy import units as u
 
 # Create a scene
-scene = helios.components.Scene()
-scene.add(helios.components.Star(distance=10*u.pc, temperature=5700*u.K, magnitude=5))
+scene = helios.Scene()
+scene.add(helios.Star(distance=10*u.pc, temperature=5700*u.K, magnitude=5))
 
 # Define collectors
-collectors = helios.components.Collectors(latitude=0*u.deg, longitude=0*u.deg, altitude=2000*u.m)
-pupil = helios.components.Pupil(segments=1)
+collectors = helios.Collectors(latitude=0*u.deg, longitude=0*u.deg, altitude=2000*u.m)
+pupil = helios.Pupil(segments=1)
 collectors.add(size=8*u.m, shape=pupil, position=(0,0))
 
 # Setup context
 context = helios.Context()
 context.add_layer(scene)
 context.add_layer(collectors)
-context.add_layer(helios.components.Camera(pixels=(1024, 1024)))
+context.add_layer(helios.Camera(pixels=(1024, 1024)))
 
 # Run simulation
 image = context.observe()
