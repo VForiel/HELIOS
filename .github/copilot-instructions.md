@@ -178,6 +178,74 @@ Where:
 
 Example: `agent-logs/2025.11.25-01_copilot-instructions.md`
 
+## Notebook Validation Protocol (CRITICAL)
+
+**When modifying code that impacts notebook cells**, you MUST validate the changes by executing the affected code:
+
+### Validation Methods (in order of preference)
+
+1. **Direct execution via `run_notebook_cell` tool** (preferred when available)
+   - Execute the modified notebook cells directly
+   - Verify outputs match expectations
+   - Check that no errors are raised
+
+2. **Standalone Python script** (when direct execution not available)
+   - Extract the relevant cell code into a temporary Python script
+   - Add necessary imports and setup code
+   - Execute via `run_in_terminal` to validate correctness
+
+3. **Data validation without plots** (most reliable)
+   - **PREFERRED**: Skip matplotlib visualization, validate data directly with `print()` statements
+   - Check array shapes, value ranges, statistical properties (mean, std, min, max)
+   - Verify physical coherence (units, magnitudes, conservation laws)
+   - Example:
+     ```python
+     print(f"PSF shape: {psf.shape}")
+     print(f"Peak value: {psf.max():.2e}")
+     print(f"Total flux: {psf.sum():.2e}")
+     print(f"Strehl ratio: {strehl:.3f}")
+     ```
+
+4. **File-based visualization** (only if visual inspection required)
+   - If plots are necessary, save to files with `plt.savefig('test_output.png')`
+   - Use descriptive filenames indicating what is being tested
+   - Analyze saved images to verify correctness
+   - Clean up test output files after validation
+
+### What to Validate
+- ✅ Code executes without errors
+- ✅ Output shapes and types are correct
+- ✅ Numerical values are in expected ranges
+- ✅ Physical quantities have correct units and magnitudes
+- ✅ Visualizations (if needed) display expected features
+
+### Example Validation Pattern
+```python
+# GOOD: Validate data directly
+import sys
+sys.path.insert(0, '../src')
+import helios
+from astropy import units as u
+import numpy as np
+
+# Test atmospheric phase screen generation
+atm = helios.Atmosphere(rms=0.5*u.rad, seed=42)
+wf = helios.Wavefront(wavelength=550e-9*u.m, size=512)
+wf.field = np.ones((512, 512), dtype=np.complex128)
+wf_atm = atm.process(wf, None)
+phase = np.angle(wf_atm.field)
+
+# Validate without plotting
+print(f"Phase shape: {phase.shape}")  # Expected: (512, 512)
+print(f"Phase range: [{phase.min():.3f}, {phase.max():.3f}] rad")  # Expected: [-π, π]
+print(f"Phase RMS: {np.std(phase):.3f} rad")  # Expected: ~0.5
+assert phase.shape == (512, 512), "Incorrect shape"
+assert -np.pi <= phase.min() <= phase.max() <= np.pi, "Phase out of range"
+print("✓ Validation passed")
+```
+
+**Always validate changes before finalizing** - this catches bugs early and ensures physical coherence.
+
 ## What NOT to Do
 - ❌ Don't use raw floats for physical quantities in APIs
 - ❌ Don't break Layer abstraction (components must implement `process()`)
@@ -185,3 +253,4 @@ Example: `agent-logs/2025.11.25-01_copilot-instructions.md`
 - ❌ Don't ignore units when reading existing code - maintain consistency
 - ❌ Don't commit code without docstrings and unit tests
 - ❌ Don't skip the agent modification log
+- ❌ Don't modify notebook cells without validating the changes execute correctly

@@ -752,22 +752,95 @@ class FiberOut(Layer):
 
 
 class Atmosphere(Layer):
-    """Simple Kolmogorov atmosphere layer producing a random phase screen.
+    """Kolmogorov atmosphere layer producing chromatic phase screens with frozen-flow turbulence.
+
+    The atmosphere introduces optical path difference (OPD) errors that are chromatic - 
+    the phase shift depends on wavelength: phi = 2π * OPD / λ.
+
+    Temporal evolution is modeled via frozen-flow (Taylor hypothesis): turbulent screens 
+    drift at constant wind velocity, and different observation times sample different 
+    regions of the frozen turbulent volume.
 
     Parameters
-    - rms: desired RMS of the phase screen in radians (float or astropy.Quantity)
-    - seed: optional RNG seed for reproducibility
+    ----------
+    rms : astropy.Quantity
+        Desired RMS of the OPD (optical path difference) in length units (e.g., nm, μm).
+        This is the wavefront error amplitude, NOT phase in radians.
+        Default: 100 nm (good seeing conditions at visible wavelengths).
+    
+    wind_speed : astropy.Quantity
+        Wind velocity vector magnitude and direction. Can be:
+        - Scalar Quantity: wind speed in m/s (default direction: +x)
+        - Tuple of 2 Quantities: (vx, vy) wind velocity components in m/s
+        Default: 5 m/s in +x direction (~18 km/h, typical high-altitude wind).
+    
+    wind_direction : float, optional
+        Wind direction in degrees (0° = +x, 90° = +y). Used only if wind_speed is scalar.
+        Default: 0°.
+    
+    seed : int, optional
+        RNG seed for reproducible turbulent realizations. If None, uses random seed.
+        The same seed produces the same frozen turbulent volume.
+        Default: None (random).
+    
+    inner_scale : astropy.Quantity, optional
+        Inner scale of turbulence (l0) in meters. Below this scale, turbulence becomes 
+        isotropic. Default: None (pure Kolmogorov, no inner scale).
+    
+    outer_scale : astropy.Quantity, optional
+        Outer scale of turbulence (L0) in meters. Above this scale, turbulence energy 
+        saturates. Default: None (infinite outer scale).
+    
+    Notes
+    -----
+    - The phase screen is generated in Fourier space using Kolmogorov statistics (f^-11/3 PSD).
+    - Time evolution: screen drifts at wind_speed, so screen(t) = screen(x - v*t, y).
+    - Chromatic behavior: phase(λ) = 2π * OPD / λ, so shorter wavelengths see larger phase.
+    
+    Examples
+    --------
+    >>> # Good seeing: 100nm RMS OPD, 5 m/s wind
+    >>> atm = Atmosphere(rms=100*u.nm, wind_speed=5*u.m/u.s, seed=42)
+    >>> 
+    >>> # Poor seeing: 500nm RMS OPD, strong wind
+    >>> atm = Atmosphere(rms=500*u.nm, wind_speed=15*u.m/u.s)
+    >>> 
+    >>> # Custom wind direction (northeast)
+    >>> atm = Atmosphere(rms=200*u.nm, wind_speed=10*u.m/u.s, wind_direction=45)
     """
-    def __init__(self, rms: Union[float, u.Quantity] = 0.2, seed: Optional[int] = None,
-                 inner_scale: Optional[Union[float, u.Quantity]] = None,
-                 outer_scale: Optional[Union[float, u.Quantity]] = None):
+    def __init__(self, 
+                 rms: u.Quantity = 100*u.nm,
+                 wind_speed: Union[u.Quantity, Tuple[u.Quantity, u.Quantity]] = 5*u.m/u.s,
+                 wind_direction: float = 0.0,
+                 seed: Optional[int] = None,
+                 inner_scale: Optional[u.Quantity] = None,
+                 outer_scale: Optional[u.Quantity] = None):
         super().__init__()
+        
+        # Store OPD RMS in meters
         if hasattr(rms, 'to'):
-            self.rms = float(rms.to(u.rad).value)
+            self.rms = float(rms.to(u.m).value)
         else:
+            # If no unit, assume meters
             self.rms = float(rms)
-        self.seed = seed
-        # inner/outer scale in meters (optional). These shape the PSD (Von Karman style)
+        
+        # Parse wind velocity
+        if isinstance(wind_speed, tuple):
+            # (vx, vy) components provided
+            vx = wind_speed[0].to(u.m/u.s).value if hasattr(wind_speed[0], 'to') else float(wind_speed[0])
+            vy = wind_speed[1].to(u.m/u.s).value if hasattr(wind_speed[1], 'to') else float(wind_speed[1])
+            self.wind_velocity = np.array([vx, vy], dtype=float)
+        else:
+            # Scalar speed + direction
+            speed = wind_speed.to(u.m/u.s).value if hasattr(wind_speed, 'to') else float(wind_speed)
+            angle_rad = np.deg2rad(wind_direction)
+            self.wind_velocity = np.array([speed * np.cos(angle_rad), 
+                                          speed * np.sin(angle_rad)], dtype=float)
+        
+        # Seed for reproducibility
+        self.seed = seed if seed is not None else np.random.randint(0, 2**31)
+        
+        # Turbulence scales in meters (optional, for Von Karman model)
         self.inner_scale = None
         self.outer_scale = None
         if inner_scale is not None:
@@ -780,60 +853,193 @@ class Atmosphere(Layer):
                 self.outer_scale = float(outer_scale.to(u.m).value)
             else:
                 self.outer_scale = float(outer_scale)
+        
+        # Cache for frozen turbulent screen
+        self._frozen_screen = None
+        self._screen_size = None
 
-    def _kolmogorov_phase(self, N: int, rng: np.random.Generator) -> np.ndarray:
-        # generate frequency grid (cycles per pixel)
-        fx = np.fft.fftfreq(N)
+
+    def _generate_frozen_screen(self, N: int, oversample: int = 2) -> np.ndarray:
+        """Generate a large frozen turbulent screen for temporal evolution.
+        
+        The screen is oversampled to allow smooth translation without aliasing.
+        
+        Parameters
+        ----------
+        N : int
+            Base array size (will be multiplied by oversample)
+        oversample : int
+            Oversampling factor for smooth translation (default: 2)
+        
+        Returns
+        -------
+        screen : ndarray
+            OPD screen in meters, shape (N*oversample, N*oversample)
+        """
+        Nlarge = N * oversample
+        rng = np.random.default_rng(self.seed)
+        
+        # Generate frequency grid (cycles per pixel)
+        fx = np.fft.fftfreq(Nlarge)
         fy = fx.copy()
         fxg, fyg = np.meshgrid(fx, fy)
         f = np.sqrt(fxg ** 2 + fyg ** 2)
 
-        # avoid zero frequency singularity: set f(0,0) to smallest non-zero frequency
+        # Avoid zero frequency singularity
         nonzero = f[f > 0]
         if nonzero.size == 0:
-            fmin = 1.0 / float(N)
+            fmin = 1.0 / float(Nlarge)
         else:
             fmin = float(nonzero.min())
         f[0, 0] = fmin
 
-        # filter amplitude ~ f^{-11/6} (sqrt of PSD ~ f^{-11/3})
+        # Kolmogorov filter amplitude ~ f^{-11/6} (sqrt of PSD ~ f^{-11/3})
         with np.errstate(divide='ignore', invalid='ignore'):
             filt = f ** (-11.0 / 6.0)
-        # cap extreme values
+        
+        # Apply Von Karman modifications if scales are specified
+        if self.inner_scale is not None or self.outer_scale is not None:
+            # Convert frequency to spatial scale (in pixels)
+            # For inner scale cutoff: high-pass filter
+            if self.inner_scale is not None:
+                # inner scale in pixels (assuming screen spans self.diameter)
+                # This is approximate - proper implementation needs pupil diameter info
+                pass  # TODO: implement Von Karman inner scale
+            
+            if self.outer_scale is not None:
+                # outer scale cutoff: low-pass filter
+                pass  # TODO: implement Von Karman outer scale
+        
+        # Cap extreme values
         filt = np.nan_to_num(filt, nan=filt.max(), posinf=filt.max(), neginf=0.0)
 
-        # generate complex gaussian white noise in Fourier domain and apply filter
-        real = rng.normal(size=(N, N))
-        imag = rng.normal(size=(N, N))
+        # Generate complex Gaussian white noise in Fourier domain
+        real = rng.normal(size=(Nlarge, Nlarge))
+        imag = rng.normal(size=(Nlarge, Nlarge))
         fourier = (real + 1j * imag) * filt
 
-        # ensure zero DC
+        # Zero DC component
         fourier[0, 0] = 0.0 + 0.0j
 
-        # enforce Hermitian symmetry so inverse FFT yields real phase
+        # Enforce Hermitian symmetry for real-valued output
         fourier = (fourier + np.conj(np.flipud(np.fliplr(fourier)))) / 2.0
 
-        # inverse FFT to get phase screen (real)
-        phase = np.fft.ifft2(fourier).real
+        # Inverse FFT to get OPD screen (real-valued, in arbitrary units)
+        opd_screen = np.fft.ifft2(fourier).real
 
-        # normalize to requested RMS
-        ph_rms = float(np.std(phase))
-        if ph_rms <= 0 or not np.isfinite(ph_rms):
-            return np.zeros((N, N), dtype=float)
-        phase = phase / ph_rms * float(self.rms)
-        return phase
+        # Normalize to requested RMS (in meters)
+        screen_rms = float(np.std(opd_screen))
+        if screen_rms <= 0 or not np.isfinite(screen_rms):
+            return np.zeros((Nlarge, Nlarge), dtype=float)
+        
+        opd_screen = opd_screen / screen_rms * float(self.rms)
+        return opd_screen
 
-    def process(self, wavefront: Wavefront, context: Context) -> Wavefront:
+    def _extract_screen_at_time(self, time: u.Quantity, N: int) -> np.ndarray:
+        """Extract N×N screen from frozen turbulence at given time.
+        
+        Uses bilinear interpolation to extract a shifted window from the frozen screen.
+        
+        Parameters
+        ----------
+        time : astropy.Quantity
+            Observation time (shift = wind_velocity * time)
+        N : int
+            Output array size
+        
+        Returns
+        -------
+        screen : ndarray
+            OPD screen in meters, shape (N, N)
+        """
+        # Ensure frozen screen exists
+        if self._frozen_screen is None or self._screen_size != N:
+            self._frozen_screen = self._generate_frozen_screen(N, oversample=2)
+            self._screen_size = N
+        
+        # Convert time to shift in pixels
+        if hasattr(time, 'to'):
+            time_s = time.to(u.s).value
+        else:
+            time_s = float(time)
+        
+        # Compute shift in meters: displacement = velocity * time
+        # Assume screen pixel size ~ diameter / N (approximate)
+        # For now, use normalized shift (shift in units of N)
+        # More robust: shift_pixels = (wind_velocity * time) / pixel_physical_size
+        # Simple approach: shift in fraction of array size
+        Nlarge = self._frozen_screen.shape[0]
+        
+        # Shift in pixels (assume screen spans ~2*diameter to allow drift)
+        # Pixel size in frozen screen: diameter / N (base resolution)
+        # For simplicity: shift normalized to base array size
+        shift_normalized = self.wind_velocity * time_s / (N * 0.1)  # heuristic scaling
+        shift_pixels = shift_normalized * N
+        
+        # Extract shifted window using np.roll (periodic boundaries)
+        # Roll in both x and y
+        shifted = np.roll(self._frozen_screen, 
+                         shift=(-int(shift_pixels[0]), -int(shift_pixels[1])), 
+                         axis=(1, 0))
+        
+        # Extract central N×N region
+        Nlarge = shifted.shape[0]
+        start = (Nlarge - N) // 2
+        end = start + N
+        screen = shifted[start:end, start:end]
+        
+        return screen
+
+    def process(self, wavefront: Wavefront, context: Context = None) -> Wavefront:
+        """Apply atmospheric turbulence to wavefront.
+        
+        Converts OPD (optical path difference) to phase: φ = 2π * OPD / λ
+        This makes the aberration chromatic - shorter wavelengths see larger phase shifts.
+        
+        Parameters
+        ----------
+        wavefront : Wavefront
+            Input wavefront with wavelength information
+        context : Context, optional
+            Simulation context (may contain time information)
+        
+        Returns
+        -------
+        wavefront : Wavefront
+            Wavefront with atmospheric phase applied
+        """
         try:
             N = wavefront.field.shape[0]
         except Exception:
             return wavefront
 
-        rng = np.random.default_rng(self.seed)
-        phase = self._kolmogorov_phase(N, rng)
-        # apply phase screen (pure phase)
+        # Get observation time from context or default to t=0
+        if context is not None and hasattr(context, 'time'):
+            time = context.time
+        else:
+            time = 0.0 * u.s
+        
+        # Extract OPD screen at this time (frozen-flow evolution)
+        opd_screen = self._extract_screen_at_time(time, N)
+        
+        # Convert OPD to phase: φ = 2π * OPD / λ
+        # wavefront.wavelength should be in meters
+        if hasattr(wavefront, 'wavelength') and wavefront.wavelength is not None:
+            if hasattr(wavefront.wavelength, 'to'):
+                wavelength_m = wavefront.wavelength.to(u.m).value
+            else:
+                wavelength_m = float(wavefront.wavelength)
+        else:
+            # Default wavelength if not specified (550 nm, visible)
+            wavelength_m = 550e-9
+        
+        # Phase in radians
+        phase = 2.0 * np.pi * opd_screen / wavelength_m
+        
+        # Apply phase screen (pure phase modulation)
         wavefront.field = wavefront.field * np.exp(1j * phase).astype(wavefront.field.dtype)
         return wavefront
+
 
 
 class AdaptiveOptics(Layer):

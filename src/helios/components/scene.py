@@ -59,7 +59,7 @@ class CelestialBody:
                  color: Optional[str] = None,
                  wl_unit: u.Unit = u.um,
                  loglog: bool = True,
-                 **sed_kwargs):
+                 **kwargs):
         """
         Plot the object's SED using the `sed()` method.
 
@@ -70,10 +70,16 @@ class CelestialBody:
         - color: matplotlib color
         - wl_unit: wavelength unit for x-axis (default `u.um`)
         - loglog: if True use log-log plot, otherwise linear
-        - sed_kwargs: forwarded to `sed()` (temperature, beta, etc.)
+        - kwargs: additional parameters forwarded to matplotlib plot() (alpha, linewidth, etc.)
+                  OR to sed() if they are SED parameters (temperature, beta, etc.)
 
         Returns the matplotlib Axes.
         """
+        # Separate SED kwargs from matplotlib kwargs
+        sed_params = {'temperature', 'beta'}  # Known SED parameters
+        sed_kwargs = {k: v for k, v in kwargs.items() if k in sed_params}
+        plot_kwargs = {k: v for k, v in kwargs.items() if k not in sed_params}
+        
         wl, sed = self.sed(wavelengths=wavelengths, **sed_kwargs)
 
         # Convert for plotting: wavelength in wl_unit, sed per wl_unit
@@ -87,9 +93,9 @@ class CelestialBody:
 
         lbl = label if label is not None else type(self).__name__
         if loglog:
-            ax.loglog(wl_plot, sed_plot, label=lbl, color=color)
+            ax.loglog(wl_plot, sed_plot, label=lbl, color=color, **plot_kwargs)
         else:
-            ax.plot(wl_plot, sed_plot, label=lbl, color=color)
+            ax.plot(wl_plot, sed_plot, label=lbl, color=color, **plot_kwargs)
 
         ax.set_xlabel(f'Wavelength ({wl_unit})')
         ax.set_ylabel(f'Spectral radiance (W m-2 {wl_unit}^-1 sr-1)')

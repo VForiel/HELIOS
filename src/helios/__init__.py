@@ -14,7 +14,7 @@ except PackageNotFoundError:
 
 # Expose core components
 from .core.context import Context, Layer
-from .core.simulation import Simulation
+from .core.simulation import Simulation, Wavefront
 
 # Expose submodules
 from . import components
@@ -37,7 +37,7 @@ __all__ = [
     # Version
     '__version__',
     # Core
-    'Context', 'Layer', 'Simulation',
+    'Context', 'Layer', 'Simulation', 'Wavefront',
     # Submodules
     'components', 'core',
     # Scene components
