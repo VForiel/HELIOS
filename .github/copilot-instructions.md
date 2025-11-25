@@ -37,6 +37,35 @@ def __init__(self, temperature: float, mass: float):
 
 **When adding new components**: Always use `u.Quantity` for distances (u.m, u.AU, u.arcsec), masses (u.M_sun, u.M_jup), temperatures (u.K), wavelengths (u.nm, u.um).
 
+### Performance Architecture
+**High-level interface with low-level performance**: The API is designed with two layers:
+
+1. **User-facing API**: Accepts `astropy.Quantity` objects for all physical quantities (distances, masses, temperatures, wavelengths, etc.)
+2. **Internal storage**: Converts to native Python types (float, numpy arrays) with fixed or dimensionless units for performance
+
+**Conversion pattern**:
+```python
+# At API boundary (constructor, setters)
+def __init__(self, rms: u.Quantity = 100*u.nm):
+    self.rms = rms  # High-level API
+
+@property
+def rms(self):
+    return self._rms_internal * u.m  # Return as Quantity
+
+@rms.setter
+def rms(self, value: u.Quantity):
+    self._rms_internal = value.to(u.m).value  # Convert on set
+```
+
+**Performance optimization priorities**:
+- Use **numba JIT compilation** for computationally intensive loops
+- Implement performance-critical code in **C++** via pybind11 bindings (`src/helios/cpp/`)
+- Prefer numpy vectorized operations over Python loops
+- Cache expensive computations when possible (e.g., frozen turbulence screens)
+
+The goal is to provide a user-friendly, physically intuitive API while achieving the best possible computational performance for scientific simulations.
+
 ### Pupil Geometry System
 `Pupil` class builds aperture masks via primitives (disk, hexagon, spiders, segments):
 - **Coordinate system**: Pupil diameter in meters, elements positioned relative to center
@@ -119,10 +148,28 @@ Scene and optical components implement `.plot()` methods:
 
 ## Code Quality Requirements (CRITICAL)
 
+### Educational Philosophy
+**HELIOS is a scientific project with educational clarity** - the code must be rigorous and scientifically accurate, but explained so that any scientist can understand it, even if they are not experts in the specific field. This means:
+
+- **Explain the physics**: Every optical/astronomical concept must be explained in docstrings and comments
+- **Provide context**: Don't assume users know why a particular algorithm or formula is used
+- **Use clear variable names**: Prefer descriptive names like `phase_rms` over `phi_rms`, `optical_path_difference` over `opd` (units are already in `astropy.Quantity` objects)
+- **Add educational comments**: Explain the "why" not just the "what"
+- **Include references**: When implementing published algorithms, cite the paper/textbook
+- **Validate physically**: Tests should verify that results make physical sense, not just that code runs
+
 ### Every Function Must Have
 1. **English docstring** (numpy-style for Sphinx autodoc)
+   - Explain the physical concept being modeled
+   - Define all parameters with units and physical meaning
+   - Include mathematical formulas when relevant (using LaTeX in docstrings)
 2. **Clear English comments** explaining non-obvious logic
+   - Explain physical reasoning behind algorithmic choices
+   - Clarify coordinate systems, sign conventions, normalizations
 3. **Unit test** validating both correctness AND physical coherence
+   - Test edge cases and boundary conditions
+   - Verify conservation laws (energy, flux, etc.)
+   - Check dimensional analysis (units consistency)
 4. **Documentation generation** - ensure Sphinx autodoc can process it
 
 ### Testing Philosophy
