@@ -27,6 +27,7 @@ extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.napoleon',
     'sphinx.ext.viewcode',
+    'sphinxcontrib.mermaid',
 ]
 
 source_suffix = {
@@ -48,12 +49,10 @@ autodoc_default_options = {
 }
 
 # Mock imports for modules that may not be available during doc build
-autodoc_mock_imports = [
-    'matplotlib',
-    'scipy',
-    'astropy',
-    'numpy',
-]
+autodoc_mock_imports = []
+
+# Enable autodoc to use type hints
+autoclass_content = 'both'
 
 # Napoleon settings: support both Google and NumPy docstring styles
 napoleon_google_docstring = True
