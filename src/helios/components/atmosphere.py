@@ -11,6 +11,7 @@ import matplotlib.pyplot as _plt
 
 from ..core.context import Layer, Context
 from ..core.simulation import Wavefront
+from .collector import TelescopeArray
 
 
 class Atmosphere(Layer):
@@ -303,7 +304,7 @@ class Atmosphere(Layer):
         return wavefront
 
     def plot_screen_animation(self,
-                             collectors: Optional[Union['Collectors', 'Interferometer', List['Collectors']]] = None,
+                             collectors: Optional[Union['Collectors', 'TelescopeArray', List['Collectors']]] = None,
                              times: Optional[np.ndarray] = None,
                              wavelength: u.Quantity = 550e-9*u.m,
                              npix: int = 512,
@@ -320,10 +321,10 @@ class Atmosphere(Layer):
         
         Parameters
         ----------
-        collectors : Collectors, Interferometer, list of Collectors, or None
+        collectors : Collectors, TelescopeArray, list of Collectors, or None
             Collector configuration(s) to overlay. If None, shows phase screen only.
             - Single Collectors: one telescope aperture
-            - Interferometer: all baseline-separated apertures
+            - TelescopeArray: all baseline-separated apertures
             - List of Collectors: multiple independent telescopes
         times : ndarray, optional
             Observation times in seconds. Auto-generated if None.
@@ -354,9 +355,7 @@ class Atmosphere(Layer):
         >>> anim = atm.plot_screen_animation()
         >>> 
         >>> # With interferometer
-        >>> vlti = Interferometer(name='VLTI')
-        >>> for pos in [(0, 0), (47, 0), (47, 47), (0, 47)]:
-        >>>     vlti.add_collector(Pupil.like('VLT'), position=pos, size=8*u.m)
+        >>> vlti = TelescopeArray.vlti()
         >>> anim = atm.plot_screen_animation(collectors=vlti, duration=3*u.s)
         """
         from matplotlib.animation import FuncAnimation
@@ -381,7 +380,7 @@ class Atmosphere(Layer):
         array_name = "Atmospheric Phase Screen"
         
         if collectors is not None:
-            if isinstance(collectors, Interferometer):
+            if isinstance(collectors, TelescopeArray):
                 collector_list = collectors.collectors
                 array_name = f"{collectors.name}"
             elif isinstance(collectors, list):
@@ -401,8 +400,8 @@ class Atmosphere(Layer):
             min_y, max_y = 0, 0
             
             for col in collector_list:
-                pos = col.get("position", (0, 0))
-                size = col.get("size", 1*u.m)
+                pos = col.position
+                size = col.size
                 size_m = size.to(u.m).value if hasattr(size, 'to') else float(size)
                 radius = size_m / 2.0
                 
@@ -454,11 +453,11 @@ class Atmosphere(Layer):
         
         # Overlay collector apertures
         for col in collector_list:
-            pupil = col.get("pupil", col.get("shape", None))
+            pupil = col.pupil
             if pupil is None:
                 continue
             
-            pos = col.get("position", (0, 0))
+            pos = col.position
             
             # Render pupil at high resolution
             npix_pupil = 256
@@ -529,7 +528,7 @@ class Atmosphere(Layer):
         return anim
 
     def plot_animation(self, 
-                      collectors: Union['Collectors', 'Interferometer', List['Collectors']], 
+                      collectors: Union['Collectors', 'TelescopeArray', List['Collectors']], 
                       times: Optional[np.ndarray] = None,
                       wavelength: u.Quantity = 550e-9*u.m,
                       npix: int = 512,
@@ -585,9 +584,7 @@ class Atmosphere(Layer):
         >>> plt.show()
         >>> 
         >>> # Interferometer array
-        >>> interferometer = Interferometer(name='VLTI')
-        >>> for pos in [(0, 0), (47, 0), (47, 47), (0, 47)]:
-        >>>     interferometer.add_collector(Pupil.like('VLT'), position=pos, size=8*u.m)
+        >>> interferometer = TelescopeArray.vlti()
         >>> anim = atm.plot_animation(interferometer, duration=5*u.s)
         """
         from matplotlib.animation import FuncAnimation
@@ -608,8 +605,8 @@ class Atmosphere(Layer):
         wavelength_m = wavelength.to(u.m).value if hasattr(wavelength, 'to') else float(wavelength)
         
         # Normalize collectors input to a list
-        if isinstance(collectors, Interferometer):
-            # Extract aperture configuration from interferometer
+        if isinstance(collectors, TelescopeArray):
+            # Extract aperture configuration from telescope array
             collector_list = collectors.collectors
             array_name = collectors.name
         elif isinstance(collectors, list):
@@ -625,18 +622,45 @@ class Atmosphere(Layer):
                 collector_list = collectors.collectors
                 array_name = "Collectors"
             else:
-                raise TypeError("collectors must be Collectors, Interferometer, or list of Collectors")
+                raise TypeError("collectors must be Collectors, TelescopeArray, or list of Collectors")
         
-        # Determine physical extent for the plot
-        max_extent = 1.0  # meters, default
-        for col in collector_list:
-            pos = col.get("position", (0, 0))
-            size = col.get("size", 1*u.m)
-            size_m = size.to(u.m).value if hasattr(size, 'to') else float(size)
-            max_extent = max(max_extent, abs(pos[0]) + size_m/2, abs(pos[1]) + size_m/2)
-        
-        # Add margin
-        max_extent *= 1.2
+        # Determine screen extent based on collectors (with 20% margin)
+        if len(collector_list) > 0:
+            # Find bounding box of all collectors
+            min_x, max_x = 0, 0
+            min_y, max_y = 0, 0
+            
+            for col in collector_list:
+                pos = col.position
+                size = col.size
+                size_m = size.to(u.m).value if hasattr(size, 'to') else float(size)
+                radius = size_m / 2.0
+                
+                min_x = min(min_x, pos[0] - radius)
+                max_x = max(max_x, pos[0] + radius)
+                min_y = min(min_y, pos[1] - radius)
+                max_y = max(max_y, pos[1] + radius)
+            
+            # Add 20% margin
+            width = max_x - min_x
+            height = max_y - min_y
+            margin_x = width * 0.2
+            margin_y = height * 0.2
+            
+            extent_x = [min_x - margin_x, max_x + margin_x]
+            extent_y = [min_y - margin_y, max_y + margin_y]
+            
+            # Make square extent (use max dimension)
+            max_dim = max(extent_x[1] - extent_x[0], extent_y[1] - extent_y[0])
+            center_x = (extent_x[0] + extent_x[1]) / 2.0
+            center_y = (extent_y[0] + extent_y[1]) / 2.0
+            
+            extent = [center_x - max_dim/2, center_x + max_dim/2,
+                     center_y - max_dim/2, center_y + max_dim/2]
+        else:
+            # No collectors: use default extent
+            default_extent = 10.0  # meters
+            extent = [-default_extent, default_extent, -default_extent, default_extent]
         
         # Create figure
         fig, ax = _plt.subplots(figsize=figsize)
@@ -655,17 +679,16 @@ class Atmosphere(Layer):
         
         # Plot initial phase screen
         im = ax.imshow(phase_init, origin='lower', cmap='twilight', 
-                      extent=[-max_extent, max_extent, -max_extent, max_extent],
-                      vmin=-np.pi, vmax=np.pi, interpolation='bilinear')
+                      extent=extent, vmin=-np.pi, vmax=np.pi, interpolation='bilinear')
         
         # Overlay collector apertures
         pupil_overlays = []
         for col in collector_list:
-            pupil = col.get("pupil", col.get("shape", None))
+            pupil = col.pupil
             if pupil is None:
                 continue
             
-            pos = col.get("position", (0, 0))
+            pos = col.position
             
             # Render pupil at higher resolution for better visibility
             npix_pupil = 256
@@ -684,6 +707,10 @@ class Atmosphere(Layer):
             overlay_im = ax.imshow(overlay, origin='lower', extent=extent_pupil, 
                                   zorder=10, interpolation='bilinear')
             pupil_overlays.append(overlay_im)
+        
+        # Force the axis limits to the calculated extent (matplotlib auto-adjusts otherwise)
+        ax.set_xlim(extent[0], extent[1])
+        ax.set_ylim(extent[2], extent[3])
         
         ax.set_xlabel('x (m)')
         ax.set_ylabel('y (m)')
