@@ -488,8 +488,26 @@ class Pupil:
         return p
 
 class Collectors(Layer):
-    """
-    Represents the light collectors (telescopes).
+    """Represents the light collectors (telescopes) with optional pupil geometry.
+    
+    Each collector can be associated with a specific pupil (aperture geometry) that 
+    defines its transmission pattern. The pupil is applied to the wavefront during 
+    processing.
+    
+    Parameters
+    ----------
+    latitude : astropy.Quantity
+        Geographic latitude of the observatory (degrees).
+    longitude : astropy.Quantity
+        Geographic longitude of the observatory (degrees).
+    altitude : astropy.Quantity
+        Altitude of the observatory above sea level (meters).
+    
+    Examples
+    --------
+    >>> collectors = Collectors(latitude=24.6*u.deg, altitude=2400*u.m)
+    >>> pupil = Pupil.like('VLT')
+    >>> collectors.add(size=8*u.m, pupil=pupil, position=(0, 0))
     """
     def __init__(self, latitude: u.Quantity = 0*u.deg, longitude: u.Quantity = 0*u.deg, altitude: u.Quantity = 0*u.m, **kwargs):
         self.latitude = latitude
@@ -498,19 +516,39 @@ class Collectors(Layer):
         self.collectors = []
         super().__init__()
 
-    def add(self, size: u.Quantity, shape: Pupil, position: Tuple[float, float], **kwargs):
+    def add(self, size: u.Quantity, pupil: Optional[Pupil] = None, position: Tuple[float, float] = (0, 0), **kwargs):
+        """Add a collector to this observatory.
+        
+        Parameters
+        ----------
+        size : astropy.Quantity
+            Diameter of the collector aperture (meters).
+        pupil : Pupil, optional
+            Pupil geometry defining the aperture transmission. If None, a simple
+            circular aperture is assumed.
+        position : Tuple[float, float]
+            (x, y) position of the collector in the aperture plane (meters).
+            For single telescopes, use (0, 0). For interferometers, specify
+            baseline coordinates.
+        """
         self.collectors.append({
             "size": size,
-            "shape": shape,
+            "pupil": pupil,
+            "shape": pupil,  # backward compatibility
             "position": position,
             **kwargs
         })
 
     def process(self, wavefront: Wavefront, context: Context) -> Wavefront:
-        # Apply pupil mask to wavefront
-        # For each configured collector, if a `shape` (Pupil) is provided,
-        # rasterize it to the wavefront sampling and multiply the complex
-        # field by the pupil amplitude (transmission).
+        """Apply pupil mask to wavefront.
+        
+        For each configured collector, if a pupil geometry is provided,
+        rasterize it to the wavefront sampling and multiply the complex
+        field by the pupil amplitude (transmission).
+        
+        Multiple collectors are combined multiplicatively (for co-phased arrays)
+        or as separate apertures (for interferometers).
+        """
         try:
             N = wavefront.field.shape[0]
         except Exception:
@@ -518,21 +556,219 @@ class Collectors(Layer):
 
         total_mask = np.ones((N, N), dtype=float)
         for col in self.collectors:
-            shape = col.get("shape", None)
-            if isinstance(shape, Pupil):
-                # Assume the shape was created with the collector diameter in meters
+            # Try new 'pupil' key first, fallback to 'shape' for backward compatibility
+            pupil = col.get("pupil", col.get("shape", None))
+            if isinstance(pupil, Pupil):
+                # Assume the pupil was created with the collector diameter in meters
                 # If not, users should construct the Pupil with the collector size.
                 try:
-                    mask = shape.get_array(npix=N, soft=True)
+                    mask = pupil.get_array(npix=N, soft=True)
                 except Exception:
                     # fallback: try without anti-aliasing
-                    mask = shape.get_array(npix=N, soft=False)
+                    mask = pupil.get_array(npix=N, soft=False)
                 # combine masks multiplicatively (multiple collectors/telescopes)
                 total_mask = total_mask * mask
 
         # apply mask to complex field (amplitude transmission)
         wavefront.field = wavefront.field * total_mask.astype(wavefront.field.dtype)
         return wavefront
+
+
+class Interferometer(Layer):
+    """Interferometric array of multiple collectors with individual pupil geometries.
+    
+    An interferometer combines light from multiple spatially separated collectors.
+    Each collector can have its own pupil geometry and position in the (u,v) plane
+    (baseline coordinates).
+    
+    This class is useful for modeling:
+    - Optical interferometers (VLTI, CHARA, etc.)
+    - Aperture masking interferometry
+    - Dilute aperture arrays
+    
+    Parameters
+    ----------
+    name : str, optional
+        Name of the interferometer configuration (e.g., "VLTI-UT", "CHARA").
+    
+    Attributes
+    ----------
+    collectors : list
+        List of individual collectors, each defined as a dictionary with keys:
+        - 'pupil': Pupil geometry
+        - 'position': (x, y) baseline coordinates in meters
+        - 'size': aperture diameter
+    
+    Examples
+    --------
+    >>> # Create a simple 2-telescope interferometer
+    >>> vlti = Interferometer(name="VLTI-UT")
+    >>> pupil_ut = Pupil.like('VLT')
+    >>> vlti.add_collector(pupil=pupil_ut, position=(0, 0), size=8.2*u.m)
+    >>> vlti.add_collector(pupil=pupil_ut, position=(47, 0), size=8.2*u.m)
+    >>> 
+    >>> # 3-telescope configuration
+    >>> chara = Interferometer(name="CHARA")
+    >>> for pos in [(0, 0), (100, 0), (50, 86.6)]:
+    >>>     chara.add_collector(pupil=Pupil(1*u.m), position=pos, size=1*u.m)
+    """
+    
+    def __init__(self, name: Optional[str] = None):
+        super().__init__()
+        self.name = name or "Interferometer"
+        self.collectors = []
+    
+    def add_collector(self, pupil: Pupil, position: Tuple[float, float], 
+                     size: Optional[u.Quantity] = None, **kwargs):
+        """Add a collector to the interferometric array.
+        
+        Parameters
+        ----------
+        pupil : Pupil
+            Pupil geometry for this collector (defines aperture shape).
+        position : Tuple[float, float]
+            (x, y) baseline coordinates in meters. This defines the spatial
+            separation between collectors in the aperture plane.
+        size : astropy.Quantity, optional
+            Diameter of the collector. If None, inferred from pupil.diameter.
+        **kwargs
+            Additional metadata (e.g., telescope name, mount type).
+        """
+        if size is None:
+            # Try to infer from pupil
+            if hasattr(pupil, 'diameter'):
+                size = pupil.diameter * u.m
+            else:
+                size = 1.0 * u.m
+        
+        self.collectors.append({
+            "pupil": pupil,
+            "position": tuple(position),
+            "size": size,
+            **kwargs
+        })
+    
+    def get_baseline_array(self) -> np.ndarray:
+        """Return array of baseline vectors (u,v coordinates) in meters.
+        
+        Returns
+        -------
+        baselines : ndarray
+            Array of shape (N, 2) where N is the number of collectors.
+            Each row is (x, y) position in meters.
+        """
+        return np.array([c["position"] for c in self.collectors], dtype=float)
+    
+    def plot_array(self, ax: Optional[_plt.Axes] = None, show_pupils: bool = True,
+                  pupil_scale: float = 1.0) -> _plt.Axes:
+        """Plot the interferometer array configuration.
+        
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes, optional
+            Axes to plot on. If None, creates new figure.
+        show_pupils : bool
+            If True, render individual pupil shapes at each baseline position.
+        pupil_scale : float
+            Scale factor for pupil rendering (1.0 = actual size).
+        
+        Returns
+        -------
+        ax : matplotlib.axes.Axes
+            The axes with the plot.
+        """
+        if ax is None:
+            fig, ax = _plt.subplots(figsize=(8, 8))
+        
+        baselines = self.get_baseline_array()
+        
+        if show_pupils and len(self.collectors) > 0:
+            # Determine plot extent
+            max_extent = 0
+            for c in self.collectors:
+                x, y = c["position"]
+                size = c["size"].to(u.m).value if hasattr(c["size"], 'to') else float(c["size"])
+                max_extent = max(max_extent, abs(x) + size, abs(y) + size)
+            
+            # Render each pupil at its position
+            for c in self.collectors:
+                pupil = c["pupil"]
+                x, y = c["position"]
+                
+                # Render pupil at moderate resolution
+                npix_pupil = 128
+                pupil_arr = pupil.get_array(npix=npix_pupil, soft=True)
+                
+                # Determine physical extent of this pupil
+                diam = pupil.diameter * pupil_scale
+                extent_pupil = [x - diam/2, x + diam/2, y - diam/2, y + diam/2]
+                
+                ax.imshow(pupil_arr, origin='lower', cmap='gray', alpha=0.7, extent=extent_pupil)
+        else:
+            # Simple scatter plot
+            ax.scatter(baselines[:, 0], baselines[:, 1], s=100, c='blue', 
+                      marker='o', edgecolors='black', linewidth=1.5)
+        
+        ax.set_xlabel('Baseline x (m)')
+        ax.set_ylabel('Baseline y (m)')
+        ax.set_aspect('equal')
+        ax.grid(True, alpha=0.3)
+        ax.set_title(f'{self.name} - Array Configuration ({len(self.collectors)} collectors)')
+        
+        return ax
+    
+    def process(self, wavefront: Wavefront, context: Context) -> Wavefront:
+        """Apply interferometric array to wavefront.
+        
+        This combines the apertures of all collectors. For true interferometric
+        imaging (fringe formation), use dedicated photonics/beam combination layers.
+        
+        Here we simply combine all pupil masks in the aperture plane.
+        """
+        try:
+            N = wavefront.field.shape[0]
+        except Exception:
+            return wavefront
+        
+        # Build combined aperture mask
+        combined_mask = np.zeros((N, N), dtype=float)
+        
+        # Physical extent of the wavefront array (assume it covers the full baseline)
+        baselines = self.get_baseline_array()
+        if len(baselines) == 0:
+            return wavefront
+        
+        # Determine array extent
+        max_extent = np.max(np.abs(baselines)) if len(baselines) > 0 else 1.0
+        for c in self.collectors:
+            size_m = c["size"].to(u.m).value if hasattr(c["size"], 'to') else float(c["size"])
+            max_extent = max(max_extent, size_m)
+        
+        # Pixel scale: meters per pixel
+        pixel_scale = 2.0 * max_extent / float(N)
+        
+        # Render each collector pupil at its position
+        for c in self.collectors:
+            pupil = c["pupil"]
+            x, y = c["position"]
+            
+            # Render pupil
+            pupil_arr = pupil.get_array(npix=N, soft=True)
+            
+            # Compute shift in pixels
+            shift_x = int(x / pixel_scale)
+            shift_y = int(y / pixel_scale)
+            
+            # Shift pupil to baseline position
+            shifted_pupil = np.roll(pupil_arr, shift=(shift_y, shift_x), axis=(0, 1))
+            
+            # Add to combined mask
+            combined_mask = np.maximum(combined_mask, shifted_pupil)
+        
+        # Apply to wavefront
+        wavefront.field = wavefront.field * combined_mask.astype(wavefront.field.dtype)
+        return wavefront
+
 
 class BeamSplitter(Layer):
     def __init__(self, cutoff: float = 0.5):
@@ -1040,6 +1276,436 @@ class Atmosphere(Layer):
         wavefront.field = wavefront.field * np.exp(1j * phase).astype(wavefront.field.dtype)
         return wavefront
 
+    def plot_screen_animation(self,
+                             collectors: Optional[Union['Collectors', 'Interferometer', List['Collectors']]] = None,
+                             times: Optional[np.ndarray] = None,
+                             wavelength: u.Quantity = 550e-9*u.m,
+                             npix: int = 512,
+                             fps: int = 10,
+                             duration: Optional[u.Quantity] = None,
+                             filename: Optional[str] = None,
+                             show_colorbar: bool = True,
+                             figsize: Tuple[float, float] = (10, 10)):
+        """Create animation of atmospheric phase screen with optional collector overlays.
+        
+        Displays the temporal evolution of the turbulent phase screen with frozen-flow,
+        optionally overlaying collector apertures. The screen extent automatically adjusts
+        to show all collectors with 20% margin.
+        
+        Parameters
+        ----------
+        collectors : Collectors, Interferometer, list of Collectors, or None
+            Collector configuration(s) to overlay. If None, shows phase screen only.
+            - Single Collectors: one telescope aperture
+            - Interferometer: all baseline-separated apertures
+            - List of Collectors: multiple independent telescopes
+        times : ndarray, optional
+            Observation times in seconds. Auto-generated if None.
+        wavelength : astropy.Quantity
+            Wavelength for phase calculation (default: 550nm).
+        npix : int
+            Phase screen resolution (default: 512).
+        fps : int
+            Animation frame rate (default: 10).
+        duration : astropy.Quantity, optional
+            Total duration in seconds (default: 5s).
+        filename : str, optional
+            Save path for animation (requires ffmpeg/pillow).
+        show_colorbar : bool
+            Show phase colorbar.
+        figsize : Tuple[float, float]
+            Figure size in inches.
+        
+        Returns
+        -------
+        anim : matplotlib.animation.FuncAnimation
+            Animation object.
+        
+        Examples
+        --------
+        >>> # Phase screen only
+        >>> atm = Atmosphere(rms=100*u.nm, wind_speed=10*u.m/u.s)
+        >>> anim = atm.plot_screen_animation()
+        >>> 
+        >>> # With interferometer
+        >>> vlti = Interferometer(name='VLTI')
+        >>> for pos in [(0, 0), (47, 0), (47, 47), (0, 47)]:
+        >>>     vlti.add_collector(Pupil.like('VLT'), position=pos, size=8*u.m)
+        >>> anim = atm.plot_screen_animation(collectors=vlti, duration=3*u.s)
+        """
+        from matplotlib.animation import FuncAnimation
+        
+        # Parse duration
+        if duration is None:
+            duration = 5.0 * u.s
+        duration_s = duration.to(u.s).value if hasattr(duration, 'to') else float(duration)
+        
+        # Generate time array
+        if times is None:
+            n_frames = int(fps * duration_s)
+            times = np.linspace(0, duration_s, n_frames)
+        else:
+            times = np.asarray(times)
+        
+        # Parse wavelength
+        wavelength_m = wavelength.to(u.m).value if hasattr(wavelength, 'to') else float(wavelength)
+        
+        # Extract collector list from input
+        collector_list = []
+        array_name = "Atmospheric Phase Screen"
+        
+        if collectors is not None:
+            if isinstance(collectors, Interferometer):
+                collector_list = collectors.collectors
+                array_name = f"{collectors.name}"
+            elif isinstance(collectors, list):
+                for c_obj in collectors:
+                    if hasattr(c_obj, 'collectors'):
+                        collector_list.extend(c_obj.collectors)
+                array_name = f"{len(collector_list)} collectors"
+            elif hasattr(collectors, 'collectors'):
+                # Single Collectors object
+                collector_list = collectors.collectors
+                array_name = "Collectors"
+        
+        # Determine screen extent based on collectors (with 20% margin)
+        if len(collector_list) > 0:
+            # Find bounding box of all collectors
+            min_x, max_x = 0, 0
+            min_y, max_y = 0, 0
+            
+            for col in collector_list:
+                pos = col.get("position", (0, 0))
+                size = col.get("size", 1*u.m)
+                size_m = size.to(u.m).value if hasattr(size, 'to') else float(size)
+                radius = size_m / 2.0
+                
+                min_x = min(min_x, pos[0] - radius)
+                max_x = max(max_x, pos[0] + radius)
+                min_y = min(min_y, pos[1] - radius)
+                max_y = max(max_y, pos[1] + radius)
+            
+            # Add 20% margin
+            width = max_x - min_x
+            height = max_y - min_y
+            margin_x = width * 0.2
+            margin_y = height * 0.2
+            
+            extent_x = [min_x - margin_x, max_x + margin_x]
+            extent_y = [min_y - margin_y, max_y + margin_y]
+            
+            # Make square extent (use max dimension)
+            max_dim = max(extent_x[1] - extent_x[0], extent_y[1] - extent_y[0])
+            center_x = (extent_x[0] + extent_x[1]) / 2.0
+            center_y = (extent_y[0] + extent_y[1]) / 2.0
+            
+            extent = [center_x - max_dim/2, center_x + max_dim/2,
+                     center_y - max_dim/2, center_y + max_dim/2]
+        else:
+            # No collectors: use default extent
+            default_extent = 10.0  # meters
+            extent = [-default_extent, default_extent, -default_extent, default_extent]
+        
+        # Create figure
+        fig, ax = _plt.subplots(figsize=figsize)
+        
+        # Mock context for time evolution
+        class TimeContext:
+            def __init__(self, t):
+                self.time = t * u.s
+        
+        # Generate initial phase screen
+        wf_init = Wavefront(wavelength=wavelength, size=npix)
+        wf_init.field = np.ones((npix, npix), dtype=np.complex128)
+        ctx_init = TimeContext(times[0])
+        wf_atm_init = self.process(wf_init, ctx_init)
+        phase_init = np.angle(wf_atm_init.field)
+        
+        # Display initial phase screen
+        im = ax.imshow(phase_init, origin='lower', cmap='twilight',
+                      extent=extent, vmin=-np.pi, vmax=np.pi,
+                      interpolation='bilinear')
+        
+        # Overlay collector apertures
+        for col in collector_list:
+            pupil = col.get("pupil", col.get("shape", None))
+            if pupil is None:
+                continue
+            
+            pos = col.get("position", (0, 0))
+            
+            # Render pupil at high resolution
+            npix_pupil = 256
+            pupil_arr = pupil.get_array(npix=npix_pupil, soft=True)
+            
+            # Create RGBA overlay (white with transparency)
+            overlay = np.zeros((npix_pupil, npix_pupil, 4), dtype=float)
+            overlay[..., :3] = 1.0  # white
+            overlay[..., 3] = pupil_arr * 0.8  # alpha
+            
+            # Physical extent of this pupil
+            diam = pupil.diameter
+            extent_pupil = [pos[0] - diam/2, pos[0] + diam/2,
+                           pos[1] - diam/2, pos[1] + diam/2]
+            
+            ax.imshow(overlay, origin='lower', extent=extent_pupil,
+                     zorder=10, interpolation='bilinear')
+        
+        ax.set_xlabel('x (m)')
+        ax.set_ylabel('y (m)')
+        ax.set_aspect('equal')
+        
+        title = ax.set_title(
+            f'{array_name}\\n'
+            f't={times[0]:.2f}s, λ={wavelength_m*1e9:.0f}nm, '
+            f'OPD RMS={self.rms*1e9:.0f}nm, wind={np.linalg.norm(self.wind_velocity):.1f}m/s'
+        )
+        
+        if show_colorbar:
+            _plt.colorbar(im, ax=ax, label='Phase (radians)', fraction=0.046, pad=0.04)
+        
+        # Animation update function
+        def update(frame_idx):
+            t = times[frame_idx]
+            
+            # Generate phase screen at time t
+            wf = Wavefront(wavelength=wavelength, size=npix)
+            wf.field = np.ones((npix, npix), dtype=np.complex128)
+            ctx = TimeContext(t)
+            wf_atm = self.process(wf, ctx)
+            phase = np.angle(wf_atm.field)
+            
+            # Update phase screen
+            im.set_data(phase)
+            
+            # Update title
+            title.set_text(
+                f'{array_name}\\n'
+                f't={t:.2f}s, λ={wavelength_m*1e9:.0f}nm, '
+                f'OPD RMS={self.rms*1e9:.0f}nm, wind={np.linalg.norm(self.wind_velocity):.1f}m/s'
+            )
+            
+            return [im, title]
+        
+        # Create animation
+        anim = FuncAnimation(fig, update, frames=len(times),
+                           interval=1000.0/fps, blit=False, repeat=True)
+        
+        # Save if requested
+        if filename is not None:
+            try:
+                anim.save(filename, fps=fps, dpi=100)
+                print(f"Animation saved to {filename}")
+            except Exception as e:
+                print(f"Warning: Could not save animation: {e}")
+        
+        _plt.tight_layout()
+        return anim
+
+    def plot_animation(self, 
+                      collectors: Union['Collectors', 'Interferometer', List['Collectors']], 
+                      times: Optional[np.ndarray] = None,
+                      wavelength: u.Quantity = 550e-9*u.m,
+                      npix: int = 512,
+                      fps: int = 10,
+                      duration: Optional[u.Quantity] = None,
+                      filename: Optional[str] = None,
+                      show_colorbar: bool = True,
+                      figsize: Tuple[float, float] = (8, 8)):
+        """Create an animation of atmospheric phase screen with collectors overlay.
+        
+        Shows the temporal evolution of the turbulent phase screen as it drifts
+        with the wind (frozen-flow), with the aperture geometry of collectors
+        superimposed for reference.
+        
+        Parameters
+        ----------
+        collectors : Collectors, Interferometer, or list of Collectors
+            Collector configuration(s) to overlay on the phase screen.
+            - Single Collectors instance: shows one telescope aperture
+            - Interferometer: shows all baseline-separated apertures
+            - List of Collectors: shows multiple independent telescopes
+        times : ndarray, optional
+            Array of observation times in seconds. If None, generates evenly
+            spaced times from 0 to duration.
+        wavelength : astropy.Quantity
+            Wavelength for phase calculation (default: 550nm visible).
+        npix : int
+            Resolution of the phase screen array (default: 512).
+        fps : int
+            Frames per second for the animation (default: 10).
+        duration : astropy.Quantity, optional
+            Total duration of the animation in seconds. If None, uses 5 seconds.
+        filename : str, optional
+            If provided, saves animation to this file (e.g., 'atm_animation.mp4').
+            Requires ffmpeg or pillow for saving.
+        show_colorbar : bool
+            Whether to show colorbar for phase values.
+        figsize : Tuple[float, float]
+            Figure size in inches (width, height).
+        
+        Returns
+        -------
+        anim : matplotlib.animation.FuncAnimation
+            The animation object. Call plt.show() to display.
+        
+        Examples
+        --------
+        >>> # Single telescope
+        >>> atm = Atmosphere(rms=100*u.nm, wind_speed=10*u.m/u.s)
+        >>> collectors = Collectors()
+        >>> collectors.add(pupil=Pupil.like('VLT'), position=(0, 0), size=8*u.m)
+        >>> anim = atm.plot_animation(collectors, duration=3*u.s)
+        >>> plt.show()
+        >>> 
+        >>> # Interferometer array
+        >>> interferometer = Interferometer(name='VLTI')
+        >>> for pos in [(0, 0), (47, 0), (47, 47), (0, 47)]:
+        >>>     interferometer.add_collector(Pupil.like('VLT'), position=pos, size=8*u.m)
+        >>> anim = atm.plot_animation(interferometer, duration=5*u.s)
+        """
+        from matplotlib.animation import FuncAnimation
+        
+        # Parse duration
+        if duration is None:
+            duration = 5.0 * u.s
+        duration_s = duration.to(u.s).value if hasattr(duration, 'to') else float(duration)
+        
+        # Generate time array if not provided
+        if times is None:
+            n_frames = int(fps * duration_s)
+            times = np.linspace(0, duration_s, n_frames)
+        else:
+            times = np.asarray(times)
+        
+        # Parse wavelength
+        wavelength_m = wavelength.to(u.m).value if hasattr(wavelength, 'to') else float(wavelength)
+        
+        # Normalize collectors input to a list
+        if isinstance(collectors, Interferometer):
+            # Extract aperture configuration from interferometer
+            collector_list = collectors.collectors
+            array_name = collectors.name
+        elif isinstance(collectors, list):
+            # List of Collectors objects
+            collector_list = []
+            for c_obj in collectors:
+                if hasattr(c_obj, 'collectors'):
+                    collector_list.extend(c_obj.collectors)
+            array_name = f"{len(collector_list)} collectors"
+        else:
+            # Single Collectors object
+            if hasattr(collectors, 'collectors'):
+                collector_list = collectors.collectors
+                array_name = "Collectors"
+            else:
+                raise TypeError("collectors must be Collectors, Interferometer, or list of Collectors")
+        
+        # Determine physical extent for the plot
+        max_extent = 1.0  # meters, default
+        for col in collector_list:
+            pos = col.get("position", (0, 0))
+            size = col.get("size", 1*u.m)
+            size_m = size.to(u.m).value if hasattr(size, 'to') else float(size)
+            max_extent = max(max_extent, abs(pos[0]) + size_m/2, abs(pos[1]) + size_m/2)
+        
+        # Add margin
+        max_extent *= 1.2
+        
+        # Create figure
+        fig, ax = _plt.subplots(figsize=figsize)
+        
+        # Mock context for time evolution
+        class TimeContext:
+            def __init__(self, t):
+                self.time = t * u.s
+        
+        # Initialize with first frame
+        wf_init = Wavefront(wavelength=wavelength, size=npix)
+        wf_init.field = np.ones((npix, npix), dtype=np.complex128)
+        ctx_init = TimeContext(times[0])
+        wf_atm_init = self.process(wf_init, ctx_init)
+        phase_init = np.angle(wf_atm_init.field)
+        
+        # Plot initial phase screen
+        im = ax.imshow(phase_init, origin='lower', cmap='twilight', 
+                      extent=[-max_extent, max_extent, -max_extent, max_extent],
+                      vmin=-np.pi, vmax=np.pi, interpolation='bilinear')
+        
+        # Overlay collector apertures
+        pupil_overlays = []
+        for col in collector_list:
+            pupil = col.get("pupil", col.get("shape", None))
+            if pupil is None:
+                continue
+            
+            pos = col.get("position", (0, 0))
+            
+            # Render pupil at higher resolution for better visibility
+            npix_pupil = 256
+            pupil_arr = pupil.get_array(npix=npix_pupil, soft=True)
+            
+            # Create RGBA overlay (white aperture with transparency)
+            overlay = np.zeros((npix_pupil, npix_pupil, 4), dtype=float)
+            overlay[..., :3] = 1.0  # white
+            overlay[..., 3] = pupil_arr * 0.7  # alpha channel (increased for better visibility)
+            
+            # Physical extent of pupil
+            diam = pupil.diameter
+            extent_pupil = [pos[0] - diam/2, pos[0] + diam/2, 
+                           pos[1] - diam/2, pos[1] + diam/2]
+            
+            overlay_im = ax.imshow(overlay, origin='lower', extent=extent_pupil, 
+                                  zorder=10, interpolation='bilinear')
+            pupil_overlays.append(overlay_im)
+        
+        ax.set_xlabel('x (m)')
+        ax.set_ylabel('y (m)')
+        ax.set_aspect('equal')
+        
+        title = ax.set_title(f'Atmospheric Phase Screen - {array_name}\\n' + 
+                            f't={times[0]:.2f}s, λ={wavelength_m*1e9:.0f}nm, ' + 
+                            f'OPD RMS={self.rms*1e9:.0f}nm, wind={np.linalg.norm(self.wind_velocity):.1f}m/s')
+        
+        if show_colorbar:
+            cbar = _plt.colorbar(im, ax=ax, label='Phase (radians)', fraction=0.046, pad=0.04)
+        
+        # Animation update function
+        def update(frame_idx):
+            t = times[frame_idx]
+            
+            # Generate phase screen at time t
+            wf = Wavefront(wavelength=wavelength, size=npix)
+            wf.field = np.ones((npix, npix), dtype=np.complex128)
+            ctx = TimeContext(t)
+            wf_atm = self.process(wf, ctx)
+            phase = np.angle(wf_atm.field)
+            
+            # Update image data
+            im.set_data(phase)
+            
+            # Update title
+            title.set_text(f'Atmospheric Phase Screen - {array_name}\\n' + 
+                          f't={t:.2f}s, λ={wavelength_m*1e9:.0f}nm, ' + 
+                          f'OPD RMS={self.rms*1e9:.0f}nm, wind={np.linalg.norm(self.wind_velocity):.1f}m/s')
+            
+            return [im, title]
+        
+        # Create animation
+        anim = FuncAnimation(fig, update, frames=len(times), 
+                           interval=1000.0/fps, blit=False, repeat=True)
+        
+        # Save if filename provided
+        if filename is not None:
+            try:
+                anim.save(filename, fps=fps, dpi=100)
+                print(f"Animation saved to {filename}")
+            except Exception as e:
+                print(f"Warning: Could not save animation: {e}")
+        
+        _plt.tight_layout()
+        return anim
+
 
 
 class AdaptiveOptics(Layer):
@@ -1139,7 +1805,7 @@ class AdaptiveOptics(Layer):
 def test_collectors():
     c = Collectors(latitude=0*u.deg, longitude=0*u.deg, altitude=0*u.m)
     p = Pupil(1*u.m)
-    c.add(size=8*u.m, shape=p, position=(0,0))
+    c.add(size=8*u.m, pupil=p, position=(0, 0))
     assert len(c.collectors) == 1
 
     # Test defaults
