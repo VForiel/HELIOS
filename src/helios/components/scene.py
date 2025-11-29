@@ -185,6 +185,7 @@ class Planet(CelestialBody):
     def __init__(self, 
                  mass: u.Quantity = 1*u.M_jup, 
                  radius: Optional[u.Quantity] = None,
+                 temperature: u.Quantity = 300*u.K,
                  albedo: float = 0.3,
                  reflection_ratio: Optional[float] = None,
                  scene: Optional['Scene'] = None,
@@ -198,6 +199,8 @@ class Planet(CelestialBody):
             Planet mass (default: 1 Jupiter mass).
         radius : astropy.Quantity, optional
             Planet radius. If None, estimated from mass assuming Jupiter-like density.
+        temperature : astropy.Quantity
+            Planet effective temperature for thermal emission (default: 300 K).
         albedo : float
             Geometric albedo for reflected light (default: 0.3, Earth-like).
         reflection_ratio : float, optional
@@ -210,6 +213,7 @@ class Planet(CelestialBody):
             Additional arguments passed to CelestialBody (position, etc.).
         """
         self.mass = mass
+        self.temperature = temperature
         self.albedo = albedo
         self.reflection_ratio = reflection_ratio
         self.scene = scene
@@ -254,7 +258,7 @@ class Planet(CelestialBody):
         """
         # 1. Thermal emission component
         if temperature is None:
-            temperature = 300 * u.K
+            temperature = self.temperature
         wl_thermal, sed_thermal = super().sed(wavelengths=wavelengths, temperature=temperature, **kwargs)
         
         # 2. Reflected light component
