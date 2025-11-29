@@ -59,6 +59,52 @@ class CelestialBody:
 
         return modified_blackbody(wavelengths, temperature, beta=beta, lambda0=lambda0, norm=norm)
 
+    def flux_at(self, wavelength: u.Quantity, **kwargs) -> u.Quantity:
+        """
+        Compute the spectral flux at a specific wavelength.
+
+        This method evaluates the spectral energy distribution (SED) at a single
+        wavelength by computing the SED on a fine grid around the target wavelength
+        and interpolating to the exact value.
+
+        Parameters
+        ----------
+        wavelength : astropy.Quantity
+            Target wavelength (must be convertible to meters).
+        **kwargs : dict
+            Additional parameters passed to the sed() method (e.g., temperature, beta).
+
+        Returns
+        -------
+        astropy.Quantity
+            Spectral radiance at the given wavelength in W/(m² m sr).
+
+        Examples
+        --------
+        >>> star = Star(temperature=5700*u.K)
+        >>> flux = star.flux_at(550*u.nm)
+        >>> print(flux)
+        <Quantity ... W / (m2 m sr)>
+        """
+        # Convert wavelength to meters
+        wl_target = wavelength.to(u.m).value
+        
+        # Create a fine wavelength grid around the target (±10% range, 100 points)
+        wl_min = wl_target * 0.9
+        wl_max = wl_target * 1.1
+        wl_grid = np.linspace(wl_min, wl_max, 100) * u.m
+        
+        # Compute SED on this grid
+        wl_array, sed_array = self.sed(wavelengths=wl_grid, **kwargs)
+        
+        # Interpolate to exact wavelength
+        wl_values = wl_array.to(u.m).value
+        sed_values = sed_array.to(u.W / (u.m ** 2 * u.m * u.sr)).value
+        
+        flux_interp = np.interp(wl_target, wl_values, sed_values)
+        
+        return flux_interp * (u.W / (u.m ** 2 * u.m * u.sr))
+
     def plot_sed(self,
                  wavelengths: Optional[u.Quantity] = None,
                  ax=None,
