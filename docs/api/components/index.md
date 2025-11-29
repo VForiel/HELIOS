@@ -25,7 +25,8 @@ Define astronomical objects and their spectral energy distributions.
 ### Optical Components
 Model light collection, propagation, and manipulation.
 
-- {py:class}`~helios.components.Collectors` - Telescope apertures
+- {py:class}`~helios.components.Collector` - Single telescope aperture (data object)
+- {py:class}`~helios.components.TelescopeArray` - Single or interferometric telescope array
 - {py:class}`~helios.components.Pupil` - Aperture geometry definition
 - {py:class}`~helios.components.Atmosphere` - Atmospheric turbulence
 - {py:class}`~helios.components.Coronagraph` - Starlight suppression

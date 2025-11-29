@@ -22,16 +22,17 @@ flowchart LR
         ExoZodi["ExoZodiacal"]
     end
     
-    subgraph Atm_Collectors["Atmosphere + Collectors"]
-        direction LR
-        Atm["🌫️ Atmosphere<br/>(Turbulence)"]
-        Collectors["🔭 Collectors<br/>(Telescope Apertures)"]
-        Atm --> |Wavefront| Collectors
+    subgraph TelescopeGroup["Telescope Array"]
+        direction TB
+        Collector["Collector<br/>(Single Aperture)"]
+        TelescopeArray["🔭 TelescopeArray<br/>(Single/Interferometric)"]
+        Collector -.-> |"collected by"| TelescopeArray
     end
     
     subgraph Optics["Optical Layers"]
         direction LR
         Pupil["◯ Pupil<br/>(Aperture Geometry)"]
+        Atm["🌫️ Atmosphere<br/>(Turbulence)"]
         Coro["✱ Coronagraph<br/>(Starlight Suppression)"]
         AO["🔄 AdaptiveOptics<br/>(Wavefront Correction)"]
         BS["⚡ BeamSplitter"]
@@ -48,8 +49,8 @@ flowchart LR
         Camera["📷 Camera<br/>(Terminal Layer)"]
     end
     
-    Scene --> |Wavefront| Atm_Collectors
-    Atm_Collectors --> |Wavefront| Optics
+    Scene --> |Wavefront| TelescopeGroup
+    TelescopeGroup --> |"Wavefront<br/>(single/interferometric)"| Optics
     Optics --> BS
     BS --> |Split Beams| Photonics
     BS --> |Direct Path| Camera
@@ -57,13 +58,13 @@ flowchart LR
     Camera --> |ndarray| Result["Final Image"]
     
     Context -.-> |orchestrates| Scene
-    Context -.-> |orchestrates| Atm_Collectors
+    Context -.-> |orchestrates| TelescopeGroup
     Context -.-> |orchestrates| Optics
     Context -.-> |orchestrates| Photonics
     Context -.-> |orchestrates| Detectors
     
     style Scene fill:#fff4e6
-    style Atm_Collectors fill:#e1f5fe
+    style TelescopeGroup fill:#e1f5fe
     style Optics fill:#e3f2fd
     style Photonics fill:#f3e5f5
     style Detectors fill:#e8f5e9
@@ -100,18 +101,23 @@ import helios
 from astropy import units as u
 
 # Create a scene
-scene = helios.components.Scene(distance=10*u.pc)
-scene.add(helios.components.Star(temperature=5700*u.K, magnitude=5))
+scene = helios.Scene(distance=10*u.pc)
+scene.add(helios.Star(temperature=5700*u.K, magnitude=5))
 
-# Define collectors
-collectors = helios.components.Collectors(latitude=0*u.deg, longitude=0*u.deg)
-collectors.add(size=8*u.m, shape=helios.components.Pupil())
+# Define telescope array (automatically detects single vs interferometric mode)
+telescope = helios.TelescopeArray(latitude=0*u.deg, longitude=0*u.deg)
+pupil = helios.Pupil(diameter=8*u.m)
+telescope.add_collector(pupil=pupil, position=(0, 0), size=8*u.m)
+
+# For interferometry, add more collectors at different positions:
+# telescope.add_collector(pupil=pupil, position=(47, 0), size=8*u.m)
+# telescope.is_interferometric()  # Returns True if multiple baselines
 
 # Setup context and run
 context = helios.Context()
 context.add_layer(scene)
-context.add_layer(collectors)
-context.add_layer(helios.components.Camera(pixels=(1024, 1024)))
+context.add_layer(telescope)
+context.add_layer(helios.Camera(pixels=(1024, 1024)))
 
 image = context.observe()
 ```

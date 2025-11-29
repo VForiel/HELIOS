@@ -24,14 +24,33 @@ The `Pupil` class builds aperture masks using geometric primitives:
 - **Anti-aliasing**: Use `get_array(npix, soft=True, oversample=4)` for smooth edges
 - **Telescope presets**: `Pupil.like('JWST')`, `Pupil.like('VLT')`, `Pupil.like('ELT')`
 
-## Light Collectors
+## Telescope Arrays
 
 ```{eval-rst}
-.. autoclass:: helios.components.Collectors
+.. autoclass:: helios.components.Collector
    :members:
    :undoc-members:
    :show-inheritance:
 ```
+
+```{eval-rst}
+.. autoclass:: helios.components.TelescopeArray
+   :members:
+   :undoc-members:
+   :show-inheritance:
+```
+
+### Architecture
+
+**Collector**: Data object storing a single telescope aperture configuration (pupil, position, size, name).
+
+**TelescopeArray**: Layer class that manages one or more collectors. Automatically detects operation mode:
+- **Single telescope**: When all collectors are colocated (same position)
+- **Interferometric**: When collectors have different positions (multiple baselines)
+
+Use `is_interferometric()` to check the current mode. The `process()` method automatically adapts its behavior based on the configuration.
+
+**Backward compatibility aliases**: `Telescope` and `Interferometer` both refer to `TelescopeArray`.
 
 ## Atmospheric Turbulence
 

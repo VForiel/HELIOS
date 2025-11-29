@@ -1,8 +1,13 @@
+import sys
+import os
 import numpy as np
 from astropy import units as u
 
+# ensure local `src` is first on path so tests import the workspace code
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
+
 from helios.core.simulation import Wavefront
-from helios.components.optics import Atmosphere, AdaptiveOptics
+from helios.components.atmosphere import Atmosphere, AdaptiveOptics
 
 
 def test_atmosphere_changes_phase_only():

@@ -1,0 +1,490 @@
+"""Pupil geometry builder and rasterizer.
+
+This module provides the Pupil class for constructing optical aperture geometries
+through primitive elements (disks, hexagons, spiders, segmented mirrors).
+"""
+import numpy as np
+from astropy import units as u
+from typing import Tuple, List, Optional
+from matplotlib.path import Path
+import matplotlib.pyplot as _plt
+
+
+class Pupil:
+    """Pupil builder and rasterizer.
+
+    - You can add primitive elements (disk, hexagon, spiders, central obstruction)
+    - Retrieve the final pupil as a NumPy array via `get_array(npix, soft=False)`
+    - Soft edges are obtained with simple supersampling (anti-aliasing)
+    - Presets: `Pupil.jwst()`, `Pupil.vlt()`, `Pupil.elt()` provide realistic basic configs
+    """
+
+    def __init__(self, diameter: u.Quantity = 1.0 * u.m):
+        self.diameter = diameter.to(u.m).value
+        self.elements: List[dict] = []
+
+    # --- element adders -------------------------------------------------
+    def add_disk(self, radius: float, center: Tuple[float, float] = (0.0, 0.0), value: float = 1.0):
+        """Add a filled disk (radius in same units as `diameter`)."""
+        # accept astropy.Quantity for radius
+        if hasattr(radius, 'to'):
+            r = float(radius.to(u.m).value)
+        else:
+            r = float(radius)
+        self.elements.append({"type": "disk", "radius": r, "center": tuple(center), "value": float(value)})
+
+    def add_hexagon(self, radius: float, center: Tuple[float, float] = (0.0, 0.0), value: float = 1.0, rotation: float = 0.0):
+        """Add a regular hexagon (radius = circumradius)."""
+        if hasattr(radius, 'to'):
+            r = float(radius.to(u.m).value)
+        else:
+            r = float(radius)
+        self.elements.append({"type": "hex", "radius": r, "center": tuple(center), "value": float(value), "rotation": float(rotation)})
+
+    def add_central_obscuration(self, diameter: float):
+        """Add central obscuration (diameter)."""
+        if hasattr(diameter, 'to'):
+            d = float(diameter.to(u.m).value)
+        else:
+            d = float(diameter)
+        self.elements.append({"type": "secondary", "diameter": d})
+
+    def add_spiders(self, arms: int = 4, width: float = 0.01, angle: float = 0.0, angles: Optional[List[float]] = None):
+        """Add radially extended rectangular spider vanes.
+
+        - `width` is in same linear units as `diameter`.
+        - `angle` is rotation offset in degrees.
+        """
+        # allow width as Quantity
+        if hasattr(width, 'to'):
+            w = float(width.to(u.m).value)
+        else:
+            w = float(width)
+        entry = {"type": "spiders", "arms": int(arms), "width": float(w), "angle": float(angle)}
+        if angles is not None:
+            # store explicit angles (degrees)
+            entry["angles"] = [float(a) for a in angles]
+        self.elements.append(entry)
+
+    def add_segmented_primary(self, seg_flat: float, rings: int = 2, rotation: float = 0.0, gap: float = 0.0):
+        """Create a hexagonal segmented primary with given flat-to-flat segment size.
+
+        - `seg_flat`: flat-to-flat size of one segment (same units as `diameter`).
+        - `rings`: number of hex rings around center (rings=0 -> 1 segment)
+        """
+        if hasattr(seg_flat, 'to'):
+            sf = float(seg_flat.to(u.m).value)
+        else:
+            sf = float(seg_flat)
+        if hasattr(gap, 'to'):
+            g = float(gap.to(u.m).value)
+        else:
+            g = float(gap)
+        self.elements.append({"type": "segments", "seg_flat": float(sf), "rings": int(rings), "rotation": float(rotation), "gap": float(g), "value": 1.0})
+
+    # --- helpers rasterisation -----------------------------------------
+    def _make_grid(self, npix: int, oversample: int = 1) -> Tuple[np.ndarray, np.ndarray, float]:
+        size_m = self.diameter
+        N = npix * oversample
+        half = size_m / 2.0
+        xs = np.linspace(-half, half, N, endpoint=False) + (size_m / N) / 2.0
+        ys = xs.copy()
+        xg, yg = np.meshgrid(xs, ys)
+        return xg, yg, size_m / N
+
+    def _hex_verts(self, cx: float, cy: float, R: float, rotation: float = 0.0):
+        thetas = np.linspace(0, 2 * np.pi, 7) + np.deg2rad(rotation)
+        return np.column_stack((cx + R * np.cos(thetas), cy + R * np.sin(thetas)))
+
+    def _rasterize_path(self, path: Path, xg: np.ndarray, yg: np.ndarray) -> np.ndarray:
+        pts = np.column_stack((xg.ravel(), yg.ravel()))
+        mask = path.contains_points(pts)
+        return mask.reshape(xg.shape)
+
+    def get_array(self, npix: int = 256, soft: bool = False, oversample: int = 4) -> np.ndarray:
+        """Retourne la pupille en tableau 2D (valeurs dans [0,1])."""
+        ov = oversample if soft and oversample >= 2 else 1
+        xg, yg, dx = self._make_grid(npix, oversample=ov)
+        im = np.zeros_like(xg, dtype=float)
+        for el in self.elements:
+            t = el.get("type")
+            if t == "disk":
+                cx, cy = el["center"]
+                r = el["radius"]
+                mask = ((xg - cx) ** 2 + (yg - cy) ** 2) <= (r ** 2)
+                val = float(el.get("value", 1.0))
+                im[mask] = np.maximum(im[mask], val) if val >= 1.0 else val
+            elif t == "hex":
+                verts = self._hex_verts(el["center"][0], el["center"][1], el["radius"], el.get("rotation", 0.0))
+                pth = Path(verts)
+                mask = self._rasterize_path(pth, xg, yg)
+                val = float(el.get("value", 1.0))
+                im[mask] = np.maximum(im[mask], val) if val >= 1.0 else val
+            elif t == "secondary":
+                d = el["diameter"]
+                mask = (xg**2 + yg**2) <= (d/2.0)**2
+                im[mask] = 0.0
+            elif t == "spiders":
+                arms = el["arms"]
+                width = el["width"]
+                angle0 = float(el.get("angle", 0.0))
+                angles_list = el.get("angles", None)
+                if angles_list is not None:
+                    use_angles = [np.deg2rad(a) for a in angles_list]
+                else:
+                    base = np.deg2rad(angle0)
+                    use_angles = [base + 2*np.pi*k/arms for k in range(arms)]
+                # inner cutoff estimation (secondary radius if present)
+                sec_rad = 0.0
+                for e2 in self.elements:
+                    if e2.get("type") == "secondary":
+                        sec_rad = max(sec_rad, float(e2.get("diameter",0.0))/2.0)
+                for ang in use_angles:
+                    xr = xg * np.cos(-ang) - yg * np.sin(-ang)
+                    yr = xg * np.sin(-ang) + yg * np.cos(-ang)
+                    mask = (np.abs(yr) <= width/2.0) & (xr >= sec_rad - 1e-12)
+                    im[mask] = 0.0
+            elif t == "segments":
+                seg_flat = el["seg_flat"]
+                rings = el["rings"]
+                rot = el.get("rotation", 0.0)
+                gapv = el.get("gap", 0.0)
+                val = float(el.get("value", 1.0))
+                a = seg_flat / np.sqrt(3.0)
+                drawn_flat = max(0.0, seg_flat - gapv)
+                a_draw = drawn_flat / np.sqrt(3.0)
+                centers = []
+                N = rings
+                for q in range(-N, N+1):
+                    r1 = max(-N, -q - N)
+                    r2 = min(N, -q + N)
+                    for r in range(r1, r2+1):
+                        cx = a * 1.5 * q
+                        cy = a * np.sqrt(3.0) * (r + q/2.0)
+                        centers.append((cx, cy))
+                primR = self.diameter/2.0
+                for (cx, cy) in centers:
+                    if np.hypot(cx, cy) <= primR + 1e-12:
+                        verts = self._hex_verts(cx, cy, a_draw, rotation=rot)
+                        pth = Path(verts)
+                        mask = self._rasterize_path(pth, xg, yg)
+                        im[mask] = np.maximum(im[mask], val) if val >= 1.0 else val
+            else:
+                continue
+        if ov > 1:
+            H, W = im.shape
+            im = im.reshape(H//ov, ov, W//ov, ov).mean(axis=(1,3))
+        return np.clip(im, 0.0, 1.0)
+
+    def plot(self, npix: int = 512, soft: bool = True, oversample: int = 4, ax: Optional[_plt.Axes] = None, cmap: str = 'gray') -> _plt.Axes:
+        """Plot the pupil and return the Matplotlib Axes."""
+        arr = self.get_array(npix=npix, soft=soft, oversample=oversample)
+        if ax is None:
+            fig, ax = _plt.subplots()
+        ax.imshow(arr, origin='lower', cmap=cmap, extent=[-self.diameter/2, self.diameter/2, -self.diameter/2, self.diameter/2])
+        ax.set_xlabel('m')
+        ax.set_ylabel('m')
+        ax.set_aspect('equal')
+        return ax
+
+    def diffraction_pattern(self, npix: int = 1024, soft: bool = True, oversample: int = 4, wavelength: float = 550e-9) -> np.ndarray:
+        """Compute the (monochromatic) diffraction pattern (PSF intensity) of the pupil.
+
+        - Returns a 2D NumPy array of shape (npix, npix) with values normalized to peak = 1.
+        - This is a simple Fraunhofer-propagation via FFT of the pupil amplitude (pupil mask treated as amplitude transmission).
+        - `soft` and `oversample` are forwarded to `get_array` to control anti-aliasing on the pupil.
+        """
+        # get pupil amplitude (transmission) array
+        pup = self.get_array(npix=npix, soft=soft, oversample=oversample)
+        # ensure float32 for fft speed
+        pupf = np.asarray(pup, dtype=np.complex64)
+        # compute FFT; use ifftshift/fftshift for correct centering
+        field = np.fft.fftshift(np.fft.fft2(np.fft.ifftshift(pupf)))
+        intensity = np.abs(field) ** 2
+        # normalize to peak 1
+        maxv = intensity.max()
+        if maxv > 0:
+            intensity = intensity / float(maxv)
+        return intensity
+
+    def plot_diffraction_pattern(self, npix: int = 1024, soft: bool = True, oversample: int = 4, ax: Optional[_plt.Axes] = None, cmap: str = 'viridis', log: bool = True, vmax: Optional[float] = None, wavelength: float = 550e-9) -> _plt.Axes:
+        """Plot the diffraction pattern (PSF) and return the Matplotlib Axes.
+
+        - By default the intensity is shown on a log scale (dB-like) for dynamic range.
+        - `vmax` can be used to clip the displayed maximum (after normalization).
+        """
+        intensity = self.diffraction_pattern(npix=npix, soft=soft, oversample=oversample, wavelength=wavelength)
+        if ax is None:
+            fig, ax = _plt.subplots()
+        disp = intensity
+        if log:
+            # add tiny floor to avoid log(0)
+            disp = np.log10(disp + 1e-12)
+        # compute extent in units of lambda/D
+        # frequency axis fx = (i - N/2) / (N * dx) cycles/m
+        # units lambda/D = fx * D
+        N = intensity.shape[0]
+        # dx used when building pupil: size / N_pixels where size = self.diameter
+        dx = self.diameter / float(N)
+        fx = (np.arange(N) - N // 2) / (N * dx)
+        # lambda/D units
+        lamD = fx * self.diameter
+        extent = [lamD[0], lamD[-1], lamD[0], lamD[-1]]
+        im = ax.imshow(disp, origin='lower', cmap=cmap, extent=extent)
+        ax.set_xlabel('Focal plane (arb. units)')
+        ax.set_ylabel('Focal plane (arb. units)')
+        ax.set_aspect('equal')
+        if vmax is not None:
+            im.set_clim(vmin=disp.min(), vmax=vmax)
+        _plt.colorbar(im, ax=ax)
+        return ax
+
+    def image_through_pupil(self, scene_array: np.ndarray, soft: bool = True, oversample: int = 4, normalize: bool = True) -> np.ndarray:
+        """Compute the image formed by the optical system when the given `scene_array` is observed through this pupil.
+
+        Assumptions / algorithm (simple Fraunhofer imaging, monochromatic):
+        - `scene_array` is a 2D real array representing the object intensity in object plane (image of object at infinite distance).
+        - We compute the Fourier transform of the object, multiply by the pupil amplitude (transmission), then inverse FT to obtain the complex image field. The output is the intensity (|field|^2).
+
+        Returns a 2D NumPy array (float) with same shape as `scene_array`.
+        """
+        # validate input
+        arr = np.asarray(scene_array, dtype=np.complex64)
+        if arr.ndim != 2 or arr.shape[0] != arr.shape[1]:
+            raise ValueError("scene_array must be a square 2D array")
+        N = arr.shape[0]
+        # get pupil amplitude at same sampling
+        pup = self.get_array(npix=N, soft=soft, oversample=oversample)
+        pup_amp = np.asarray(pup, dtype=np.complex64)
+
+        # object -> pupil plane (FT)
+        obj_field = np.fft.fftshift(np.fft.fft2(np.fft.ifftshift(arr)))
+        # apply pupil (amplitude transmission)
+        field_after = obj_field * pup_amp
+        # back to image plane (inverse FT)
+        img_field = np.fft.fftshift(np.fft.ifft2(np.fft.ifftshift(field_after)))
+        intensity = np.abs(img_field) ** 2
+        if normalize:
+            m = intensity.max()
+            if m > 0:
+                intensity = intensity / float(m)
+        return intensity
+
+    def plot_image_through_pupil(self, scene_array: np.ndarray, soft: bool = True, oversample: int = 4, ax: Optional[_plt.Axes] = None, cmap: str = 'gray', normalize: bool = True, log: bool = False) -> _plt.Axes:
+        """Compute and plot the image of `scene_array` formed through this pupil. Returns the Matplotlib Axes."""
+        intensity = self.image_through_pupil(scene_array, soft=soft, oversample=oversample, normalize=normalize)
+        if ax is None:
+            fig, ax = _plt.subplots()
+        disp = intensity
+        if log:
+            disp = np.log10(disp + 1e-12)
+        im = ax.imshow(disp, origin='lower', cmap=cmap)
+        ax.set_xlabel('Image x (pixels)')
+        ax.set_ylabel('Image y (pixels)')
+        ax.set_aspect('equal')
+        _plt.colorbar(im, ax=ax)
+        return ax
+
+    # --- presets --------------------------------------------------------
+    @staticmethod
+    def jwst() -> 'Pupil':
+        """Return a Pupil approximating JWST: 6.5 m primary, 18 segments, M2~0.74 m, 3 spiders."""
+        p = Pupil(6.5 * u.m)
+        # segmented primary only (no full filled disk)
+        seg_flat = 1.2  # approximate flat-to-flat size per JWST segment (meters)
+        rings = 2
+        # small visible gap between segments
+        p.add_segmented_primary(seg_flat=seg_flat, rings=rings, rotation=0.0, gap=0.02)
+        # secondary: use a hexagon of the same flat-to-flat size as segments, blocking light
+        # compute circumradius from flat-to-flat
+        a = seg_flat / np.sqrt(3.0)
+        p.add_hexagon(radius=a, center=(0.0, 0.0), value=0.0)
+        # spiders: 3 branches with specified angles (degrees)
+        # angles chosen so top branch is vertical (90 deg) and bottom two are 60 deg apart
+        p.add_spiders(arms=3, width=0.06, angles=[90.0, 240.0, 300.0])
+        return p
+
+    @staticmethod
+    def like(name: str) -> 'Pupil':
+        """Return a preset pupil by common name (case-insensitive)."""
+        key = (name or "").strip().lower()
+        if key in ("jwst", "james webb", "james webb space telescope"):
+            return Pupil.jwst()
+        if key in ("vlt", "very large telescope"):
+            return Pupil.vlt()
+        if key in ("elt", "extremely large telescope"):
+            return Pupil.elt()
+        raise ValueError(f"Unknown pupil preset: {name}")
+
+    @staticmethod
+    def vlt() -> 'Pupil':
+        """Return a Pupil approximating a single VLT Unit Telescope: 8.2 m primary, M2~1.1 m, 4 spiders."""
+        p = Pupil(8.2 * u.m)
+        p.add_disk(radius=8.2 / 2.0)
+        p.add_central_obscuration(diameter=1.1)
+        p.add_spiders(arms=4, width=0.05)
+        return p
+
+    @staticmethod
+    def elt() -> 'Pupil':
+        """Construire une pupille ELT selon les nouvelles règles:
+
+        - Taille coin-à-coin d'un segment (primaire & secondaire): 1.45 m (circumradius = 0.725 m)
+        - Secondaire: 4 anneaux hexagonaux (total 61) tous occultants (value=0)
+        - Primaire: exactement 798 segments transmissifs formant un dodécagone minimal
+          obtenu par recherche binaire sur l'apothème puis éventuel trimming intérieur.
+        - Araignées: 6 bras conservés (angles définis).
+        """
+        p = Pupil(39.3 * u.m)
+
+        corner_to_corner = 1.45
+        R_circum = corner_to_corner / 2.0
+        a_draw = R_circum
+        a = R_circum
+
+        def generate_centers(rings: int) -> List[Tuple[float, float]]:
+            centers = []
+            N = rings
+            for q in range(-N, N + 1):
+                r1 = max(-N, -q - N)
+                r2 = min(N, -q + N)
+                for r in range(r1, r2 + 1):
+                    cx = a * 1.5 * q
+                    cy = a * np.sqrt(3.0) * (r + q / 2.0)
+                    centers.append((cx, cy))
+            return centers
+
+        # (Ancien) test d'inclusion complète non utilisé désormais.
+        def center_inside(cx: float, cy: float, poly: Path) -> bool:
+            return poly.contains_point((cx, cy))
+
+        rings_primary = 40
+        lattice = generate_centers(rings_primary)
+
+        n_sides = 12
+        angle_step = 2.0 * np.pi / n_sides
+        max_center_radius = max(np.hypot(cx, cy) for cx, cy in lattice)
+        lower_ap = (4 + 1) * 1.5 * a * 0.5
+        upper_ap = max_center_radius + a_draw
+
+        best_sel = None
+        best_ap = None
+
+        # Rotation choisie pour avoir deux côtés horizontaux (haut & bas): rot = 5π/12
+        rot = 5.0 * np.pi / 12.0
+
+        def build_polygon(ap):
+            circum = ap / np.cos(np.pi / n_sides)
+            return [(circum * np.cos(rot + k * angle_step), circum * np.sin(rot + k * angle_step)) for k in range(n_sides)]
+
+        def center_inside_tol(cx, cy, verts, tol=1e-9):
+            vp = np.asarray(verts, dtype=float)
+            edges = list(zip(vp, np.roll(vp, -1, axis=0)))
+            dmins = []
+            for (p1, p2) in edges:
+                ex, ey = p2 - p1
+                nx, ny = -ey, ex
+                L = np.hypot(nx, ny)
+                if L == 0:
+                    continue
+                nx /= L; ny /= L
+                d = (cx - p1[0]) * nx + (cy - p1[1]) * ny
+                dmins.append(d)
+            return (len(dmins) > 0) and (min(dmins) >= -tol)
+
+        # Recherche binaire pour obtenir 859 hexagones totaux (798 primaire + 61 secondaire)
+        target_total = 859
+        for _ in range(60):
+            mid = 0.5 * (lower_ap + upper_ap)
+            poly_verts = build_polygon(mid)
+            inside = [c for c in lattice if center_inside_tol(c[0], c[1], poly_verts)]
+            if len(inside) >= target_total:
+                best_sel = inside
+                best_ap = mid
+                upper_ap = mid
+            else:
+                lower_ap = mid
+
+        if best_sel is None:
+            raise RuntimeError(f"Impossible de trouver un dodécagone contenant >={target_total} segments.")
+
+        # Appliquer facteur d'échelle 1.03 pour ajustement fin
+        best_ap = best_ap * 1.03
+        poly_verts_final = build_polygon(best_ap)
+        best_sel = [c for c in lattice if center_inside_tol(c[0], c[1], poly_verts_final)]
+
+        if len(best_sel) > 798:
+            # Sélection par groupes de symétrie (x,y) -> (±x, ±y)
+            target = 798
+            # Regrouper par valeurs absolues pour identifier les familles de symétrie
+            groups = {}
+            for (cx, cy) in best_sel:
+                key = (round(abs(cx), 6), round(abs(cy), 6))
+                groups.setdefault(key, []).append((cx, cy))
+            # Ordonner les groupes du bord vers le centre par rayon
+            ordered_keys = sorted(groups.keys(), key=lambda k: k[0]*k[0] + k[1]*k[1], reverse=True)
+            selected = []
+            remaining = target
+            for key in ordered_keys:
+                pts = groups[key]
+                # Si groupe passe entièrement
+                if len(pts) <= remaining:
+                    selected.extend(pts)
+                    remaining -= len(pts)
+                    if remaining == 0:
+                        break
+                else:
+                    # Sélection partielle dans un groupe trop grand : essayer de prendre des paires symétriques
+                    # Indexation par signature de signes
+                    sign_map = {}
+                    for (cx, cy) in pts:
+                        sign_map.setdefault((int(np.sign(cx)), int(np.sign(cy))), []).append((cx, cy))
+                    chosen = []
+                    # Chercher d'abord paires miroir horizontal (x et -x)
+                    for (sx, sy), lst in list(sign_map.items()):
+                        opp = (-sx, sy)
+                        if opp in sign_map and sx != 0:  # paire horizontale
+                            chosen.append(lst[0]); chosen.append(sign_map[opp][0])
+                            if len(chosen) >= remaining:
+                                break
+                    # Puis paires miroir vertical (y et -y) si nécessaire
+                    if len(chosen) < remaining:
+                        for (sx, sy), lst in list(sign_map.items()):
+                            opp = (sx, -sy)
+                            if opp in sign_map and sy != 0:
+                                # éviter doublons déjà pris
+                                cand1, cand2 = lst[0], sign_map[opp][0]
+                                if cand1 not in chosen and cand2 not in chosen:
+                                    chosen.append(cand1); chosen.append(cand2)
+                                    if len(chosen) >= remaining:
+                                        break
+                    # Si encore insuffisant, compléter arbitrairement (mais toujours symétrique si possible)
+                    if len(chosen) < remaining:
+                        for (cx, cy) in pts:
+                            if (cx, cy) not in chosen:
+                                chosen.append((cx, cy))
+                                if len(chosen) >= remaining:
+                                    break
+                    selected.extend(chosen[:remaining])
+                    remaining = 0
+                    break
+            # Si pour une raison quelconque il reste des places (rare), compléter par rayon décroissant restant
+            if remaining > 0:
+                leftover = [c for c in best_sel if c not in selected]
+                leftover_sorted = sorted(leftover, key=lambda c: c[0]*c[0] + c[1]*c[1], reverse=True)
+                selected.extend(leftover_sorted[:remaining])
+            primary_final = selected
+        else:
+            primary_final = best_sel
+
+        for (cx, cy) in primary_final:
+            p.add_hexagon(radius=a_draw, center=(cx, cy), value=1.0)
+
+        central_rings = 4
+        for (cx, cy) in generate_centers(central_rings):
+            p.add_hexagon(radius=a_draw, center=(cx, cy), value=0.0)
+
+        angles = [90.0, 270.0, 30.0, 150.0, 210.0, 330.0]
+        p.add_spiders(arms=6, width=0.25, angles=angles)
+
+        return p

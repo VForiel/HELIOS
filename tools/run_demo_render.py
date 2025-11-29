@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from astropy import units as u
 import helios
 from helios.components.scene import Scene
-from helios.components.optics import Pupil
+from helios.components.pupil import Pupil
 
 
 def main():

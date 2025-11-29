@@ -94,9 +94,9 @@ myst_fence_as_directive = [
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
-html_theme = 'breeze'
+html_theme = 'alabaster'
 html_title = 'HELIOS'
-html_static_path = ['_static']
+html_static_path = []  # No static files for now
 
 html_context = {
     "github_user": "VForiel",

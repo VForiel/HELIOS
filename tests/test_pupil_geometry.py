@@ -4,7 +4,7 @@ import numpy as np
 
 # ensure local `src` is first on path so tests import the workspace code
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
-from helios.components.optics import Pupil
+from helios.components.pupil import Pupil
 
 
 def _count_components(binarr):

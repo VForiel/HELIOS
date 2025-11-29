@@ -29,6 +29,6 @@ Physical wavefront representation and simulation utilities.
 The core abstraction is a **Layer** pipeline orchestrated by **Context**:
 
 - All components inherit from `Layer` and implement `process(wavefront, context)`
-- `Context.observe()` sequentially processes layers: Scene → Collectors → Optics → Detectors
+- `Context.observe()` sequentially processes layers: Scene → TelescopeArray → Optics → Detectors
 - Layers can be parallel (list of layers) or sequential (single layer)
 - Signal flow: `Scene` generates initial `Wavefront`, each layer transforms it, final layer produces output

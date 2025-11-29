@@ -95,9 +95,9 @@ class Context:
     >>> scene = helios.Scene(distance=10*u.pc)
     >>> scene.add(helios.Star(temperature=5700*u.K, magnitude=5))
     >>> 
-    >>> # Create optical system
-    >>> collectors = helios.Collectors()
-    >>> collectors.add(size=8*u.m, shape=helios.Pupil.like('VLT'))
+    >>> # Create optical system (single telescope)
+    >>> telescope = helios.TelescopeArray(name="Observatory")
+    >>> telescope.add_collector(pupil=helios.Pupil.vlt(), position=(0,0), size=8*u.m)
     >>> 
     >>> # Create detector
     >>> camera = helios.Camera(pixels=(512, 512))
@@ -105,7 +105,7 @@ class Context:
     >>> # Build context and run
     >>> ctx = Context()
     >>> ctx.add_layer(scene)
-    >>> ctx.add_layer(collectors)
+    >>> ctx.add_layer(telescope)
     >>> ctx.add_layer(camera)
     >>> image = ctx.observe()
     

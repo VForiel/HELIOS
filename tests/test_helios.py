@@ -12,8 +12,8 @@ def test_full_simulation_flow():
     scene.add(helios.components.Star(temperature=5000*u.K, magnitude=5, position=(0*u.AU, 0*u.AU)))
     
     # Optics
-    collectors = helios.components.Collectors(latitude=0*u.deg, longitude=0*u.deg, altitude=2000*u.m)
-    collectors.add(size=8*u.m, shape=helios.components.Pupil(), position=(0,0))
+    telescope = helios.components.TelescopeArray(latitude=0*u.deg, longitude=0*u.deg, altitude=2000*u.m)
+    telescope.add_collector(pupil=helios.components.Pupil(), position=(0,0), size=8*u.m)
     
     # Detector
     camera = helios.components.Camera(pixels=(10, 10))
@@ -21,7 +21,7 @@ def test_full_simulation_flow():
     # Context
     ctx = helios.Context()
     ctx.add_layer(scene)
-    ctx.add_layer(collectors)
+    ctx.add_layer(telescope)
     ctx.add_layer(camera)
     
     # Run

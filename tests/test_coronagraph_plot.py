@@ -11,7 +11,7 @@ src_path = os.path.abspath(os.path.join(here, '..', 'src'))
 if src_path not in sys.path:
     sys.path.insert(0, src_path)
 
-from helios.components.optics import Coronagraph
+from helios.components.coronagraph import Coronagraph
 
 
 def test_coronagraph_mask_array_and_plot():

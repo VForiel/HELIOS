@@ -20,18 +20,22 @@ import helios
 from astropy import units as u
 
 # Create a scene
-scene = helios.Scene()
-scene.add(helios.Star(distance=10*u.pc, temperature=5700*u.K, magnitude=5))
+scene = helios.Scene(distance=10*u.pc)
+scene.add(helios.Star(temperature=5700*u.K, magnitude=5))
 
-# Define collectors
-collectors = helios.Collectors(latitude=0*u.deg, longitude=0*u.deg, altitude=2000*u.m)
-pupil = helios.Pupil(segments=1)
-collectors.add(size=8*u.m, shape=pupil, position=(0,0))
+# Define telescope array (automatic single/interferometric detection)
+telescope = helios.TelescopeArray(latitude=0*u.deg, longitude=0*u.deg, altitude=2000*u.m)
+pupil = helios.Pupil(diameter=8*u.m)
+telescope.add_collector(pupil=pupil, position=(0, 0), size=8*u.m)
+
+# For interferometry, add more collectors at different baselines:
+# telescope.add_collector(pupil=pupil, position=(47, 0), size=8*u.m)
+# telescope.is_interferometric()  # Returns True if multiple non-colocated collectors
 
 # Setup context
 context = helios.Context()
 context.add_layer(scene)
-context.add_layer(collectors)
+context.add_layer(telescope)
 context.add_layer(helios.Camera(pixels=(1024, 1024)))
 
 # Run simulation

@@ -1,5 +1,5 @@
 from astropy import units as u
-from helios.components.optics import Pupil
+from helios.components.pupil import Pupil
 
 def test_elt_segment_counts():
     p = Pupil.elt()
