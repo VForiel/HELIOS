@@ -199,6 +199,174 @@ class TelescopeArray(Layer):
         """
         return np.array([c.position for c in self.collectors], dtype=float)
     
+    @classmethod
+    def vlti(cls, uts: bool = True) -> 'TelescopeArray':
+        """Create a VLTI (Very Large Telescope Interferometer) configuration.
+        
+        The VLTI at ESO Paranal Observatory consists of 4 Unit Telescopes (UTs) 
+        or up to 4 Auxiliary Telescopes (ATs) that can be positioned on various 
+        stations. This method creates a realistic configuration based on GPS 
+        coordinates converted to baseline positions via tangent plane projection.
+        
+        Parameters
+        ----------
+        uts : bool, optional
+            If True (default), create configuration with 4 Unit Telescopes (8.2m).
+            If False, create configuration with 4 Auxiliary Telescopes (1.8m).
+        
+        Returns
+        -------
+        vlti : TelescopeArray
+            VLTI interferometric array with 4 collectors.
+        
+        Notes
+        -----
+        The baseline positions are derived from actual GPS coordinates of the 
+        telescopes at Paranal:
+        - GPS coordinates: longitude/latitude in degrees
+        - Conversion: tangent plane projection with Earth radius + elevation (2635m)
+        - Reference: PHISE project (https://github.com/VForiel/PHISE)
+        
+        UT configuration:
+        - 4 Unit Telescopes of 8.2m diameter
+        - Baselines ranging from ~47m to ~130m
+        - Used for high-resolution interferometry
+        
+        AT configuration:
+        - 4 Auxiliary Telescopes of 1.8m diameter  
+        - Relocatable on a grid of stations
+        - For this preset, we use a representative compact configuration
+        
+        Examples
+        --------
+        >>> # Create VLTI with Unit Telescopes
+        >>> vlti_ut = TelescopeArray.vlti(uts=True)
+        >>> print(f"VLTI UTs: {len(vlti_ut.collectors)} telescopes")
+        >>> print(vlti_ut.get_baseline_array())
+        
+        >>> # Create VLTI with Auxiliary Telescopes
+        >>> vlti_at = TelescopeArray.vlti(uts=False)
+        >>> vlti_at.plot_array(show_pupils=True)
+        """
+        if uts:
+            # VLTI Unit Telescopes (8.2m diameter)
+            # Real baseline positions from GPS coordinates
+            # Source: PHISE project telescope.py get_UT_telescopes()
+            vlti = cls(name="VLTI-UTs", latitude=-24.627*u.deg, 
+                      longitude=-70.404*u.deg, altitude=2635*u.m)
+            pupil = Pupil.like('VLT')
+            diameter = 8.2 * u.m
+            
+            # Baseline positions (GPS → tangent plane projection)
+            positions = [
+                (-16.14, 62.74),   # UT1
+                (0.00, 0.00),      # UT2 (reference)
+                (63.03, 53.37),    # UT3
+                (101.99, 34.54)    # UT4
+            ]
+            
+            for i, pos in enumerate(positions, 1):
+                vlti.add_collector(pupil=pupil, position=pos, size=diameter, 
+                                  name=f"UT{i}")
+        else:
+            # VLTI Auxiliary Telescopes (1.8m diameter)
+            # Representative compact configuration
+            vlti = cls(name="VLTI-ATs", latitude=-24.627*u.deg, 
+                      longitude=-70.404*u.deg, altitude=2635*u.m)
+            
+            # Simple circular pupil for ATs
+            pupil_at = Pupil(diameter=1.8*u.m)
+            pupil_at.add_disk(radius=0.9*u.m)
+            pupil_at.add_central_obscuration(diameter=0.2*u.m)
+            diameter = 1.8 * u.m
+            
+            # Compact baseline configuration (example positions)
+            positions = [
+                (0.00, 0.00),      # AT1 (reference)
+                (32.00, 0.00),     # AT2
+                (16.00, 27.71),    # AT3
+                (16.00, -27.71)    # AT4
+            ]
+            
+            for i, pos in enumerate(positions, 1):
+                vlti.add_collector(pupil=pupil_at, position=pos, size=diameter, 
+                                  name=f"AT{i}")
+        
+        return vlti
+    
+    @classmethod
+    def life(cls) -> 'TelescopeArray':
+        """Create a LIFE (Large Interferometer For Exoplanets) configuration.
+        
+        LIFE is a proposed space-based nulling interferometer mission concept 
+        for direct detection and characterization of exoplanets. It consists 
+        of 4 free-flying collector spacecraft arranged in a planar formation.
+        
+        Returns
+        -------
+        life : TelescopeArray
+            LIFE interferometric array with 4 collectors in space.
+        
+        Notes
+        -----
+        Since LIFE operates in space, we model it as being at the North Pole 
+        (latitude=90°) looking vertically upward. This configuration ensures:
+        - Perfect rotation of the array as Earth rotates
+        - No atmospheric turbulence
+        - Continuous observation geometry
+        
+        The baseline configuration is based on the LIFE mission concept with:
+        - 4 collectors of 2m diameter each
+        - Baselines: 100m to 608m (rectangular configuration)
+        - **Centered array**: all collectors orbit around the central point (0,0)
+        - All collectors are equidistant (~304m) from the array center
+        - Planar arrangement in the XY plane
+        
+        Reference: PHISE project (https://github.com/VForiel/PHISE)
+        
+        Examples
+        --------
+        >>> # Create LIFE array
+        >>> life = TelescopeArray.life()
+        >>> print(f"LIFE: {len(life.collectors)} collectors")
+        >>> life.plot_array(show_pupils=True)
+        
+        >>> # Check it's interferometric
+        >>> print(f"Interferometric: {life.is_interferometric()}")
+        """
+        # Space-based: North Pole configuration for perfect Earth rotation tracking
+        life = cls(name="LIFE", latitude=90*u.deg, longitude=0*u.deg, 
+                  altitude=0*u.m)  # altitude=0 for space (not applicable)
+        
+        # Simple circular pupil for LIFE collectors (2m diameter)
+        pupil_life = Pupil(diameter=2.0*u.m)
+        pupil_life.add_disk(radius=1.0*u.m)
+        diameter = 2.0 * u.m
+        
+        # LIFE baseline configuration (from PHISE get_LIFE_telescopes)
+        # Centered configuration: all telescopes orbit around central point (0,0)
+        # Original PHISE positions centered to ensure (0,0) is the array center
+        positions_original = [
+            (0, 0),        # Collector 1
+            (100, 0),      # Collector 2
+            (0, 600),      # Collector 3
+            (100, 600)     # Collector 4
+        ]
+        
+        # Center the array: compute centroid and shift all positions
+        centroid_x = sum(p[0] for p in positions_original) / len(positions_original)
+        centroid_y = sum(p[1] for p in positions_original) / len(positions_original)
+        
+        positions = [
+            (x - centroid_x, y - centroid_y) for x, y in positions_original
+        ]
+        
+        for i, pos in enumerate(positions, 1):
+            life.add_collector(pupil=pupil_life, position=pos, size=diameter, 
+                              name=f"LIFE-{i}")
+        
+        return life
+    
     def plot_array(self, ax: Optional[_plt.Axes] = None, show_pupils: bool = True,
                   pupil_scale: float = 1.0) -> _plt.Axes:
         """Plot the telescope array configuration.
