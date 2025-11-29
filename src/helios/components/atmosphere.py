@@ -739,9 +739,9 @@ class Atmosphere(Layer):
 class AdaptiveOptics(Layer):
     """Adaptive optics layer applying Zernike-based correction.
 
-    - `coeffs`: mapping from (n,m) -> coefficient in radians. `n` >= 0, `m` integer with |m|<=n and (n-|m|) even.
+    - coeffs: mapping from (n,m) -> coefficient in radians. n >= 0, m integer with abs(m)<=n and (n-abs(m)) even.
       Example: {(1,1): 0.1} for Zernike n=1,m=1.
-    - `normalize`: whether to evaluate Zernikes on unit pupil mapped to array size.
+    - normalize: whether to evaluate Zernikes on unit pupil mapped to array size.
     """
     def __init__(self, coeffs: Optional[dict] = None, normalize: bool = True):
         super().__init__()

@@ -22,7 +22,7 @@ class Wavefront:
         Wavelength of the electromagnetic radiation
     field : ndarray of complex128
         Complex amplitude array representing the electric field.
-        Shape is (size, size). Amplitude = |field|, phase = angle(field)
+        Shape is (size, size). Amplitude = abs(field), phase = angle(field)
     pixel_scale : Quantity
         Physical size per pixel in meters (for pupil plane) or angular
         size per pixel (for image plane)

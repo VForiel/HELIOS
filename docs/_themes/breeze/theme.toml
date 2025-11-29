@@ -1,0 +1,9 @@
+[theme]
+inherit = "alabaster"
+stylesheet = "breeze.css"
+
+[theme.pygments_style]
+default = "friendly"
+
+[options]
+emojis_header_nav = true

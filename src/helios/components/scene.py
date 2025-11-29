@@ -32,15 +32,22 @@ class CelestialBody:
         Return a modified blackbody SED for this object.
 
         Parameters
-        - wavelengths: optional astropy Quantity array of wavelengths. If None, a log-spaced
-          array between `wav_min` and `wav_max` is created.
-        - temperature: astropy Quantity (K). If not provided, subclasses may supply defaults.
-        - beta: emissivity spectral index for modified blackbody (default 1.0).
-        - lambda0: reference wavelength for the emissivity power law.
-        - norm: optional multiplicative normalization factor.
+        ----------
+        wavelengths : astropy.Quantity, optional
+            Array of wavelengths. If None, a log-spaced array between wav_min and wav_max is created.
+        temperature : astropy.Quantity, optional
+            Temperature in Kelvin. If not provided, subclasses may supply defaults.
+        beta : float
+            Emissivity spectral index for modified blackbody (default 1.0).
+        lambda0 : astropy.Quantity
+            Reference wavelength for the emissivity power law.
+        norm : float, optional
+            Multiplicative normalization factor.
 
-        Returns (wavelengths, sed_values) where sed_values are spectral radiance in
-        units W / (m2 m sr) (i.e., per unit wavelength).
+        Returns
+        -------
+        tuple
+            (wavelengths, sed_values) where sed_values are spectral radiance in W/(m² m sr).
         """
         # Create wavelength grid if not provided
         if wavelengths is None:
@@ -61,19 +68,30 @@ class CelestialBody:
                  loglog: bool = True,
                  **kwargs):
         """
-        Plot the object's SED using the `sed()` method.
+        Plot the object's SED using the sed() method.
 
         Parameters
-        - wavelengths: optional wavelength grid (astropy.Quantity)
-        - ax: matplotlib Axes to plot into (created if None)
-        - label: legend label (defaults to class name)
-        - color: matplotlib color
-        - wl_unit: wavelength unit for x-axis (default `u.um`)
-        - loglog: if True use log-log plot, otherwise linear
-        - kwargs: additional parameters forwarded to matplotlib plot() (alpha, linewidth, etc.)
-                  OR to sed() if they are SED parameters (temperature, beta, etc.)
+        ----------
+        wavelengths : astropy.Quantity, optional
+            Wavelength grid for plotting.
+        ax : matplotlib.axes.Axes, optional
+            Matplotlib Axes to plot into (created if None).
+        label : str, optional
+            Legend label (defaults to class name).
+        color : str, optional
+            Matplotlib color.
+        wl_unit : astropy.units.Unit
+            Wavelength unit for x-axis (default u.um).
+        loglog : bool
+            If True use log-log plot, otherwise linear.
+        kwargs : dict
+            Additional parameters forwarded to matplotlib plot() (alpha, linewidth, etc.)
+            OR to sed() if they are SED parameters (temperature, beta, etc.).
 
-        Returns the matplotlib Axes.
+        Returns
+        -------
+        matplotlib.axes.Axes
+            The matplotlib Axes object.
         """
         # Separate SED kwargs from matplotlib kwargs
         sed_params = {'temperature', 'beta'}  # Known SED parameters
@@ -111,7 +129,10 @@ class Star(CelestialBody):
         super().__init__(**kwargs)
 
     def sed(self, wavelengths: Optional[u.Quantity] = None, **kwargs):
-        # Use star temperature by default
+        """Return star SED using stellar temperature.
+        
+        Uses the star's temperature attribute by default.
+        """
         return super().sed(wavelengths=wavelengths, temperature=self.temperature, **kwargs)
 
 class Planet(CelestialBody):
@@ -120,7 +141,10 @@ class Planet(CelestialBody):
         super().__init__(**kwargs)
 
     def sed(self, wavelengths: Optional[u.Quantity] = None, temperature: Optional[u.Quantity] = None, **kwargs):
-        # Planets are approximated as cool blackbodies; default ~300 K if not provided
+        """Return planet SED as cool blackbody.
+        
+        Planets are approximated as cool blackbodies with default temperature of 300 K.
+        """
         if temperature is None:
             temperature = 300 * u.K
         return super().sed(wavelengths=wavelengths, temperature=temperature, **kwargs)
@@ -136,7 +160,10 @@ class ExoZodiacal(CelestialBody):
         super().__init__(**kwargs)
 
     def sed(self, wavelengths: Optional[u.Quantity] = None, temperature: Optional[u.Quantity] = None, **kwargs):
-        # Exozodi: warm dust, default temperature ~270 K
+        """Return exozodiacal dust SED as warm blackbody.
+        
+        Exozodiacal dust is modeled as warm dust with default temperature of 270 K.
+        """
         if temperature is None:
             temperature = 270 * u.K
         return modified_blackbody(wavelengths if wavelengths is not None else None, temperature, **kwargs)
@@ -153,7 +180,10 @@ class Zodiacal(CelestialBody):
         super().__init__(**kwargs)
 
     def sed(self, wavelengths: Optional[u.Quantity] = None, temperature: Optional[u.Quantity] = None, **kwargs):
-        # Local zodiacal dust ~270 K by default
+        """Return zodiacal dust SED as warm blackbody.
+        
+        Local zodiacal dust is modeled with default temperature of 270 K.
+        """
         if temperature is None:
             temperature = 270 * u.K
         return modified_blackbody(wavelengths if wavelengths is not None else None, temperature, **kwargs)

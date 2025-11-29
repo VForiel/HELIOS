@@ -1,0 +1,50 @@
+/* Breeze theme custom styles */
+/* Based on KDE Breeze color scheme */
+
+:root {
+    --breeze-blue: #3daee9;
+    --breeze-dark: #31363b;
+    --breeze-light: #eff0f1;
+    --breeze-text: #232629;
+    --breeze-text-light: #7f8c8d;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background-color: var(--breeze-light);
+    color: var(--breeze-text);
+}
+
+a {
+    color: var(--breeze-blue);
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+div.document {
+    background-color: white;
+}
+
+div.sphinxsidebar {
+    background-color: var(--breeze-dark);
+}
+
+div.sphinxsidebar a {
+    color: var(--breeze-light);
+}
+
+div.sphinxsidebar h3 {
+    color: var(--breeze-blue);
+}
+
+code, pre {
+    background-color: #f8f9fa;
+    border: 1px solid #e1e4e5;
+}
+
+div.admonition {
+    border-left: 3px solid var(--breeze-blue);
+}

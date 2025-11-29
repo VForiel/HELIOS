@@ -3,6 +3,40 @@
 ## Project Overview
 HELIOS (Hierarchical End-to-end Lightpath & Instrumental response Simulation) is a Python astronomical simulation framework for modeling observations from scene → optics → detector. Built for scientific computing with C++ optimization via pybind11.
 
+## Python Environment (CRITICAL)
+
+**ALWAYS activate the virtual environment first** before running any Python commands:
+
+```powershell
+# Activate venv (PowerShell) - DO THIS FIRST
+& .venv\Scripts\Activate.ps1
+
+# Navigate normally after activation
+cd tests
+pytest
+
+# For documentation
+cd docs
+.\make.bat html
+```
+
+**Why venv activation is required**:
+- The venv uses **Python 3.13.9** (required for modern packages)
+- Sphinx Breeze theme requires Python ≥3.10
+- All project dependencies are installed in venv only
+- Documentation builds will **fail** without venv activation
+
+**Proper workflow**:
+1. **Activate venv ONCE** at the start: `& .venv\Scripts\Activate.ps1`
+2. **Navigate normally** with `cd` commands
+3. **Use make.bat** for documentation: `cd docs; .\make.bat html`
+4. **Never** combine activation + command in single line (e.g. don't do `& .venv\Scripts\python.exe -m sphinx ...`)
+
+**Build commands**:
+- **Documentation**: `cd docs; .\make.bat html` (make.bat auto-detects venv)
+- **Tests**: `pytest` or `python -m pytest`
+- **Install package**: `pip install -e .`
+
 ## Architecture Fundamentals
 
 ### Layered Processing Model

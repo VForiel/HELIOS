@@ -4,8 +4,13 @@ pushd %~dp0
 
 REM Command file for Sphinx documentation
 
+REM Use venv sphinx-build if available, otherwise fall back to system
 if "%SPHINXBUILD%" == "" (
-	set SPHINXBUILD=sphinx-build
+	if exist "..\.venv\Scripts\sphinx-build.exe" (
+		set SPHINXBUILD=..\.venv\Scripts\sphinx-build.exe
+	) else (
+		set SPHINXBUILD=sphinx-build
+	)
 )
 set SOURCEDIR=.
 set BUILDDIR=_build

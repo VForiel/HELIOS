@@ -240,13 +240,13 @@ class Pupil:
         return ax
 
     def image_through_pupil(self, scene_array: np.ndarray, soft: bool = True, oversample: int = 4, normalize: bool = True) -> np.ndarray:
-        """Compute the image formed by the optical system when the given `scene_array` is observed through this pupil.
+        """Compute the image formed by the optical system when the given scene_array is observed through this pupil.
 
         Assumptions / algorithm (simple Fraunhofer imaging, monochromatic):
-        - `scene_array` is a 2D real array representing the object intensity in object plane (image of object at infinite distance).
-        - We compute the Fourier transform of the object, multiply by the pupil amplitude (transmission), then inverse FT to obtain the complex image field. The output is the intensity (|field|^2).
+        - scene_array is a 2D real array representing the object intensity in object plane (image of object at infinite distance).
+        - We compute the Fourier transform of the object, multiply by the pupil amplitude (transmission), then inverse FT to obtain the complex image field. The output is the intensity (abs(field)^2).
 
-        Returns a 2D NumPy array (float) with same shape as `scene_array`.
+        Returns a 2D NumPy array (float) with same shape as scene_array.
         """
         # validate input
         arr = np.asarray(scene_array, dtype=np.complex64)
