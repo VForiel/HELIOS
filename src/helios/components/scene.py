@@ -182,18 +182,127 @@ class Star(CelestialBody):
         return super().sed(wavelengths=wavelengths, temperature=self.temperature, **kwargs)
 
 class Planet(CelestialBody):
-    def __init__(self, mass: u.Quantity = 1*u.M_jup, **kwargs):
+    def __init__(self, 
+                 mass: u.Quantity = 1*u.M_jup, 
+                 radius: Optional[u.Quantity] = None,
+                 albedo: float = 0.3,
+                 reflection_ratio: Optional[float] = None,
+                 scene: Optional['Scene'] = None,
+                 **kwargs):
+        """
+        Initialize a Planet object.
+        
+        Parameters
+        ----------
+        mass : astropy.Quantity
+            Planet mass (default: 1 Jupiter mass).
+        radius : astropy.Quantity, optional
+            Planet radius. If None, estimated from mass assuming Jupiter-like density.
+        albedo : float
+            Geometric albedo for reflected light (default: 0.3, Earth-like).
+        reflection_ratio : float, optional
+            Direct override for reflected/emitted light ratio. If provided, this takes
+            precedence over radius/albedo calculation. Useful for quick tuning without
+            physical assumptions.
+        scene : Scene, optional
+            Parent scene containing stellar sources. Needed for reflected light calculation.
+        **kwargs
+            Additional arguments passed to CelestialBody (position, etc.).
+        """
         self.mass = mass
+        self.albedo = albedo
+        self.reflection_ratio = reflection_ratio
+        self.scene = scene
+        
+        # Estimate radius from mass if not provided (assuming Jupiter-like density)
+        if radius is None:
+            # R ∝ M^(1/3) for gas giants (rough approximation)
+            mass_ratio = (mass / const.M_jup).decompose().value
+            self.radius = const.R_jup * (mass_ratio ** (1/3))
+        else:
+            self.radius = radius
+            
         super().__init__(**kwargs)
 
-    def sed(self, wavelengths: Optional[u.Quantity] = None, temperature: Optional[u.Quantity] = None, **kwargs):
-        """Return planet SED as cool blackbody.
-        
-        Planets are approximated as cool blackbodies with default temperature of 300 K.
+    def sed(self, 
+            wavelengths: Optional[u.Quantity] = None, 
+            temperature: Optional[u.Quantity] = None,
+            include_reflection: bool = True,
+            **kwargs):
         """
+        Return planet SED including thermal emission and reflected stellar light.
+        
+        The total SED is the sum of:
+        1. Thermal emission: Blackbody at planet temperature (default 300 K)
+        2. Reflected stellar light: Star SED × geometric albedo × (R_planet/d_star)²
+        
+        Parameters
+        ----------
+        wavelengths : astropy.Quantity, optional
+            Wavelength grid for SED calculation.
+        temperature : astropy.Quantity, optional
+            Planet effective temperature (default: 300 K).
+        include_reflection : bool
+            If True and scene is available, add reflected stellar light (default: True).
+        **kwargs
+            Additional parameters for blackbody calculation (beta, lambda0, norm).
+            
+        Returns
+        -------
+        tuple
+            (wavelengths, sed) where sed includes both thermal and reflected components.
+        """
+        # 1. Thermal emission component
         if temperature is None:
             temperature = 300 * u.K
-        return super().sed(wavelengths=wavelengths, temperature=temperature, **kwargs)
+        wl_thermal, sed_thermal = super().sed(wavelengths=wavelengths, temperature=temperature, **kwargs)
+        
+        # 2. Reflected light component
+        if include_reflection and self.scene is not None:
+            # Find stars in the scene
+            stars = [obj for obj in self.scene.objects if isinstance(obj, Star)]
+            
+            if stars:
+                # For simplicity, use the first (brightest) star
+                # In a real system, you'd sum contributions from all stars
+                star = stars[0]
+                
+                # Get stellar SED at same wavelengths
+                wl_star, sed_star = star.sed(wavelengths=wl_thermal)
+                
+                # Calculate reflection scaling
+                if self.reflection_ratio is not None:
+                    # User-provided ratio (simple mode)
+                    reflection_scale = self.reflection_ratio
+                else:
+                    # Physical calculation: geometric albedo × solid angle factor
+                    # The reflected flux scales as: albedo × (R_planet / distance_to_star)²
+                    # For now, use a geometric approximation
+                    
+                    # Get separation from star (assume star at origin)
+                    px, py = self.position
+                    if isinstance(px, u.Quantity) and px.unit.is_equivalent(u.m):
+                        separation = np.sqrt((px**2 + py**2).to(u.m**2)).to(u.AU)
+                    else:
+                        # If position is angular, convert using scene distance
+                        if self.scene.distance is not None:
+                            sep_ang = np.sqrt(px**2 + py**2)
+                            separation = (sep_ang * self.scene.distance).to(u.AU)
+                        else:
+                            separation = 1 * u.AU  # Fallback
+                    
+                    # Geometric albedo × (R_planet / separation)²
+                    reflection_scale = self.albedo * (self.radius / separation)**2
+                    reflection_scale = reflection_scale.decompose().value
+                
+                # Add reflected component
+                sed_reflected = sed_star * reflection_scale
+                sed_total = sed_thermal + sed_reflected
+                
+                return wl_thermal, sed_total
+        
+        # No reflection: return thermal only
+        return wl_thermal, sed_thermal
 
 class ExoZodiacal(CelestialBody):
     def __init__(self, brightness: float = 1.0, radius: Optional[u.Quantity] = None, **kwargs):
@@ -244,7 +353,11 @@ class Scene(Layer):
         super().__init__()
 
     def add(self, obj: CelestialBody):
+        """Add an object to the scene and link it if it's a Planet."""
         self.objects.append(obj)
+        # Automatically link planets to this scene for reflection calculation
+        if isinstance(obj, Planet) and obj.scene is None:
+            obj.scene = self
 
     def process(self, wavefront: None, context: Context) -> Wavefront:
         """
