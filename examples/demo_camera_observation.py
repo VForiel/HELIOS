@@ -61,22 +61,6 @@ def demo_camera_observation():
         name="Science Camera"
     )
     
-    print(f"\nScene: {scene.objects[0].name}")
-    print(f"  Temperature: {scene.objects[0].temperature}")
-    print(f"  Magnitude: {scene.objects[0].magnitude}")
-    print(f"\nTelescope: {telescope.name}")
-    print(f"  Collectors: {len(telescope.collectors)}")
-    print(f"  Diameter: {telescope.collectors[0].size}")
-    print(f"  Note: Small aperture → Larger PSF (better visibility)")
-    print(f"\nCamera: {camera.name}")
-    print(f"  Pixels: {camera.pixels}")
-    print(f"  Integration time: {camera.integration_time}")
-    print(f"  Dark current: {camera.dark_current} e-/s")
-    print(f"  Read noise: {camera.read_noise} e-")
-    print(f"\nInstrument thermal emission:")
-    print(f"  Temperature: {instrument_temp}")
-    print(f"  Thermal background: {camera.thermal_background:.1f} e-/s/pixel")
-    
     # =========================================================================
     # 2. Create Context and Observe
     # =========================================================================
@@ -85,6 +69,8 @@ def demo_camera_observation():
     ctx.add_layer(scene)
     ctx.add_layer(telescope)
     ctx.add_layer(camera)
+
+    print(ctx.description(full=True))
     
     print("\n" + "=" * 60)
     print("Running simulation...")
