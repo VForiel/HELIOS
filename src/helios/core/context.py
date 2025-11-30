@@ -8,60 +8,53 @@ from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
 from pathlib import Path
 import os
 
-class Element:
+class Layer:
     """
-    Base class for all simulation elements (physical components).
+    Base class for all simulation layers.
     
-    An Element represents a physical component in the optical system that can
-    process wavefronts independently. Elements are grouped within Layers for
-    parallel processing.
+    All components in HELIOS inherit from this class and implement the `process()` method
+    to transform wavefronts or signals as they propagate through the optical system.
     
-    All physical components (stars, planets, telescopes, cameras, etc.) inherit
-    from this class and implement the `process()` method.
+    The layer abstraction enables flexible composition of simulation pipelines:
+    - Layers are processed sequentially by the Context
+    - Multiple layers can be combined in parallel for beam splitting
+    - Each layer receives a wavefront and returns a transformed wavefront
     
     Examples
     --------
-    >>> class CustomElement(Element):
+    >>> class CustomLayer(Layer):
     ...     def process(self, wavefront, context):
     ...         # Apply custom transformation
-    ...         wavefront.field *= np.exp(1j * self.phase_pattern)
+    ...         wavefront.field *= np.exp(1j * phase_pattern)
     ...         return wavefront
     
     See Also
     --------
-    Layer : Container for one or more Elements
-    Context : Orchestrates layer/element execution
+    Context : Orchestrates layer execution
     """
-    def __init__(self, name: Optional[str] = None):
-        """
-        Initialize an Element.
-        
-        Parameters
-        ----------
-        name : str, optional
-            Descriptive name for this element (e.g., "UT1", "Science Camera").
-        """
-        self.name = name
+    def __init__(self):
+        pass
 
     def process(self, wavefront: Any, context: 'Context') -> Any:
         """
         Process the incoming wavefront/signal and return the result.
         
         This method must be implemented by all subclasses. It defines how
-        the element transforms the electromagnetic field or signal.
+        the layer transforms the electromagnetic field or signal.
         
         Parameters
         ----------
-        wavefront : Wavefront or ndarray
-            The input electromagnetic field to process.
+        wavefront : Wavefront or list of Wavefront
+            The input electromagnetic field(s) to process. For parallel layers,
+            this may be a list of wavefronts.
         context : Context
             The simulation context providing global parameters (time, observation
             conditions, etc.)
         
         Returns
         -------
-        wavefront : Wavefront or ndarray
-            The transformed wavefront. Terminal elements (e.g., Camera) may
+        wavefront : Wavefront or list of Wavefront or ndarray
+            The transformed wavefront(s). Terminal layers (e.g., Camera) may
             return numpy arrays instead of Wavefront objects.
         
         Raises
@@ -70,109 +63,6 @@ class Element:
             If the subclass does not implement this method.
         """
         raise NotImplementedError("Subclasses must implement process()")
-
-class Layer:
-    """
-    Base class for all simulation layers (logical grouping of elements).
-    
-    A Layer represents a logical stage in the simulation pipeline and contains
-    one or more Elements that process wavefronts in parallel. Layers are 
-    processed sequentially by the Context.
-    
-    The layer/element architecture enables flexible composition:
-    - Layers are processed sequentially by the Context (Scene → Optics → Detector)
-    - Elements within a layer are processed in parallel (multiple stars, telescopes, cameras)
-    - Each element receives a wavefront and returns a transformed wavefront
-    
-    Attributes
-    ----------
-    elements : List[Element]
-        List of elements contained in this layer. Elements are processed in parallel.
-    name : str, optional
-        Descriptive name for this layer.
-    
-    Examples
-    --------
-    >>> # Layer with multiple parallel elements
-    >>> detector_layer = DetectorLayer()
-    >>> detector_layer.add_element(Camera(pixels=(512,512), name="Vis Camera"))
-    >>> detector_layer.add_element(Camera(pixels=(256,256), name="IR Camera"))
-    
-    See Also
-    --------
-    Element : Base class for physical components
-    Context : Orchestrates layer execution
-    """
-    def __init__(self, name: Optional[str] = None):
-        """
-        Initialize a Layer.
-        
-        Parameters
-        ----------
-        name : str, optional
-            Descriptive name for this layer (e.g., "Scene", "Telescope Array").
-        """
-        self.name = name
-        self.elements: List[Element] = []
-
-    def add_element(self, element: Element):
-        """
-        Add an element to this layer.
-        
-        Parameters
-        ----------
-        element : Element
-            The element to add to this layer.
-        
-        Examples
-        --------
-        >>> layer = SceneLayer()
-        >>> layer.add_element(Star(temperature=5700*u.K))
-        >>> layer.add_element(Planet(temperature=300*u.K))
-        """
-        self.elements.append(element)
-
-    def process(self, wavefront: Any, context: 'Context') -> Any:
-        """
-        Process the incoming wavefront/signal through all elements in this layer.
-        
-        By default, this method processes elements in parallel and returns a list
-        of outputs. Subclasses can override this to implement custom combination
-        logic (e.g., merging, selecting, etc.).
-        
-        Parameters
-        ----------
-        wavefront : Wavefront or list of Wavefront
-            The input electromagnetic field(s) to process.
-        context : Context
-            The simulation context providing global parameters.
-        
-        Returns
-        -------
-        outputs : list or Wavefront or ndarray
-            List of outputs from each element, or a single combined output
-            depending on the layer's combination logic.
-        
-        Raises
-        ------
-        NotImplementedError
-            If the subclass needs custom processing logic but doesn't implement it.
-        """
-        if len(self.elements) == 0:
-            return wavefront
-        
-        if len(self.elements) == 1:
-            # Single element - process directly
-            return self.elements[0].process(wavefront, context)
-        
-        # Multiple elements - process in parallel
-        outputs = []
-        for element in self.elements:
-            # Deep copy wavefront to avoid interference between parallel paths
-            wf_copy = copy.deepcopy(wavefront) if wavefront is not None else None
-            outputs.append(element.process(wf_copy, context))
-        
-        return outputs
 
 class Context:
     """
@@ -326,8 +216,8 @@ class Context:
         # Placeholder for interferometry output
         pass
 
-    def plot_uml_diagram(self, figsize: Tuple[float, float] = (12, 6), 
-                         layer_spacing: float = 1.5,
+    def plot_uml_diagram(self, figsize: Tuple[float, float] = (16, 10), 
+                         layer_spacing: float = 2.0,
                          save_path: Optional[str] = None,
                          return_type: str = 'figure') -> Union[plt.Figure, np.ndarray]:
         """
@@ -340,9 +230,9 @@ class Context:
         Parameters
         ----------
         figsize : tuple of float, optional
-            Figure size as (width, height) in inches. Default: (12, 6)
+            Figure size as (width, height) in inches. Default: (16, 10)
         layer_spacing : float, optional
-            Horizontal distance between layers. Default: 1.5
+            Horizontal distance between layers. Default: 2.0
         save_path : str, optional
             If provided, save the figure to this path
         
@@ -391,9 +281,9 @@ class Context:
         layer_tree = self._build_layer_tree()
         max_paths = self._count_max_parallel_paths(layer_tree)
         
-        # Set y-limits based on number of parallel paths (minimal margins)
-        y_margin = 0.5
-        ax.set_ylim(-y_margin - 0.3, max_paths + y_margin - 0.5)
+        # Set y-limits based on number of parallel paths
+        y_margin = 1.0
+        ax.set_ylim(-y_margin, max_paths + y_margin)
         
         # Draw each layer
         self._draw_layer_tree(ax, layer_tree, layer_spacing, asset_dir)
@@ -401,12 +291,9 @@ class Context:
         # Configure axes
         ax.set_aspect('equal', adjustable='datalim')
         ax.axis('off')
-        ax.set_title('HELIOS Optical System Diagram', fontsize=14, fontweight='bold', pad=10)
+        ax.set_title('HELIOS Optical System Diagram', fontsize=16, fontweight='bold', pad=20)
         
-        # Add layer numbering at bottom
-        self._add_layer_numbering(ax, layer_tree, layer_spacing, max_paths)
-        
-        plt.tight_layout(pad=0.5)
+        plt.tight_layout()
         
         if save_path:
             fig.savefig(save_path, dpi=150, bbox_inches='tight')
@@ -417,22 +304,15 @@ class Context:
         elif return_type == 'image':
             # Convert figure to numpy array
             fig.canvas.draw()
-            # Use buffer_rgba instead of deprecated tostring_rgb
-            buf = fig.canvas.buffer_rgba()
-            image = np.frombuffer(buf, dtype=np.uint8)
-            image = image.reshape(fig.canvas.get_width_height()[::-1] + (4,))
-            # Convert RGBA to RGB
-            image = image[:, :, :3]
+            image = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+            image = image.reshape(fig.canvas.get_width_height()[::-1] + (3,))
             plt.close(fig)
             return image
         elif return_type == 'both':
             # Return both figure and image
             fig.canvas.draw()
-            buf = fig.canvas.buffer_rgba()
-            image = np.frombuffer(buf, dtype=np.uint8)
-            image = image.reshape(fig.canvas.get_width_height()[::-1] + (4,))
-            # Convert RGBA to RGB
-            image = image[:, :, :3]
+            image = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+            image = image.reshape(fig.canvas.get_width_height()[::-1] + (3,))
             return fig, image
         else:
             raise ValueError(f"Invalid return_type: {return_type}. Must be 'figure', 'image', or 'both'")
@@ -493,9 +373,8 @@ class Context:
         asset_dir : Path
             Path to assets directory
         """
-        # Track active paths (y-positions) and store positions for numbering
+        # Track active paths (y-positions)
         active_paths = [0.5]  # Start with single path at center
-        self._layer_positions = []  # Store (x, y, layer_idx, sublayer_idx) for numbering
         
         for i, node in enumerate(tree):
             x_pos = i * spacing
@@ -512,9 +391,6 @@ class Context:
                 for j, (layer, y_pos) in enumerate(zip(layer_list, y_positions)):
                     # Draw layer icon
                     self._draw_layer_icon(ax, layer, x_pos, y_pos, asset_dir)
-                    
-                    # Store position for numbering with sublayer index
-                    self._layer_positions.append((x_pos, y_pos, i, j))
                     
                     # Draw connection from previous layer(s)
                     if i > 0:
@@ -534,9 +410,6 @@ class Context:
                 
                 # Draw layer icon
                 self._draw_layer_icon(ax, layer, x_pos, y_pos, asset_dir)
-                
-                # Store position for numbering (no sublayer index)
-                self._layer_positions.append((x_pos, y_pos, i, None))
                 
                 # Draw connections from all active paths
                 if i > 0:
@@ -620,43 +493,29 @@ class Context:
         )
         ax.add_patch(box)
         
-        # Draw schematic icon inside box
-        self._draw_schematic_icon(ax, layer_name, x, y, box_width * 0.7)
+        # Add icon if SVG exists
+        if icon_path.exists():
+            # For now, just indicate icon presence with a marker
+            # Full SVG rendering would require additional library (e.g., svgpath2mpl)
+            ax.plot(x, y, 'o', markersize=15, color='#3498DB', zorder=3, alpha=0.3)
         
-        # Add two-line label below box: name on first line, type in parentheses on second
-        display_name, type_name = self._get_display_name(layer)
-        
-        # First line: name (bold, larger)
-        ax.text(x, y - box_height/2 - 0.12, display_name,
+        # Add label below box
+        display_name = self._get_display_name(layer)
+        ax.text(x, y - box_height/2 - 0.15, display_name,
                ha='center', va='top', fontsize=9, fontweight='bold',
                bbox=dict(boxstyle='round,pad=0.3', facecolor='white', 
                         edgecolor='none', alpha=0.8))
-        
-        # Second line: (Type) - smaller, gray
-        ax.text(x, y - box_height/2 - 0.30, f'({type_name})',
-               ha='center', va='top', fontsize=7, fontweight='normal',
-               color='#5D6D7E',
-               bbox=dict(boxstyle='round,pad=0.2', facecolor='white', 
-                        edgecolor='none', alpha=0.7))
     
-    def _get_display_name(self, layer: Layer) -> tuple:
-        """
-        Get display name and type for a layer.
-        
-        Returns
-        -------
-        tuple
-            (display_name, type_name) where display_name is the instance name
-            (or type if no name attribute) and type_name is the class name
-        """
-        type_name = type(layer).__name__
+    def _get_display_name(self, layer: Layer) -> str:
+        """Get display name for a layer."""
+        layer_name = type(layer).__name__
         
         # Check for name attribute (TelescopeArray, Scene, etc.)
         if hasattr(layer, 'name') and layer.name:
-            return (layer.name, type_name)
+            return layer.name
         
-        # Use class name for both if no name
-        return (type_name, type_name)
+        # Use class name
+        return layer_name
     
     def _draw_arrow(self, ax: plt.Axes, x1: float, y1: float, 
                    x2: float, y2: float):
@@ -681,168 +540,6 @@ class Context:
             zorder=1
         )
         ax.add_patch(arrow)
-    
-    def _draw_schematic_icon(self, ax: plt.Axes, layer_name: str, 
-                            x: float, y: float, size: float):
-        """
-        Draw a simplified schematic icon for a layer type.
-        
-        Parameters
-        ----------
-        ax : matplotlib.axes.Axes
-            Axes to draw on
-        layer_name : str
-            Name of the layer type
-        x, y : float
-            Center position
-        size : float
-            Icon size
-        """
-        import matplotlib.patches as mpatches
-        from matplotlib.path import Path as MplPath
-        
-        color = '#3498DB'
-        
-        if layer_name == 'Scene':
-            # Star icon (circle with rays)
-            circle = mpatches.Circle((x, y), size*0.2, color='gold', zorder=4)
-            ax.add_patch(circle)
-            for angle in np.linspace(0, 2*np.pi, 8, endpoint=False):
-                x1, y1 = x + size*0.2*np.cos(angle), y + size*0.2*np.sin(angle)
-                x2, y2 = x + size*0.35*np.cos(angle), y + size*0.35*np.sin(angle)
-                ax.plot([x1, x2], [y1, y2], color='gold', linewidth=2, zorder=4)
-        
-        elif layer_name in ['Telescope', 'TelescopeArray', 'Collector']:
-            # Telescope icon (trapezoid)
-            verts = [(x-size*0.3, y-size*0.3), (x-size*0.2, y+size*0.3),
-                     (x+size*0.2, y+size*0.3), (x+size*0.3, y-size*0.3)]
-            poly = mpatches.Polygon(verts, closed=True, facecolor=color, 
-                                   edgecolor='navy', linewidth=2, zorder=4)
-            ax.add_patch(poly)
-        
-        elif layer_name == 'Interferometer':
-            # Multiple apertures
-            for dx in [-size*0.25, size*0.25]:
-                circle = mpatches.Circle((x+dx, y), size*0.15, 
-                                        facecolor=color, edgecolor='navy', 
-                                        linewidth=2, zorder=4)
-                ax.add_patch(circle)
-        
-        elif layer_name == 'Atmosphere':
-            # Wavy lines
-            xx = np.linspace(x-size*0.3, x+size*0.3, 20)
-            yy = y + size*0.15*np.sin(10*np.pi*(xx-x)/size)
-            ax.plot(xx, yy, color=color, linewidth=2, zorder=4)
-            yy2 = y - size*0.15*np.sin(10*np.pi*(xx-x)/size)
-            ax.plot(xx, yy2, color=color, linewidth=2, alpha=0.6, zorder=4)
-        
-        elif layer_name == 'AdaptiveOptics':
-            # Mirror with actuators (grid of dots)
-            arc = mpatches.Arc((x, y), size*0.6, size*0.5, angle=0, 
-                              theta1=0, theta2=180, color=color, linewidth=3, zorder=4)
-            ax.add_patch(arc)
-            for dx in np.linspace(-size*0.2, size*0.2, 3):
-                ax.plot(x+dx, y-size*0.15, 'o', color=color, markersize=4, zorder=4)
-        
-        elif layer_name == 'Coronagraph':
-            # Phase mask (spiral or cross)
-            ax.plot([x-size*0.3, x+size*0.3], [y, y], color=color, linewidth=3, zorder=4)
-            ax.plot([x, x], [y-size*0.3, y+size*0.3], color=color, linewidth=3, zorder=4)
-            circle = mpatches.Circle((x, y), size*0.15, 
-                                    facecolor='none', edgecolor=color, 
-                                    linewidth=2, linestyle='--', zorder=4)
-            ax.add_patch(circle)
-        
-        elif layer_name == 'BeamSplitter':
-            # Diagonal line (beam splitter)
-            ax.plot([x-size*0.3, x+size*0.3], [y-size*0.3, y+size*0.3], 
-                   color=color, linewidth=3, zorder=4)
-            # Arrows showing split
-            ax.arrow(x, y, size*0.15, size*0.15, head_width=0.05, 
-                    head_length=0.05, fc=color, ec=color, zorder=4)
-            ax.arrow(x, y, size*0.15, -size*0.15, head_width=0.05, 
-                    head_length=0.05, fc=color, ec=color, zorder=4)
-        
-        elif layer_name in ['FiberIn', 'FiberOut']:
-            # Fiber (curved line with ends)
-            t = np.linspace(0, 1, 30)
-            xx = x - size*0.3 + size*0.6*t
-            yy = y + size*0.2*np.sin(np.pi*t)
-            ax.plot(xx, yy, color=color, linewidth=3, zorder=4)
-            ax.plot(xx[0], yy[0], 'o', color=color, markersize=6, zorder=4)
-            ax.plot(xx[-1], yy[-1], 'o', color=color, markersize=6, zorder=4)
-        
-        elif layer_name in ['PhotonicChip', 'TOPS', 'MMI']:
-            # Integrated circuit (rectangle with lines)
-            rect = mpatches.Rectangle((x-size*0.3, y-size*0.25), size*0.6, size*0.5,
-                                     facecolor='lightblue', edgecolor=color, 
-                                     linewidth=2, zorder=4)
-            ax.add_patch(rect)
-            for yy in [y-size*0.1, y, y+size*0.1]:
-                ax.plot([x-size*0.25, x+size*0.25], [yy, yy], 
-                       color=color, linewidth=1.5, zorder=5)
-        
-        elif layer_name == 'Camera':
-            # Detector (rectangle with grid)
-            rect = mpatches.Rectangle((x-size*0.3, y-size*0.3), size*0.6, size*0.6,
-                                     facecolor='lightgray', edgecolor='black', 
-                                     linewidth=2, zorder=4)
-            ax.add_patch(rect)
-            # Grid
-            for i in range(1, 3):
-                pos = -size*0.3 + i*size*0.6/3
-                ax.plot([x+pos, x+pos], [y-size*0.3, y+size*0.3], 
-                       'k-', linewidth=0.5, alpha=0.5, zorder=5)
-                ax.plot([x-size*0.3, x+size*0.3], [y+pos, y+pos], 
-                       'k-', linewidth=0.5, alpha=0.5, zorder=5)
-        
-        else:
-            # Default: simple rectangle
-            rect = mpatches.Rectangle((x-size*0.3, y-size*0.3), size*0.6, size*0.6,
-                                     facecolor=color, edgecolor='navy', 
-                                     linewidth=2, alpha=0.3, zorder=4)
-            ax.add_patch(rect)
-    
-    def _add_layer_numbering(self, ax: plt.Axes, tree: List[dict], 
-                            spacing: float, max_paths: float):
-        """
-        Add layer numbering below each component in the diagram.
-        
-        For parallel paths, uses [layer, sublayer] notation.
-        For single layers, uses [layer] notation.
-        
-        Parameters
-        ----------
-        ax : matplotlib.axes.Axes
-            Axes to draw on
-        tree : list of dict
-            Layer tree structure (not used, kept for compatibility)
-        spacing : float
-            Horizontal spacing between layers (not used, kept for compatibility)
-        max_paths : float
-            Maximum number of parallel paths (for y-positioning)
-        """
-        # Use the stored positions from _draw_layer_tree
-        if not hasattr(self, '_layer_positions'):
-            return
-        
-        for x_pos, y_pos, layer_idx, sublayer_idx in self._layer_positions:
-            # Position label below the component (accounting for two-line label)
-            # Two-line label occupies y-0.12 (name) and y-0.30 (type)
-            # Add extra spacing below to avoid overlap
-            y_label = y_pos - 0.75
-            
-            # Format label based on whether it's a parallel layer
-            if sublayer_idx is not None:
-                label = f"[{layer_idx},{sublayer_idx}]"
-            else:
-                label = f"[{layer_idx}]"
-            
-            # Draw label below the specific component
-            ax.text(x_pos, y_label, label, ha='center', va='top',
-                   fontsize=9, fontweight='bold', color='#2C3E50',
-                   bbox=dict(boxstyle='round,pad=0.3', facecolor='#BDC3C7', 
-                            edgecolor='#7F8C8D', linewidth=1.3))
 
 def test_context_initialization():
     ctx = Context(date="2025-01-01", declination=10)

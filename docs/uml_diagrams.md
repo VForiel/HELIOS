@@ -79,29 +79,9 @@ plt.show()
 
 ### Component Labels
 
-Each component box displays:
-1. **Component name** (first line, bold): Custom name if provided, otherwise class name
-2. **Component type** (second line, gray, in parentheses): The class name (Scene, Camera, etc.)
-
-Example:
-- With custom name: `VLT UT4` on first line, `(TelescopeArray)` on second line
-- Without custom name: `Camera` on first line, `(Camera)` on second line
-
-### Layer Numbering
-
-Each component has an index displayed below it:
-- **Single layers**: `[0]`, `[1]`, `[2]`, etc.
-- **Parallel paths** (after beam splitter): `[layer,sublayer]` notation
-  - Example: `[4,0]`, `[4,1]`, `[4,2]` for three cameras on layer 4
-
-This numbering matches the `ctx.layers` structure:
-```python
-ctx.layers[0]      # First layer (Scene)
-ctx.layers[1]      # Second layer (Telescope)
-ctx.layers[4]      # Beam splitter layer
-ctx.layers[5][0]   # First camera on layer 5
-ctx.layers[5][1]   # Second camera on layer 5
-```
+Each component is labeled with:
+- Its **class name** (e.g., "Camera", "Atmosphere")
+- Its **custom name** if provided (e.g., "VLT", "ELT", "VLTI")
 
 ### Signal Flow Arrows
 
@@ -252,52 +232,39 @@ fig.savefig('system.pdf', bbox_inches='tight')
 ```python
 def plot_uml_diagram(
     self,
-    figsize: Tuple[float, float] = (12, 6),
-    layer_spacing: float = 1.5,
-    save_path: Optional[str] = None,
-    return_type: str = 'figure'
-) -> Union[plt.Figure, np.ndarray, Tuple[plt.Figure, np.ndarray]]
+    figsize: Tuple[float, float] = (16, 10),
+    layer_spacing: float = 2.0,
+    save_path: Optional[str] = None
+) -> plt.Figure
 ```
 
 **Parameters:**
 
 - `figsize` : tuple of float, optional  
-  Figure size as (width, height) in inches. Default: (12, 6) - optimized for on-screen display
+  Figure size as (width, height) in inches. Default: (16, 10)
 
 - `layer_spacing` : float, optional  
-  Horizontal distance between layers. Default: 1.5 - compact spacing
+  Horizontal distance between layers. Default: 2.0
 
 - `save_path` : str, optional  
   If provided, save the figure to this path
 
-- `return_type` : str, optional  
-  Type of return value: 'figure' (default), 'image', or 'both'
-
 **Returns:**
 
-- `fig` : matplotlib.figure.Figure or ndarray or tuple  
-  Depending on return_type:
-  - 'figure': Returns matplotlib Figure object
-  - 'image': Returns RGB numpy array (H, W, 3) with values [0, 255]
-  - 'both': Returns tuple (figure, image_array)
+- `fig` : matplotlib.figure.Figure  
+  The generated figure
 
 **Examples:**
 
 ```python
-# Basic usage (compact default)
+# Basic usage
 fig = ctx.plot_uml_diagram()
 
-# Custom size for complex systems
-fig = ctx.plot_uml_diagram(figsize=(14, 6), layer_spacing=1.8)
+# Custom size and spacing
+fig = ctx.plot_uml_diagram(figsize=(18, 10), layer_spacing=2.5)
 
 # Auto-save
 ctx.plot_uml_diagram(save_path='my_system.png')
-
-# Export as image array
-img = ctx.plot_uml_diagram(return_type='image')
-
-# Get both figure and array
-fig, img = ctx.plot_uml_diagram(return_type='both')
 ```
 
 ## Technical Details
@@ -336,20 +303,9 @@ interferometer = helios.Interferometer(name="CHARA Array")
 
 ### 2. Use Appropriate Figure Sizes
 
-Choose figure size based on pipeline complexity (default is now compact 12×6):
-
-- **Simple pipelines** (3-4 layers): Use default `(12, 6)`
-- **Medium complexity** (5-7 layers): `(14, 6)` or `(16, 6)`
-- **Complex pipelines** (8+ layers): `(18, 8)` or `(20, 8)`
-- **Many parallel paths**: Increase height, e.g., `(14, 8)`
-
-```python
-# Simple system - use default
-ctx.plot_uml_diagram()
-
-# Complex system - wider figure
-ctx.plot_uml_diagram(figsize=(18, 8))
-```
+- **Simple pipelines**: (12, 8)
+- **Complex pipelines**: (18, 10)
+- **Many parallel paths**: (16, 12)
 
 ### 3. Combine with Documentation
 

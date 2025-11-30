@@ -32,24 +32,12 @@ def test_simple_pipeline():
     ctx.add_layer(telescope)
     ctx.add_layer(camera)
     
-    # Test return_type='figure' (default)
+    # Generate diagram
     fig = ctx.plot_uml_diagram(save_path='test_simple_pipeline.png')
-    assert fig is not None
-    print("✓ Simple pipeline diagram generated (figure)")
-    plt.close(fig)
     
-    # Test return_type='image'
-    img = ctx.plot_uml_diagram(return_type='image')
-    assert img is not None
-    assert img.ndim == 3
-    assert img.shape[2] == 3  # RGB
-    print("✓ Simple pipeline diagram generated (image array)")
-    
-    # Test return_type='both'
-    fig, img = ctx.plot_uml_diagram(return_type='both')
+    # Validate
     assert fig is not None
-    assert img is not None
-    print("✓ Simple pipeline diagram generated (both)")
+    print("✓ Simple pipeline diagram generated")
     plt.close(fig)
 
 

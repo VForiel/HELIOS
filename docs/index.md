@@ -92,6 +92,7 @@ flowchart LR
 
 api/index
 contribute
+uml_diagrams
 ```
 
 ## Quick Start
