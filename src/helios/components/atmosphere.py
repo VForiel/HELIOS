@@ -9,12 +9,12 @@ from astropy import units as u
 from typing import Tuple, List, Union, Optional
 import matplotlib.pyplot as _plt
 
-from ..core.context import Layer, Context
+from ..core.context import Element, Context
 from ..core.simulation import Wavefront
 from .collector import TelescopeArray
 
 
-class Atmosphere(Layer):
+class Atmosphere(Element):
     """Kolmogorov atmosphere layer producing chromatic phase screens with frozen-flow turbulence.
 
     The atmosphere introduces optical path difference (OPD) errors that are chromatic - 
@@ -82,10 +82,7 @@ class Atmosphere(Layer):
                  inner_scale: Optional[u.Quantity] = None,
                  outer_scale: Optional[u.Quantity] = None,
                  name: Optional[str] = None):
-        super().__init__()
-        
-        # Store name
-        self.name = name
+        super().__init__(name=name or "Atmosphere")
         
         # Store OPD RMS in meters
         if hasattr(rms, 'to'):
@@ -770,7 +767,7 @@ class Atmosphere(Layer):
 
 
 
-class AdaptiveOptics(Layer):
+class AdaptiveOptics(Element):
     """Adaptive optics layer applying Zernike-based correction.
 
     Parameters
@@ -785,10 +782,9 @@ class AdaptiveOptics(Layer):
     """
     def __init__(self, coeffs: Optional[dict] = None, normalize: bool = True, 
                  name: Optional[str] = None):
-        super().__init__()
+        super().__init__(name=name or "AdaptiveOptics")
         self.coeffs = coeffs or {}
         self.normalize = normalize
-        self.name = name
 
     @staticmethod
     def noll_to_nm(j: int) -> Tuple[int, int]:

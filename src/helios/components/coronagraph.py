@@ -8,11 +8,11 @@ from astropy import units as u
 from typing import Optional
 import matplotlib.pyplot as _plt
 
-from ..core.context import Layer, Context
+from ..core.context import Element, Context
 from ..core.simulation import Wavefront
 
 
-class Coronagraph(Layer):
+class Coronagraph(Element):
     """Coronagraph focal-plane mask layer.
     
     Applies phase and/or amplitude masks in the focal plane to suppress
@@ -50,9 +50,8 @@ class Coronagraph(Layer):
     >>> coro.plot_mask(npix=512, charge=2)
     """
     def __init__(self, phase_mask: str = '4quadrants', name: Optional[str] = None):
+        super().__init__(name=name or "Coronagraph")
         self.phase_mask = phase_mask
-        self.name = name
-        super().__init__()
 
     def process(self, wavefront: Wavefront, context: Context) -> Wavefront:
         """Apply coronagraph mask to wavefront.

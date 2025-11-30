@@ -8,53 +8,60 @@ from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
 from pathlib import Path
 import os
 
-class Layer:
+class Element:
     """
-    Base class for all simulation layers.
+    Base class for all simulation elements (physical components).
     
-    All components in HELIOS inherit from this class and implement the `process()` method
-    to transform wavefronts or signals as they propagate through the optical system.
+    An Element represents a physical component in the optical system that can
+    process wavefronts independently. Elements are grouped within Layers for
+    parallel processing.
     
-    The layer abstraction enables flexible composition of simulation pipelines:
-    - Layers are processed sequentially by the Context
-    - Multiple layers can be combined in parallel for beam splitting
-    - Each layer receives a wavefront and returns a transformed wavefront
+    All physical components (stars, planets, telescopes, cameras, etc.) inherit
+    from this class and implement the `process()` method.
     
     Examples
     --------
-    >>> class CustomLayer(Layer):
+    >>> class CustomElement(Element):
     ...     def process(self, wavefront, context):
     ...         # Apply custom transformation
-    ...         wavefront.field *= np.exp(1j * phase_pattern)
+    ...         wavefront.field *= np.exp(1j * self.phase_pattern)
     ...         return wavefront
     
     See Also
     --------
-    Context : Orchestrates layer execution
+    Layer : Container for one or more Elements
+    Context : Orchestrates layer/element execution
     """
-    def __init__(self):
-        pass
+    def __init__(self, name: Optional[str] = None):
+        """
+        Initialize an Element.
+        
+        Parameters
+        ----------
+        name : str, optional
+            Descriptive name for this element (e.g., "UT1", "Science Camera").
+        """
+        self.name = name
 
     def process(self, wavefront: Any, context: 'Context') -> Any:
         """
         Process the incoming wavefront/signal and return the result.
         
         This method must be implemented by all subclasses. It defines how
-        the layer transforms the electromagnetic field or signal.
+        the element transforms the electromagnetic field or signal.
         
         Parameters
         ----------
-        wavefront : Wavefront or list of Wavefront
-            The input electromagnetic field(s) to process. For parallel layers,
-            this may be a list of wavefronts.
+        wavefront : Wavefront or ndarray
+            The input electromagnetic field to process.
         context : Context
             The simulation context providing global parameters (time, observation
             conditions, etc.)
         
         Returns
         -------
-        wavefront : Wavefront or list of Wavefront or ndarray
-            The transformed wavefront(s). Terminal layers (e.g., Camera) may
+        wavefront : Wavefront or ndarray
+            The transformed wavefront. Terminal elements (e.g., Camera) may
             return numpy arrays instead of Wavefront objects.
         
         Raises
@@ -63,6 +70,109 @@ class Layer:
             If the subclass does not implement this method.
         """
         raise NotImplementedError("Subclasses must implement process()")
+
+class Layer:
+    """
+    Base class for all simulation layers (logical grouping of elements).
+    
+    A Layer represents a logical stage in the simulation pipeline and contains
+    one or more Elements that process wavefronts in parallel. Layers are 
+    processed sequentially by the Context.
+    
+    The layer/element architecture enables flexible composition:
+    - Layers are processed sequentially by the Context (Scene → Optics → Detector)
+    - Elements within a layer are processed in parallel (multiple stars, telescopes, cameras)
+    - Each element receives a wavefront and returns a transformed wavefront
+    
+    Attributes
+    ----------
+    elements : List[Element]
+        List of elements contained in this layer. Elements are processed in parallel.
+    name : str, optional
+        Descriptive name for this layer.
+    
+    Examples
+    --------
+    >>> # Layer with multiple parallel elements
+    >>> detector_layer = DetectorLayer()
+    >>> detector_layer.add_element(Camera(pixels=(512,512), name="Vis Camera"))
+    >>> detector_layer.add_element(Camera(pixels=(256,256), name="IR Camera"))
+    
+    See Also
+    --------
+    Element : Base class for physical components
+    Context : Orchestrates layer execution
+    """
+    def __init__(self, name: Optional[str] = None):
+        """
+        Initialize a Layer.
+        
+        Parameters
+        ----------
+        name : str, optional
+            Descriptive name for this layer (e.g., "Scene", "Telescope Array").
+        """
+        self.name = name
+        self.elements: List[Element] = []
+
+    def add_element(self, element: Element):
+        """
+        Add an element to this layer.
+        
+        Parameters
+        ----------
+        element : Element
+            The element to add to this layer.
+        
+        Examples
+        --------
+        >>> layer = SceneLayer()
+        >>> layer.add_element(Star(temperature=5700*u.K))
+        >>> layer.add_element(Planet(temperature=300*u.K))
+        """
+        self.elements.append(element)
+
+    def process(self, wavefront: Any, context: 'Context') -> Any:
+        """
+        Process the incoming wavefront/signal through all elements in this layer.
+        
+        By default, this method processes elements in parallel and returns a list
+        of outputs. Subclasses can override this to implement custom combination
+        logic (e.g., merging, selecting, etc.).
+        
+        Parameters
+        ----------
+        wavefront : Wavefront or list of Wavefront
+            The input electromagnetic field(s) to process.
+        context : Context
+            The simulation context providing global parameters.
+        
+        Returns
+        -------
+        outputs : list or Wavefront or ndarray
+            List of outputs from each element, or a single combined output
+            depending on the layer's combination logic.
+        
+        Raises
+        ------
+        NotImplementedError
+            If the subclass needs custom processing logic but doesn't implement it.
+        """
+        if len(self.elements) == 0:
+            return wavefront
+        
+        if len(self.elements) == 1:
+            # Single element - process directly
+            return self.elements[0].process(wavefront, context)
+        
+        # Multiple elements - process in parallel
+        outputs = []
+        for element in self.elements:
+            # Deep copy wavefront to avoid interference between parallel paths
+            wf_copy = copy.deepcopy(wavefront) if wavefront is not None else None
+            outputs.append(element.process(wf_copy, context))
+        
+        return outputs
 
 class Context:
     """

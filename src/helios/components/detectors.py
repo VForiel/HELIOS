@@ -1,10 +1,10 @@
 import numpy as np
 from typing import Tuple, Optional
 from astropy import units as u
-from ..core.context import Layer, Context
+from ..core.context import Element, Context
 from ..core.simulation import Wavefront
 
-class Camera(Layer):
+class Camera(Element):
     """
     Detector camera.
     
@@ -23,11 +23,10 @@ class Camera(Layer):
                  dark_current: u.Quantity = 0*u.electron/u.s, 
                  integration_time: u.Quantity = 1*u.s, 
                  name: Optional[str] = None, **kwargs):
+        super().__init__(name=name or "Camera")
         self.pixels = pixels
         self.dark_current = dark_current
         self.integration_time = integration_time
-        self.name = name
-        super().__init__()
 
     def process(self, wavefront: Wavefront, context: Context) -> np.ndarray:
         # Detect light, convert to electrons/counts

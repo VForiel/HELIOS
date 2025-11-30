@@ -3,11 +3,11 @@
 This module provides the BeamSplitter class for splitting wavefronts into multiple paths.
 """
 from typing import List, Optional
-from ..core.context import Layer, Context
+from ..core.context import Element, Context
 from ..core.simulation import Wavefront
 
 
-class BeamSplitter(Layer):
+class BeamSplitter(Element):
     """Optical beam splitter layer.
     
     Splits an incoming wavefront into two or more output wavefronts.
@@ -25,9 +25,8 @@ class BeamSplitter(Layer):
     >>> wf_out = bs.process(wf_in, context)  # Returns list of 2 wavefronts
     """
     def __init__(self, cutoff: float = 0.5, name: Optional[str] = None):
+        super().__init__(name=name or "BeamSplitter")
         self.cutoff = cutoff
-        self.name = name
-        super().__init__()
 
     def process(self, wavefront: Wavefront, context: Context) -> List[Wavefront]:
         """Split wavefront into two paths.

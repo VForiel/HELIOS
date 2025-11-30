@@ -2,22 +2,57 @@ import numpy as np
 from astropy import units as u
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
-from typing import Optional, Tuple
-from ..core.context import Layer, Context
+from typing import Optional, Tuple, Any
+from ..core.context import Layer, Element, Context
 from ..core.simulation import Wavefront
 from astropy import constants as const
 
-class CelestialBody:
+class CelestialBody(Element):
     """
-    Base class for all celestial objects.
+    Base class for all celestial objects (stars, planets, zodiacal light, etc.).
+    
+    CelestialBody inherits from Element, making each celestial object an independent
+    processing unit that can be combined in parallel within a Scene layer.
+    
+    Parameters
+    ----------
+    position : Tuple[astropy.Quantity, astropy.Quantity], optional
+        (x, y) coordinates relative to the scene center.
+        Can be angular (arcsec, mas) or physical (AU, m) if scene distance is defined.
+        Default: (0 arcsec, 0 arcsec)
+    name : str, optional
+        Descriptive name for this celestial body.
+    **kwargs : dict
+        Additional parameters for specialized celestial body types.
     """
-    def __init__(self, position: Tuple[u.Quantity, u.Quantity] = (0*u.arcsec, 0*u.arcsec), **kwargs):
-        """
-        position: (x, y) coordinates relative to the scene center.
-                  Can be angular (arcsec) or physical (AU) if scene distance is defined.
-        """
+    def __init__(self, position: Tuple[u.Quantity, u.Quantity] = (0*u.arcsec, 0*u.arcsec), 
+                 name: Optional[str] = None, **kwargs):
+        super().__init__(name=name)
         self.position = position
         self.kwargs = kwargs
+
+    def process(self, wavefront: Any, context: Context) -> Any:
+        """
+        Process the wavefront through this celestial body.
+        
+        For celestial bodies, processing typically means contributing to the
+        scene's emission/reflection. This default implementation passes through
+        the wavefront unchanged. Subclasses can override to add specific behaviors.
+        
+        Parameters
+        ----------
+        wavefront : Wavefront or None
+            Input wavefront (may be None for scene initialization).
+        context : Context
+            Simulation context.
+        
+        Returns
+        -------
+        wavefront : Wavefront
+            Processed wavefront.
+        """
+        # Default: pass-through (Scene layer handles combination)
+        return wavefront
 
     def sed(self,
             wavelengths: Optional[u.Quantity] = None,
@@ -349,27 +384,61 @@ class Zodiacal(CelestialBody):
 
 class Scene(Layer):
     """
-    Represents the astronomical scene containing stars, planets, etc.
+    Represents the astronomical scene containing stars, planets, zodiacal light, etc.
+    
+    Scene is a Layer that contains multiple CelestialBody elements. Each celestial
+    body contributes to the scene's total emission/reflection independently.
     
     Parameters
     ----------
     distance : astropy.Quantity, optional
-        Distance to the scene. Default: 10 pc
+        Distance to the scene. Default: 10 pc. Used to convert between physical
+        positions (AU) and angular positions (arcsec).
     name : str, optional
-        Name of the scene for identification in diagrams
+        Name of the scene for identification in diagrams.
+    
+    Attributes
+    ----------
+    elements : List[CelestialBody]
+        List of celestial bodies in this scene (inherited from Layer).
+    distance : astropy.Quantity
+        Distance to the scene.
+    
+    Examples
+    --------
+    >>> scene = Scene(distance=10*u.pc, name="Proxima System")
+    >>> scene.add(Star(temperature=5700*u.K, name="Proxima Centauri"))
+    >>> scene.add(Planet(temperature=300*u.K, position=(1*u.AU, 0*u.AU), name="Proxima b"))
     """
     def __init__(self, distance: Optional[u.Quantity] = 10*u.pc, name: Optional[str] = None):
+        super().__init__(name=name or "Scene")
         self.distance = distance
-        self.name = name
-        self.objects = []
-        super().__init__()
+        # Note: self.elements is inherited from Layer
 
     def add(self, obj: CelestialBody):
-        """Add an object to the scene and link it if it's a Planet."""
-        self.objects.append(obj)
+        """
+        Add a celestial body to the scene.
+        
+        Parameters
+        ----------
+        obj : CelestialBody
+            The celestial object to add (Star, Planet, Zodiacal, etc.).
+        
+        Examples
+        --------
+        >>> scene = Scene(distance=10*u.pc)
+        >>> scene.add(Star(temperature=5700*u.K))
+        >>> scene.add(Planet(mass=1*u.M_jup, position=(1*u.AU, 0*u.AU)))
+        """
+        self.add_element(obj)
         # Automatically link planets to this scene for reflection calculation
         if isinstance(obj, Planet) and obj.scene is None:
             obj.scene = self
+    
+    @property
+    def objects(self):
+        """Backward compatibility: alias for elements."""
+        return self.elements
 
     def process(self, wavefront: None, context: Context) -> Wavefront:
         """

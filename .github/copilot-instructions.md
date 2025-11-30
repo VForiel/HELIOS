@@ -144,8 +144,47 @@ python tools/execute_demo_notebook.py
 - **Source**: `src/helios/` (installed package)
 - **Build artifacts**: `build/lib/helios/` (transient, gitignored)
 - **C++ extensions**: `src/helios/cpp/` (pybind11 bindings, not yet implemented)
+- **Tests**: `tests/` (pytest test suite, validation scripts)
+- **Tools**: `tools/` (utility scripts, build helpers, notebook processors)
+- **Examples**: `examples/` (demonstration scripts showing usage patterns)
 
 **Important**: Tests import via `sys.path.insert(0, '../src')` to use local source, not installed package.
+
+### File Organization Rules (CRITICAL)
+
+**AVOID creating files at project root**. Always organize code into appropriate directories:
+
+1. **`tests/`** - Validation and testing
+   - Unit tests for components (e.g., `test_atmosphere.py`, `test_pupil_geometry.py`)
+   - Integration tests (e.g., `test_helios.py`)
+   - Physical coherence validation (e.g., `test_flux_at.py`)
+   - **Purpose**: Verify code correctness AND physical validity
+
+2. **`tools/`** - Development utilities
+   - Build scripts and automation tools
+   - Notebook execution/validation tools (e.g., `execute_demo_notebook.py`)
+   - Code generation or analysis utilities
+   - **Purpose**: Developer tools not part of the helios library
+
+3. **`examples/`** - User-facing demonstrations
+   - Standalone scripts showing specific features (e.g., `demo_coronagraph.py`)
+   - Example workflows and use cases
+   - Sample configurations and setups
+   - **Purpose**: Educational code showing users how to use HELIOS
+
+**When to use each directory:**
+- Creating a test? → `tests/`
+- Creating a utility script? → `tools/`
+- Creating a demonstration? → `examples/`
+- Creating library code? → `src/helios/components/` or `src/helios/core/`
+
+**Examples of correct file placement:**
+- ✅ `tests/test_new_feature.py` - Test validating new feature
+- ✅ `tools/benchmark_performance.py` - Performance analysis tool
+- ✅ `examples/exoplanet_detection.py` - Complete example workflow
+- ❌ `test_something.py` at root - Should be in `tests/`
+- ❌ `demo_feature.py` at root - Should be in `examples/`
+- ❌ `utility_script.py` at root - Should be in `tools/`
 
 ## Common Patterns
 

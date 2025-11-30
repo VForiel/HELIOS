@@ -1,8 +1,8 @@
 """Telescope array classes for single and interferometric observations.
 
 This module provides classes for managing telescope configurations:
-- Collector: Single telescope with pupil geometry and position (data object)
-- TelescopeArray: Array of one or more telescopes with spatial positioning (Layer subclass)
+- Collector: Single telescope with pupil geometry and position (Element subclass)
+- TelescopeArray: Array of one or more collectors with spatial positioning (Layer subclass)
 
 TelescopeArray unifies single-telescope and interferometric observations:
 - Single telescope: Add one collector at position (0, 0)
@@ -10,23 +10,23 @@ TelescopeArray unifies single-telescope and interferometric observations:
 """
 import numpy as np
 from astropy import units as u
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Any
 import matplotlib.pyplot as _plt
 
-from ..core.context import Layer, Context
+from ..core.context import Layer, Element, Context
 from ..core.simulation import Wavefront
 from .pupil import Pupil
 
 
-class Collector:
+class Collector(Element):
     """Represents a single telescope/collector with pupil geometry and position.
     
-    A Collector encapsulates the properties of an individual telescope aperture,
-    including its pupil geometry (transmission pattern), physical size, and
-    position in the aperture plane (for interferometric arrays).
+    A Collector is an Element that encapsulates the properties of an individual
+    telescope aperture, including its pupil geometry (transmission pattern), 
+    physical size, and position in the aperture plane (for interferometric arrays).
     
-    This class provides a cleaner, more object-oriented alternative to storing
-    collector properties in dictionaries.
+    Collectors are grouped within a TelescopeArray layer for parallel processing
+    in interferometric configurations or co-located single telescope observations.
     
     Parameters
     ----------
@@ -51,7 +51,7 @@ class Collector:
     size : astropy.Quantity
         Aperture diameter in meters.
     name : str
-        Collector identifier.
+        Collector identifier (inherited from Element).
     metadata : dict
         Additional properties.
     
@@ -66,6 +66,10 @@ class Collector:
     def __init__(self, pupil: Pupil, position: Tuple[float, float] = (0, 0),
                  size: Optional[u.Quantity] = None, name: Optional[str] = None,
                  **metadata):
+        # Initialize Element with name
+        default_name = f"Collector@({position[0]:.1f},{position[1]:.1f})"
+        super().__init__(name=name or default_name)
+        
         self.pupil = pupil
         self.position = tuple(position)
         
@@ -77,8 +81,42 @@ class Collector:
                 size = 1.0 * u.m
         self.size = size
         
-        self.name = name or f"Collector@({position[0]:.1f},{position[1]:.1f})"
         self.metadata = metadata
+    
+    def process(self, wavefront: Any, context: Context) -> Any:
+        """
+        Process the wavefront through this collector's pupil.
+        
+        Applies the pupil transmission pattern to the wavefront field.
+        
+        Parameters
+        ----------
+        wavefront : Wavefront
+            Input wavefront to process.
+        context : Context
+            Simulation context.
+        
+        Returns
+        -------
+        wavefront : Wavefront
+            Wavefront with pupil mask applied.
+        """
+        if wavefront is None or not hasattr(wavefront, 'field'):
+            return wavefront
+        
+        try:
+            N = wavefront.field.shape[0]
+            mask = self.pupil.get_array(npix=N, soft=True)
+            wavefront.field = wavefront.field * mask.astype(wavefront.field.dtype)
+        except Exception:
+            # Fallback: try without soft edges
+            try:
+                mask = self.pupil.get_array(npix=N, soft=False)
+                wavefront.field = wavefront.field * mask.astype(wavefront.field.dtype)
+            except Exception:
+                pass  # Skip if pupil can't be rendered
+        
+        return wavefront
     
     def __repr__(self):
         return f"Collector(name='{self.name}', position={self.position}, size={self.size})"
@@ -88,7 +126,7 @@ class TelescopeArray(Layer):
     """Array of one or more telescopes with pupil geometries and spatial positioning.
     
     This class unifies single-telescope and interferometric observations by managing
-    an array of collectors with arbitrary spatial positions. It handles both:
+    an array of Collector elements with arbitrary spatial positions. It handles both:
     
     **Single telescope**: Add one collector at position (0, 0)
         - Used for conventional single-aperture observations
@@ -115,10 +153,10 @@ class TelescopeArray(Layer):
     
     Attributes
     ----------
-    collectors : List[Collector]
-        List of Collector objects, each with pupil, position, and metadata.
+    elements : List[Collector]
+        List of Collector elements, each with pupil, position, and metadata (inherited from Layer).
     name : str
-        Configuration name.
+        Configuration name (inherited from Layer).
     latitude, longitude, altitude : astropy.Quantity
         Observatory geographic coordinates.
     
@@ -142,12 +180,16 @@ class TelescopeArray(Layer):
                  latitude: u.Quantity = 0*u.deg, 
                  longitude: u.Quantity = 0*u.deg, 
                  altitude: u.Quantity = 0*u.m):
-        super().__init__()
-        self.name = name or "TelescopeArray"
+        super().__init__(name=name or "TelescopeArray")
         self.latitude = latitude
         self.longitude = longitude
         self.altitude = altitude
-        self.collectors = []
+        # Note: self.elements is inherited from Layer
+    
+    @property
+    def collectors(self):
+        """Backward compatibility: alias for elements."""
+        return self.elements
     
     def add_collector(self, pupil: Pupil, position: Tuple[float, float] = (0, 0), 
                      size: Optional[u.Quantity] = None, name: Optional[str] = None, **kwargs):
@@ -175,7 +217,7 @@ class TelescopeArray(Layer):
         >>> array.add_collector(pupil, position=(100, 0), size=1*u.m, name="S2")
         """
         collector = Collector(pupil=pupil, position=position, size=size, name=name, **kwargs)
-        self.collectors.append(collector)
+        self.add_element(collector)
     
     def is_interferometric(self) -> bool:
         """Check if this array has multiple non-colocated apertures (interferometric).
@@ -466,7 +508,8 @@ class TelescopeArray(Layer):
     def process(self, wavefront: Wavefront, context: Context) -> Wavefront:
         """Apply telescope array aperture mask to wavefront.
         
-        This method handles both single-telescope and interferometric configurations:
+        This method overrides the default Layer.process() to implement custom
+        combination logic for telescope collectors:
         - If all collectors are at (0, 0): Pupils are combined multiplicatively (co-phased)
         - If collectors have different positions: Pupils are placed at their baseline positions
         
@@ -490,7 +533,7 @@ class TelescopeArray(Layer):
         except Exception:
             return wavefront
         
-        if len(self.collectors) == 0:
+        if len(self.elements) == 0:  # Use self.elements instead of self.collectors
             return wavefront
         
         # Determine if we need spatial positioning
@@ -499,7 +542,7 @@ class TelescopeArray(Layer):
         if not is_interferometric:
             # Single telescope or co-located: combine multiplicatively at center
             total_mask = np.ones((N, N), dtype=float)
-            for collector in self.collectors:
+            for collector in self.elements:  # Use self.elements
                 if isinstance(collector.pupil, Pupil):
                     try:
                         mask = collector.pupil.get_array(npix=N, soft=True)
@@ -514,7 +557,7 @@ class TelescopeArray(Layer):
             # Determine array extent
             baselines = self.get_baseline_array()
             max_extent = np.max(np.abs(baselines)) if len(baselines) > 0 else 1.0
-            for collector in self.collectors:
+            for collector in self.elements:  # Use self.elements
                 size_m = collector.size.to(u.m).value if hasattr(collector.size, 'to') else float(collector.size)
                 max_extent = max(max_extent, size_m)
             
@@ -522,7 +565,7 @@ class TelescopeArray(Layer):
             pixel_scale = 2.0 * max_extent / float(N)
             
             # Render each collector pupil at its position
-            for collector in self.collectors:
+            for collector in self.elements:  # Use self.elements
                 pupil = collector.pupil
                 x, y = collector.position
                 
