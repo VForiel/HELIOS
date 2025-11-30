@@ -1,0 +1,11 @@
+<svg width="80" height="80" xmlns="http://www.w3.org/2000/svg">
+  <!-- Coronagraph: Focal plane mask -->
+  <circle cx="40" cy="40" r="30" fill="none" stroke="#2C3E50" stroke-width="2"/>
+  <!-- Opaque mask blocking star -->
+  <circle cx="40" cy="40" r="8" fill="#000000"/>
+  <!-- Diffracted light -->
+  <circle cx="40" cy="40" r="20" fill="none" stroke="#FFD700" stroke-width="1" stroke-dasharray="2,2" opacity="0.5"/>
+  <!-- Planet signal (small dot) -->
+  <circle cx="58" cy="32" r="3" fill="#4169E1"/>
+  <text x="40" y="70" text-anchor="middle" font-size="9" fill="#2C3E50">Coronagraph</text>
+</svg>

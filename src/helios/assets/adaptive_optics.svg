@@ -1,0 +1,13 @@
+<svg width="80" height="80" xmlns="http://www.w3.org/2000/svg">
+  <!-- Adaptive Optics: Deformable mirror -->
+  <ellipse cx="40" cy="40" rx="30" ry="15" fill="#C0C0C0" stroke="#696969" stroke-width="2"/>
+  <!-- Grid showing actuators -->
+  <line x1="25" y1="32" x2="25" y2="48" stroke="#696969" stroke-width="1"/>
+  <line x1="32" y1="30" x2="32" y2="50" stroke="#696969" stroke-width="1"/>
+  <line x1="40" y1="28" x2="40" y2="52" stroke="#696969" stroke-width="1"/>
+  <line x1="48" y1="30" x2="48" y2="50" stroke="#696969" stroke-width="1"/>
+  <line x1="55" y1="32" x2="55" y2="48" stroke="#696969" stroke-width="1"/>
+  <!-- Corrected wavefront -->
+  <path d="M 10,15 L 70,15" stroke="#00FF00" stroke-width="2" stroke-dasharray="3,3"/>
+  <text x="40" y="70" text-anchor="middle" font-size="10" fill="#696969">AO</text>
+</svg>

@@ -30,6 +30,8 @@ class Coronagraph(Layer):
         - '4quadrants' or '4q': Four-quadrant phase mask (π phase shifts)
         - 'vortex': Optical vortex coronagraph (charge-2 by default)
         Default: '4quadrants'.
+    name : str, optional
+        Name of the coronagraph for identification in diagrams
     
     Attributes
     ----------
@@ -47,8 +49,9 @@ class Coronagraph(Layer):
     >>> # Plot mask
     >>> coro.plot_mask(npix=512, charge=2)
     """
-    def __init__(self, phase_mask: str = '4quadrants'):
+    def __init__(self, phase_mask: str = '4quadrants', name: Optional[str] = None):
         self.phase_mask = phase_mask
+        self.name = name
         super().__init__()
 
     def process(self, wavefront: Wavefront, context: Context) -> Wavefront:

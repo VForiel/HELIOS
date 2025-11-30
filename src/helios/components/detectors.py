@@ -1,14 +1,32 @@
 import numpy as np
-from typing import Tuple
+from typing import Tuple, Optional
 from astropy import units as u
 from ..core.context import Layer, Context
 from ..core.simulation import Wavefront
 
 class Camera(Layer):
-    def __init__(self, pixels: Tuple[int, int] = (1024, 1024), dark_current: u.Quantity = 0*u.electron/u.s, integration_time: u.Quantity = 1*u.s, **kwargs):
+    """
+    Detector camera.
+    
+    Parameters
+    ----------
+    pixels : tuple of int, optional
+        Number of pixels (width, height). Default: (1024, 1024)
+    dark_current : astropy.Quantity, optional
+        Dark current rate. Default: 0 e-/s
+    integration_time : astropy.Quantity, optional
+        Integration time. Default: 1 s
+    name : str, optional
+        Name of the camera for identification in diagrams
+    """
+    def __init__(self, pixels: Tuple[int, int] = (1024, 1024), 
+                 dark_current: u.Quantity = 0*u.electron/u.s, 
+                 integration_time: u.Quantity = 1*u.s, 
+                 name: Optional[str] = None, **kwargs):
         self.pixels = pixels
         self.dark_current = dark_current
         self.integration_time = integration_time
+        self.name = name
         super().__init__()
 
     def process(self, wavefront: Wavefront, context: Context) -> np.ndarray:

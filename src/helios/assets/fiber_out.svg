@@ -1,0 +1,12 @@
+<svg width="80" height="80" xmlns="http://www.w3.org/2000/svg">
+  <!-- Fiber Output: Fiber and diverging beam -->
+  <!-- Fiber cable -->
+  <rect x="10" y="37" width="35" height="6" fill="#8B4513" stroke="#654321" stroke-width="1"/>
+  <!-- Core -->
+  <rect x="10" y="39" width="35" height="2" fill="#FFD700"/>
+  <!-- Diverging beam -->
+  <path d="M 45,40 L 65,30 M 45,40 L 65,50 M 45,38 L 65,28 M 45,42 L 65,52" stroke="#4682B4" stroke-width="1.5" opacity="0.6"/>
+  <!-- Arrow -->
+  <polygon points="62,50 72,45 72,55" fill="#4682B4"/>
+  <text x="40" y="70" text-anchor="middle" font-size="9" fill="#4682B4">Fiber Out</text>
+</svg>

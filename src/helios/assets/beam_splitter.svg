@@ -1,0 +1,14 @@
+<svg width="80" height="80" xmlns="http://www.w3.org/2000/svg">
+  <!-- Beam Splitter: Diagonal line splitting beam -->
+  <line x1="20" y1="40" x2="40" y2="40" stroke="#FF6347" stroke-width="3"/>
+  <!-- Diagonal mirror -->
+  <line x1="40" y1="20" x2="40" y2="60" stroke="#C0C0C0" stroke-width="4"/>
+  <!-- Transmitted beam -->
+  <line x1="40" y1="40" x2="60" y2="40" stroke="#FF6347" stroke-width="2"/>
+  <polygon points="58,38 62,40 58,42" fill="#FF6347"/>
+  <!-- Reflected beam -->
+  <line x1="40" y1="40" x2="40" y2="20" stroke="#FF6347" stroke-width="2"/>
+  <polygon points="38,22 40,18 42,22" fill="#FF6347"/>
+  <!-- BS label -->
+  <text x="40" y="72" text-anchor="middle" font-size="10" fill="#2C3E50">BS</text>
+</svg>

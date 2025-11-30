@@ -54,6 +54,9 @@ class Atmosphere(Layer):
         Outer scale of turbulence (L0) in meters. Above this scale, turbulence energy 
         saturates. Default: None (infinite outer scale).
     
+    name : str, optional
+        Name of the atmosphere layer for identification in diagrams
+    
     Notes
     -----
     - The phase screen is generated in Fourier space using Kolmogorov statistics (f^-11/3 PSD).
@@ -77,8 +80,12 @@ class Atmosphere(Layer):
                  wind_direction: float = 0.0,
                  seed: Optional[int] = None,
                  inner_scale: Optional[u.Quantity] = None,
-                 outer_scale: Optional[u.Quantity] = None):
+                 outer_scale: Optional[u.Quantity] = None,
+                 name: Optional[str] = None):
         super().__init__()
+        
+        # Store name
+        self.name = name
         
         # Store OPD RMS in meters
         if hasattr(rms, 'to'):
@@ -766,14 +773,22 @@ class Atmosphere(Layer):
 class AdaptiveOptics(Layer):
     """Adaptive optics layer applying Zernike-based correction.
 
-    - coeffs: mapping from (n,m) -> coefficient in radians. n >= 0, m integer with abs(m)<=n and (n-abs(m)) even.
-      Example: {(1,1): 0.1} for Zernike n=1,m=1.
-    - normalize: whether to evaluate Zernikes on unit pupil mapped to array size.
+    Parameters
+    ----------
+    coeffs : dict, optional
+        Mapping from (n,m) -> coefficient in radians. n >= 0, m integer with abs(m)<=n 
+        and (n-abs(m)) even. Example: {(1,1): 0.1} for Zernike n=1,m=1.
+    normalize : bool, optional
+        Whether to evaluate Zernikes on unit pupil mapped to array size. Default: True
+    name : str, optional
+        Name of the AO system for identification in diagrams
     """
-    def __init__(self, coeffs: Optional[dict] = None, normalize: bool = True):
+    def __init__(self, coeffs: Optional[dict] = None, normalize: bool = True, 
+                 name: Optional[str] = None):
         super().__init__()
         self.coeffs = coeffs or {}
         self.normalize = normalize
+        self.name = name
 
     @staticmethod
     def noll_to_nm(j: int) -> Tuple[int, int]:

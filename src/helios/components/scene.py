@@ -350,9 +350,17 @@ class Zodiacal(CelestialBody):
 class Scene(Layer):
     """
     Represents the astronomical scene containing stars, planets, etc.
+    
+    Parameters
+    ----------
+    distance : astropy.Quantity, optional
+        Distance to the scene. Default: 10 pc
+    name : str, optional
+        Name of the scene for identification in diagrams
     """
-    def __init__(self, distance: Optional[u.Quantity] = 10*u.pc):
+    def __init__(self, distance: Optional[u.Quantity] = 10*u.pc, name: Optional[str] = None):
         self.distance = distance
+        self.name = name
         self.objects = []
         super().__init__()
 

@@ -1,0 +1,10 @@
+<svg width="80" height="80" xmlns="http://www.w3.org/2000/svg">
+  <!-- Telescope: Circular aperture -->
+  <circle cx="40" cy="40" r="30" fill="none" stroke="#2C3E50" stroke-width="3"/>
+  <circle cx="40" cy="40" r="28" fill="#E8F4F8" opacity="0.3"/>
+  <!-- Central obscuration -->
+  <circle cx="40" cy="40" r="10" fill="#2C3E50"/>
+  <!-- Spider vanes -->
+  <line x1="10" y1="40" x2="70" y2="40" stroke="#2C3E50" stroke-width="1.5"/>
+  <line x1="40" y1="10" x2="40" y2="70" stroke="#2C3E50" stroke-width="1.5"/>
+</svg>
