@@ -312,6 +312,19 @@ class Camera(Element):
             Reduced detector image in electrons
         """
         return self.get_image(wavefront, context, subtract_dark=True)
+    
+    def _get_detailed_attributes(self) -> dict:
+        """Return detailed attributes for Camera."""
+        attrs = {}
+        attrs['pixels'] = f"{self.pixels[0]} × {self.pixels[1]}"
+        attrs['dark_current'] = f"{self.dark_current:.3f} e-/s"
+        attrs['read_noise'] = f"{self.read_noise:.1f} e-"
+        attrs['integration_time'] = str(self.integration_time)
+        attrs['quantum_efficiency'] = f"{self.quantum_efficiency:.2%}"
+        attrs['gain'] = f"{self.gain:.2f} e-/ADU"
+        if hasattr(self, 'thermal_background_temp'):
+            attrs['thermal_temp'] = str(self.thermal_background_temp)
+        return attrs
 
 def test_camera():
     """Test Camera functionality including new methods."""

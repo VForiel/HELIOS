@@ -21,6 +21,15 @@ class Element:
     name : str, optional
         Descriptive name for this element (used in diagrams and logging)
     
+    Attributes
+    ----------
+    name : str
+        Descriptive name for this element
+    layer : Layer
+        Reference to the parent layer containing this element
+    context : Context
+        Shortcut to access the parent context (equivalent to self.layer.context)
+    
     Examples
     --------
     >>> class CustomElement(Element):
@@ -35,6 +44,61 @@ class Element:
     """
     def __init__(self, name: Optional[str] = None):
         self.name = name
+        self.layer: Optional['Layer'] = None
+        self.context: Optional['Context'] = None
+
+    def description(self, indent: int = 0, full: bool = False) -> str:
+        """
+        Generate a text description of this element.
+        
+        Parameters
+        ----------
+        indent : int, optional
+            Number of spaces to indent the description (for hierarchical display)
+        full : bool, optional
+            If True, include detailed parameters and attributes (default: False)
+        
+        Returns
+        -------
+        str
+            Formatted description of the element
+        
+        Examples
+        --------
+        >>> element = CustomElement()
+        >>> print(element.description())
+        CustomElement
+        >>> print(element.description(full=True))
+        CustomElement
+          - parameter: value
+        """
+        prefix = " " * indent
+        class_name = self.__class__.__name__
+        name_str = f" '{self.name}'" if self.name else ""
+        
+        result = f"{prefix}{class_name}{name_str}"
+        
+        if full:
+            # Add detailed attributes (subclasses should override this)
+            details = self._get_detailed_attributes()
+            if details:
+                for key, value in details.items():
+                    result += f"\n{prefix}  • {key}: {value}"
+        
+        return result
+    
+    def _get_detailed_attributes(self) -> dict:
+        """
+        Return a dictionary of detailed attributes for full description.
+        
+        Subclasses should override this method to provide specific parameters.
+        
+        Returns
+        -------
+        dict
+            Dictionary of attribute names and their string representations
+        """
+        return {}
 
     def process(self, wavefront: Any, context: 'Context') -> Any:
         """
@@ -84,6 +148,8 @@ class Layer:
     ----------
     elements : list of Element
         Physical components contained in this layer
+    context : Context
+        Reference to the parent context managing this layer
     
     Examples
     --------
@@ -104,10 +170,95 @@ class Layer:
     def __init__(self, name: Optional[str] = None):
         self.name = name
         self.elements: List[Element] = []
+        self.context: Optional['Context'] = None
     
     def add_element(self, element: Element):
-        """Add an element to this layer."""
+        """
+        Add an element to this layer.
+        
+        Automatically sets the element's layer and context references.
+        
+        Parameters
+        ----------
+        element : Element
+            The element to add to this layer
+        """
         self.elements.append(element)
+        element.layer = self
+        # Set context if the layer is already attached to a context
+        if self.context is not None:
+            element.context = self.context
+
+    def description(self, indent: int = 0, full: bool = False) -> str:
+        """
+        Generate a text description of this layer and all its elements.
+        
+        Parameters
+        ----------
+        indent : int, optional
+            Number of spaces to indent the description (for hierarchical display)
+        full : bool, optional
+            If True, include detailed parameters and attributes (default: False)
+        
+        Returns
+        -------
+        str
+            Formatted description of the layer and all sub-elements
+        
+        Examples
+        --------
+        >>> layer = CustomLayer()
+        >>> layer.add_element(CustomElement())
+        >>> print(layer.description())
+        CustomLayer
+          └─ CustomElement
+        >>> print(layer.description(full=True))
+        CustomLayer
+          • parameter: value
+          └─ CustomElement
+            • element_param: value
+        """
+        prefix = " " * indent
+        class_name = self.__class__.__name__
+        name_str = f" '{self.name}'" if self.name else ""
+        
+        lines = [f"{prefix}{class_name}{name_str}"]
+        
+        # Add detailed attributes if full mode
+        if full:
+            details = self._get_detailed_attributes()
+            if details:
+                for key, value in details.items():
+                    lines.append(f"{prefix}  • {key}: {value}")
+        
+        # Add elements if any
+        if self.elements:
+            for i, element in enumerate(self.elements):
+                is_last = (i == len(self.elements) - 1)
+                connector = "└─" if is_last else "├─"
+                elem_desc = element.description(0, full=full)
+                # Indent multi-line descriptions properly
+                elem_lines = elem_desc.split('\n')
+                lines.append(f"{prefix}  {connector} {elem_lines[0]}")
+                if len(elem_lines) > 1:
+                    continuation = "  " if is_last else "│ "
+                    for line in elem_lines[1:]:
+                        lines.append(f"{prefix}  {continuation} {line}")
+        
+        return "\n".join(lines)
+    
+    def _get_detailed_attributes(self) -> dict:
+        """
+        Return a dictionary of detailed attributes for full description.
+        
+        Subclasses should override this method to provide specific parameters.
+        
+        Returns
+        -------
+        dict
+            Dictionary of attribute names and their string representations
+        """
+        return {}
 
     def process(self, wavefront: Any, context: 'Context') -> Any:
         """
@@ -205,6 +356,8 @@ class Context:
         Layers are executed in the order they are added. To create parallel
         processing (e.g., beam splitting), pass a list of layers.
         
+        Automatically sets the layer's context reference and propagates to elements.
+        
         Parameters
         ----------
         layer : Layer or list of Layer
@@ -225,6 +378,92 @@ class Context:
         >>> ctx.add_layer([camera1, camera2])  # Both receive split beams
         """
         self.layers.append(layer)
+        
+        # Set context reference for layer(s)
+        if isinstance(layer, list):
+            for l in layer:
+                l.context = self
+                # Propagate to elements if layer has them
+                if hasattr(l, 'elements') and l.elements:
+                    for element in l.elements:
+                        element.context = self
+        else:
+            layer.context = self
+            # Propagate to elements if layer has them
+            if hasattr(layer, 'elements') and layer.elements:
+                for element in layer.elements:
+                    element.context = self
+
+    def description(self, full: bool = False) -> str:
+        """
+        Generate a complete text description of the entire simulation setup.
+        
+        Parameters
+        ----------
+        full : bool, optional
+            If True, include detailed parameters and attributes for all components (default: False)
+        
+        Returns
+        -------
+        str
+            Formatted description of all layers and elements in the context
+        
+        Examples
+        --------
+        >>> ctx = Context()
+        >>> ctx.add_layer(scene)
+        >>> ctx.add_layer(telescope)
+        >>> ctx.add_layer(camera)
+        >>> print(ctx.description())
+        HELIOS Simulation Context
+        ========================
+        Layer 1: Scene
+        Layer 2: TelescopeArray
+          └─ Collector 1
+        Layer 3: Camera
+        
+        >>> print(ctx.description(full=True))
+        HELIOS Simulation Context
+        ========================
+        Context Parameters:
+          • date: 2025-01-01
+          • declination: 10.0 deg
+        
+        Layer 1: Scene 'Target'
+          • distance: 10.0 pc
+          └─ Star
+            • temperature: 5700 K
+            • magnitude: 5.0
+        ...
+        """
+        lines = ["HELIOS Simulation Context", "=" * 50, ""]
+        
+        # Add context parameters if full mode
+        if full:
+            ctx_params = []
+            if self.date is not None:
+                ctx_params.append(f"  • date: {self.date}")
+            if self.declination is not None:
+                ctx_params.append(f"  • declination: {self.declination}")
+            if ctx_params:
+                lines.append("Context Parameters:")
+                lines.extend(ctx_params)
+                lines.append("")
+        
+        for i, layer_item in enumerate(self.layers, 1):
+            if isinstance(layer_item, list):
+                # Parallel layers
+                lines.append(f"Layer {i}: [Parallel Layers]")
+                for j, layer in enumerate(layer_item, 1):
+                    lines.append(f"  Branch {j}:")
+                    layer_desc = layer.description(indent=4, full=full)
+                    lines.append(layer_desc)
+            else:
+                # Single layer
+                lines.append(f"Layer {i}: {layer_item.description(full=full)}")
+            lines.append("")  # Empty line between layers
+        
+        return "\n".join(lines)
 
     def observe(self) -> Any:
         """

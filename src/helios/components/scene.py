@@ -215,6 +215,14 @@ class Star(CelestialBody):
         Uses the star's temperature attribute by default.
         """
         return super().sed(wavelengths=wavelengths, temperature=self.temperature, **kwargs)
+    
+    def _get_detailed_attributes(self) -> dict:
+        """Return detailed attributes for Star."""
+        attrs = super()._get_detailed_attributes()
+        attrs['temperature'] = str(self.temperature)
+        attrs['magnitude'] = f"{self.magnitude:.2f}"
+        attrs['mass'] = str(self.mass)
+        return attrs
 
 class Planet(CelestialBody):
     def __init__(self, 
@@ -342,6 +350,17 @@ class Planet(CelestialBody):
         
         # No reflection: return thermal only
         return wl_thermal, sed_thermal
+    
+    def _get_detailed_attributes(self) -> dict:
+        """Return detailed attributes for Planet."""
+        attrs = super()._get_detailed_attributes()
+        attrs['mass'] = str(self.mass)
+        attrs['radius'] = str(self.radius)
+        attrs['temperature'] = str(self.temperature)
+        attrs['albedo'] = f"{self.albedo:.2f}"
+        if hasattr(self, 'magnitude') and self.magnitude is not None:
+            attrs['magnitude'] = f"{self.magnitude:.2f}"
+        return attrs
 
 class ExoZodiacal(CelestialBody):
     def __init__(self, brightness: float = 1.0, radius: Optional[u.Quantity] = None, **kwargs):
@@ -439,6 +458,14 @@ class Scene(Layer):
     def objects(self):
         """Backward compatibility: alias for elements."""
         return self.elements
+    
+    def _get_detailed_attributes(self) -> dict:
+        """Return detailed attributes for Scene."""
+        attrs = {}
+        if self.distance is not None:
+            attrs['distance'] = str(self.distance)
+        attrs['num_objects'] = len(self.elements)
+        return attrs
 
     def process(self, wavefront: None, context: Context) -> Wavefront:
         """

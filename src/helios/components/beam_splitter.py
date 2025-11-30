@@ -46,3 +46,10 @@ class BeamSplitter(Element):
         # TODO: Implement proper amplitude splitting with cutoff ratio
         # For now, returns two identical copies
         return [wavefront, wavefront]
+    
+    def _get_detailed_attributes(self) -> dict:
+        """Return detailed attributes for BeamSplitter."""
+        attrs = {}
+        attrs['transmission'] = f"{self.cutoff:.2%}"
+        attrs['reflection'] = f"{1 - self.cutoff:.2%}"
+        return attrs

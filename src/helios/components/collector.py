@@ -120,6 +120,15 @@ class Collector(Element):
     
     def __repr__(self):
         return f"Collector(name='{self.name}', position={self.position}, size={self.size})"
+    
+    def _get_detailed_attributes(self) -> dict:
+        """Return detailed attributes for Collector."""
+        attrs = {}
+        attrs['position'] = f"({self.position[0]:.2f}, {self.position[1]:.2f}) m"
+        attrs['size'] = str(self.size)
+        if hasattr(self.pupil, 'diameter'):
+            attrs['pupil_diameter'] = f"{self.pupil.diameter:.2f} m"
+        return attrs
 
 
 class TelescopeArray(Layer):
@@ -240,6 +249,25 @@ class TelescopeArray(Layer):
             Each row is (x, y) position in meters.
         """
         return np.array([c.position for c in self.collectors], dtype=float)
+    
+    def _get_detailed_attributes(self) -> dict:
+        """Return detailed attributes for TelescopeArray."""
+        attrs = {}
+        attrs['num_collectors'] = len(self.elements)
+        if self.is_interferometric():
+            attrs['configuration'] = "Interferometric"
+            baselines = self.get_baseline_array()
+            if len(baselines) > 1:
+                max_baseline = np.max(np.linalg.norm(baselines - baselines[0], axis=1))
+                attrs['max_baseline'] = f"{max_baseline:.2f} m"
+        else:
+            attrs['configuration'] = "Single telescope"
+        if self.latitude != 0*u.deg or self.longitude != 0*u.deg:
+            attrs['latitude'] = str(self.latitude)
+            attrs['longitude'] = str(self.longitude)
+        if self.altitude != 0*u.m:
+            attrs['altitude'] = str(self.altitude)
+        return attrs
     
     @classmethod
     def vlti(cls, uts: bool = True) -> 'TelescopeArray':
