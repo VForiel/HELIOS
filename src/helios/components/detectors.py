@@ -34,6 +34,12 @@ class Camera(Element):
     gain : float, optional
         Camera gain in electrons per ADU (Analog-to-Digital Unit).
         Default: 1.0 e-/ADU
+    thermal_background : astropy.Quantity, optional
+        Thermal background rate from warm instrument in electrons per second per pixel.
+        If None, calculated from thermal_background_temp. Default: None
+    thermal_background_temp : astropy.Quantity, optional
+        Instrument temperature for thermal emission calculation.
+        Only used if thermal_background is None. Default: 280 K
     name : str, optional
         Name of the camera for identification in diagrams
     
@@ -60,6 +66,8 @@ class Camera(Element):
                  integration_time: u.Quantity = 1*u.s,
                  quantum_efficiency: float = 0.9,
                  gain: float = 1.0,
+                 thermal_background: Optional[u.Quantity] = None,
+                 thermal_background_temp: u.Quantity = 280*u.K,
                  name: Optional[str] = None, **kwargs):
         super().__init__(name=name or "Camera")
         self.pixels = pixels
@@ -71,6 +79,17 @@ class Camera(Element):
         self.integration_time = integration_time  # Keep original for API
         self.quantum_efficiency = float(quantum_efficiency)
         self.gain = float(gain)  # e-/ADU
+        
+        # Thermal background from warm instrument
+        if thermal_background is not None:
+            self.thermal_background = float(thermal_background.to(u.electron/u.s).value)  # e-/s
+        else:
+            # Empirical thermal background rate for warm instruments
+            # At visible wavelengths (550nm), thermal emission at ~280K is very low
+            # This is a simplified model: ~10 e-/s/pixel for a 280K instrument
+            temp_kelvin = float(thermal_background_temp.to(u.K).value)
+            self.thermal_background = 10.0 * (temp_kelvin / 280.0)**4  # Stefan-Boltzmann scaling
+        self.thermal_background_temp = thermal_background_temp
         
         # Random number generator for reproducible noise
         self._rng = np.random.default_rng()
@@ -134,17 +153,20 @@ class Camera(Element):
         # 2. Dark current accumulation
         dark_electrons = self.dark_current * self.integration_time_value
         
-        # 3. Total signal before noise
-        total_signal = signal_electrons + dark_electrons
+        # 3. Thermal background from warm instrument
+        thermal_electrons = self.thermal_background * self.integration_time_value
         
-        # 4. Apply shot noise (Poisson statistics)
+        # 4. Total signal before noise
+        total_signal = signal_electrons + dark_electrons + thermal_electrons
+        
+        # 5. Apply shot noise (Poisson statistics)
         # Photons follow Poisson distribution: σ² = N
         total_signal_noisy = self._rng.poisson(lam=np.maximum(total_signal, 0))
         
-        # 5. Add read noise (Gaussian)
+        # 6. Add read noise (Gaussian)
         read_noise_array = self._rng.normal(loc=0, scale=self.read_noise, size=self.pixels)
         
-        # 6. Combine all contributions
+        # 7. Combine all contributions
         raw_image = total_signal_noisy + read_noise_array
         
         return raw_image

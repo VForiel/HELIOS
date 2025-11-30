@@ -48,6 +48,22 @@ The core abstraction is a **Layer** pipeline orchestrated by **Context**:
 
 **Key files:** `src/helios/core/context.py`, `src/helios/core/simulation.py`
 
+### Matplotlib Figure Sizes (IMPORTANT)
+**Always use compact figure sizes** to ensure plots fit on standard screens:
+- Single plots: `figsize=(8, 6)` or smaller
+- Triple plots (1x3): `figsize=(12, 4)` maximum
+- Dual vertical plots (2x1): `figsize=(9, 6)` maximum
+- Large grids should scale proportionally but stay under 14 inches width
+
+**Example:**
+```python
+# ✅ GOOD - fits on screen
+fig, axes = plt.subplots(1, 3, figsize=(12, 4))
+
+# ❌ BAD - too large for most screens
+fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+```
+
 ### Component Categories
 1. **Scene** (`components/scene.py`): First layer, generates celestial objects (Star, Planet, ExoZodiacal, Zodiacal)
 2. **Optics** (`components/optics.py`): Collectors, Pupil, Coronagraph, BeamSplitter, FiberIn/Out, Atmosphere, AdaptiveOptics

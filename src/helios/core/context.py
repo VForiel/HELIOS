@@ -8,21 +8,89 @@ from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
 from pathlib import Path
 import os
 
+class Element:
+    """
+    Base class for all simulation elements (physical components).
+    
+    An Element represents a physical component in the optical system that can
+    process wavefronts independently. Elements are grouped within Layers for
+    parallel processing.
+    
+    Parameters
+    ----------
+    name : str, optional
+        Descriptive name for this element (used in diagrams and logging)
+    
+    Examples
+    --------
+    >>> class CustomElement(Element):
+    ...     def __init__(self, parameter, name=None):
+    ...         super().__init__(name=name or "CustomElement")
+    ...         self.parameter = parameter
+    ...
+    ...     def process(self, wavefront, context):
+    ...         # Apply custom transformation
+    ...         wavefront.field *= self.parameter
+    ...         return wavefront
+    """
+    def __init__(self, name: Optional[str] = None):
+        self.name = name
+
+    def process(self, wavefront: Any, context: 'Context') -> Any:
+        """
+        Process the incoming wavefront/signal and return the result.
+        
+        This method must be implemented by all subclasses. It defines how
+        the element transforms the electromagnetic field or signal.
+        
+        Parameters
+        ----------
+        wavefront : Wavefront or list of Wavefront
+            The input electromagnetic field(s) to process
+        context : Context
+            The simulation context providing global parameters
+        
+        Returns
+        -------
+        wavefront : Wavefront or list of Wavefront or ndarray
+            The transformed wavefront(s). Terminal elements (e.g., Camera) may
+            return numpy arrays instead of Wavefront objects.
+        
+        Raises
+        ------
+        NotImplementedError
+            If the subclass does not implement this method.
+        """
+        raise NotImplementedError("Subclasses must implement process()")
+
 class Layer:
     """
-    Base class for all simulation layers.
+    Base class for all simulation layers (logical grouping of elements).
     
-    All components in HELIOS inherit from this class and implement the `process()` method
-    to transform wavefronts or signals as they propagate through the optical system.
+    A Layer represents a logical stage in the simulation pipeline and contains
+    one or more Elements that process wavefronts in parallel.
     
     The layer abstraction enables flexible composition of simulation pipelines:
     - Layers are processed sequentially by the Context
     - Multiple layers can be combined in parallel for beam splitting
     - Each layer receives a wavefront and returns a transformed wavefront
     
+    Parameters
+    ----------
+    name : str, optional
+        Descriptive name for this layer (used in diagrams and logging)
+    
+    Attributes
+    ----------
+    elements : list of Element
+        Physical components contained in this layer
+    
     Examples
     --------
     >>> class CustomLayer(Layer):
+    ...     def __init__(self, name=None):
+    ...         super().__init__(name=name or "CustomLayer")
+    ...
     ...     def process(self, wavefront, context):
     ...         # Apply custom transformation
     ...         wavefront.field *= np.exp(1j * phase_pattern)
@@ -31,9 +99,15 @@ class Layer:
     See Also
     --------
     Context : Orchestrates layer execution
+    Element : Physical components within layers
     """
-    def __init__(self):
-        pass
+    def __init__(self, name: Optional[str] = None):
+        self.name = name
+        self.elements: List[Element] = []
+    
+    def add_element(self, element: Element):
+        """Add an element to this layer."""
+        self.elements.append(element)
 
     def process(self, wavefront: Any, context: 'Context') -> Any:
         """

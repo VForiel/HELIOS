@@ -443,9 +443,36 @@ class Scene(Layer):
     def process(self, wavefront: None, context: Context) -> Wavefront:
         """
         Generates the initial wavefront from the scene.
+        
+        The wavefront amplitude is scaled by:
+        1. Distance: flux decreases as (d/d_ref)^-2 where d_ref = 10 pc
+        2. Magnitude: flux decreases as 10^(-0.4 * magnitude)
+        
+        For reference: magnitude 0 star at 10 pc gives ~1e10 photons/s/m²/nm
         """
-        # Placeholder: Create a wavefront
-        wf = Wavefront(wavelength=1.0*u.um, size=512) 
+        # Create initial wavefront
+        wf = Wavefront(wavelength=1.0*u.um, size=512)
+        
+        # Calculate total flux scaling from all objects
+        flux_scaling = 0.0
+        
+        for obj in self.objects:
+            if isinstance(obj, (Star, Planet)):
+                # Distance scaling: flux ∝ 1/d²
+                distance_factor = (10*u.pc / self.distance)**2  # Normalized to 10 pc
+                
+                # Magnitude scaling: flux ∝ 10^(-0.4*m)
+                # Reference: m=0 at 10pc gives flux=1
+                magnitude = getattr(obj, 'magnitude', 0.0)
+                magnitude_factor = 10**(-0.4 * magnitude)
+                
+                # Combined scaling
+                flux_scaling += float(distance_factor.value) * magnitude_factor
+        
+        # Apply flux scaling to wavefront field (amplitude scales as sqrt(flux))
+        if flux_scaling > 0:
+            wf.field = wf.field * np.sqrt(flux_scaling)
+        
         return wf
     def render(self, npix: int = 256, fov: u.Quantity = 1.0 * u.arcsec, return_coords: bool = False):
         """Render the scene to a 2D intensity array in angular units and centered on (0,0).
