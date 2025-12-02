@@ -1,0 +1,11 @@
+-r requirements.txt
+
+# Development tools
+black
+isort
+flake8
+mypy
+
+# Testing tools
+pytest
+pytest-cov

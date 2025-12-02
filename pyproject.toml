@@ -19,19 +19,10 @@ classifiers = [
   "Programming Language :: C++",
   "Topic :: Scientific/Engineering :: Astronomy",
 ]
-dependencies = [
-  "numpy",
-  "astropy",
-  "scipy",
-  "matplotlib",
-]
+dynamic = ["dependencies"]
 
-[project.optional-dependencies]
-test = ["pytest", "pytest-cov"]
-docs = ["sphinx", "myst-parser", "nbsphinx", "sphinx-breeze-theme"]
-dev = ["black", "isort", "flake8", "mypy"]
-
-
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
 
 [tool.pytest.ini_options]
 minversion = "6.0"

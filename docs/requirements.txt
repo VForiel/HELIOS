@@ -1,0 +1,7 @@
+sphinx
+myst-parser
+nbsphinx
+sphinx-breeze-theme
+sphinx-copybutton
+sphinxcontrib-mermaid
+linkify-it-py
