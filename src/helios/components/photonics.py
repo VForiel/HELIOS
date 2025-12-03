@@ -50,6 +50,7 @@ class YSplitter(Element):
     def __init__(self, name: Optional[str] = None):
         super().__init__(name=name or "YSplitter")
         self.num_inputs = 1
+        self.num_outputs = 2
         
     def process(self, wavefront: Wavefront, context: Context) -> List[Wavefront]:
         # Split input into 2 identical copies (amplitude division)

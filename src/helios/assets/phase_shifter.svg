@@ -1,5 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <rect x="20" y="30" width="60" height="40" fill="#E67E22" stroke="#D35400" stroke-width="2"/>
-  <path d="M20 40 L80 40 M20 50 L80 50 M20 60 L80 60" stroke="white" stroke-width="2"/>
-  <text x="50" y="55" font-family="Arial" font-size="20" fill="white" text-anchor="middle">φ</text>
-</svg>
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="M10,50 C30,20 30,80 50,50 C70,20 70,80 90,50" fill="none" stroke="#BDC3C7" stroke-width="3" stroke-dasharray="4,4"/><path d="M10,50 C30,80 30,20 50,50 C70,80 70,20 90,50" fill="none" stroke="#E67E22" stroke-width="3"/></svg>

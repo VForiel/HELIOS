@@ -196,6 +196,11 @@ class TelescopeArray(Layer):
         # Note: self.elements is inherited from Layer
     
     @property
+    def num_outputs(self) -> int:
+        """Number of outputs produced by this array (one per collector)."""
+        return len(self.elements)
+    
+    @property
     def collectors(self):
         """Backward compatibility: alias for elements."""
         return self.elements

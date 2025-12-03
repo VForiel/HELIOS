@@ -1,11 +1,1 @@
-<svg width="80" height="80" xmlns="http://www.w3.org/2000/svg">
-  <!-- Fiber Input: Coupling lens and fiber -->
-  <ellipse cx="25" cy="40" rx="10" ry="15" fill="#ADD8E6" stroke="#4682B4" stroke-width="2"/>
-  <!-- Fiber cable -->
-  <rect x="35" y="37" width="35" height="6" fill="#8B4513" stroke="#654321" stroke-width="1"/>
-  <!-- Core -->
-  <rect x="35" y="39" width="35" height="2" fill="#FFD700"/>
-  <!-- Arrow -->
-  <polygon points="8,40 18,35 18,45" fill="#4682B4"/>
-  <text x="40" y="70" text-anchor="middle" font-size="9" fill="#4682B4">Fiber In</text>
-</svg>
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect x="40" y="35" width="50" height="30" fill="none" stroke="#1ABC9C" stroke-width="4"/><path d="M10,20 L40,50 L10,80 Z" fill="#1ABC9C" stroke="none" opacity="0.6"/><path d="M10,50 L90,50" fill="none" stroke="#1ABC9C" stroke-width="2" stroke-dasharray="4,4"/></svg>

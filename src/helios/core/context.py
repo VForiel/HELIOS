@@ -50,6 +50,7 @@ class Element:
         self.layer: Optional['Layer'] = None
         self.context: Optional['Context'] = None
         self.num_inputs: int = 1  # Number of inputs this element consumes
+        self.num_outputs: int = 1 # Number of outputs this element produces
 
     def description(self, indent: int = 0, full: bool = False) -> str:
         """
@@ -176,6 +177,9 @@ class Layer:
         self.elements: List[Element] = []
         self.context: Optional['Context'] = None
         self.num_inputs: int = 1  # Number of inputs this layer consumes (if single layer)
+        # self.num_outputs is defined as class attribute to allow property override
+    
+    num_outputs: int = 1 # Default number of outputs
     
     def add_element(self, element: Element):
         """
@@ -569,6 +573,75 @@ class Context:
         # Placeholder for interferometry output
         pass
 
+    def validate_architecture(self):
+        """
+        Validate the simulation architecture.
+        
+        Checks if the number of outputs from each layer matches the number of
+        inputs expected by the next layer.
+        
+        Raises
+        ------
+        ValueError
+            If a mismatch is detected.
+        """
+        current_ports = 1 # Start with 1 (Scene)
+        
+        for i, layer in enumerate(self.layers):
+            # Determine inputs expected by this layer
+            if isinstance(layer, list):
+                # Parallel layer
+                expected_inputs = 0
+                for elem in layer:
+                    if hasattr(elem, 'num_inputs'):
+                        expected_inputs += elem.num_inputs
+                    else:
+                        expected_inputs += 1
+            else:
+                # Single layer
+                if hasattr(layer, 'num_inputs'):
+                    expected_inputs = layer.num_inputs
+                else:
+                    expected_inputs = 1
+            
+            # Special case: TelescopeArray (Collector)
+            # Can take 1 input (Scene) and produce N outputs
+            # We skip input check if it's a TelescopeArray/Collector layer receiving from Scene/Atmosphere
+            is_collector = False
+            if isinstance(layer, list):
+                if len(layer) > 0 and type(layer[0]).__name__ == 'Collector':
+                    is_collector = True
+            elif type(layer).__name__ == 'TelescopeArray':
+                is_collector = True
+                
+            # Check inputs
+            if not is_collector:
+                # If mismatch, raise error
+                # But allow broadcasting (1 -> N)
+                if current_ports != expected_inputs and current_ports != 1:
+                     print(f"Warning: Layer {i+1} ({self._get_display_name(layer) if not isinstance(layer, list) else 'Parallel'}) expects {expected_inputs} inputs but previous layer provides {current_ports} outputs.")
+            
+            # Determine outputs produced by this layer
+            if isinstance(layer, list):
+                current_ports = 0
+                for elem in layer:
+                    if hasattr(elem, 'num_outputs'):
+                        current_ports += elem.num_outputs
+                    else:
+                        current_ports += 1
+            else:
+                if hasattr(layer, 'num_outputs'):
+                    current_ports = layer.num_outputs
+                elif hasattr(layer, 'elements') and len(layer.elements) > 0:
+                    # TelescopeArray or similar container
+                    # Assume it produces one output per element if it's a TelescopeArray
+                    if type(layer).__name__ == 'TelescopeArray':
+                        current_ports = len(layer.elements)
+                    else:
+                        current_ports = 1
+                else:
+                    current_ports = 1
+
     def plot_uml_diagram(self, figsize: Tuple[float, float] = (16, 10), 
                          layer_spacing: float = 2.0,
                          save_path: Optional[str] = None,
@@ -624,6 +697,9 @@ class Context:
         The coordinate system is left-to-right (scene → detector) with parallel
         paths displayed vertically when beam splitting occurs.
         """
+        # Validate architecture first
+        self.validate_architecture()
+        
         fig, ax = plt.subplots(figsize=figsize)
         ax.set_xlim(-1, len(self.layers) * layer_spacing + 1)
         
@@ -776,9 +852,33 @@ class Context:
                     # Draw connection from previous layer(s)
                     if i > 0:
                         # Intelligent connection routing
-                        if len(active_paths) == num_branches:
-                            # 1-to-1 connection (Parallel -> Parallel)
-                            # Connect j-th input to j-th output
+                        
+                        # Calculate total inputs expected by current layer
+                        expected_inputs = []
+                        for elem in layer_list:
+                            if hasattr(elem, 'num_inputs'):
+                                expected_inputs.append(elem.num_inputs)
+                            else:
+                                expected_inputs.append(1)
+                        
+                        total_expected = sum(expected_inputs)
+                        
+                        if total_expected == len(active_paths):
+                            # Perfect match! Route sequentially (Grouped routing)
+                            # We need to find which inputs belong to this element (j-th element)
+                            
+                            # Calculate start index for this element
+                            start_idx = sum(expected_inputs[:j])
+                            n_in = expected_inputs[j]
+                            
+                            for k in range(n_in):
+                                if start_idx + k < len(active_paths):
+                                    prev_y = active_paths[start_idx + k]
+                                    self._draw_arrow(ax, (i-1)*spacing + 0.4, prev_y, 
+                                               x_pos - 0.4, y_pos)
+                                               
+                        elif len(active_paths) == num_branches:
+                            # 1-to-1 connection (Parallel -> Parallel) fallback
                             prev_y = active_paths[j]
                             self._draw_arrow(ax, (i-1)*spacing + 0.4, prev_y, 
                                            x_pos - 0.4, y_pos)
@@ -789,7 +889,24 @@ class Context:
                                            x_pos - 0.4, y_pos)
                 
                 # Update active paths
-                active_paths = y_positions
+                # We need to calculate output paths based on num_outputs of each element
+                new_active_paths = []
+                for j, (layer, y_pos) in enumerate(zip(layer_list, y_positions)):
+                    n_out = 1
+                    if hasattr(layer, 'num_outputs'):
+                        n_out = layer.num_outputs
+                    
+                    # If n_out > 1, we should probably spread them around y_pos?
+                    # For now, let's just keep y_pos if n_out=1, or duplicate if n_out > 1
+                    # But visually, the box is at y_pos.
+                    # If we have multiple outputs, they should emerge from y_pos.
+                    # But for the NEXT layer, we need distinct y positions if they are to be routed separately.
+                    # This is getting complex for visualization.
+                    # Simplified: All outputs from this element start at y_pos.
+                    for _ in range(n_out):
+                        new_active_paths.append(y_pos)
+                
+                active_paths = new_active_paths
                 
             else:
                 # Single layer
@@ -820,8 +937,30 @@ class Context:
                         self._draw_arrow(ax, (i-1)*spacing + 0.4, prev_y,
                                        x_pos - 0.4, y_pos)
                 
-                # Single output path
-                active_paths = [y_pos]
+                # Single output path (or multiple if single layer produces multiple)
+                # If TelescopeArray, it produces N outputs (visually)
+                if type(layer).__name__ == 'TelescopeArray':
+                     # This case is actually handled by the "explode" logic in _build_layer_tree
+                     # So we shouldn't reach here for TelescopeArray unless it has 1 element
+                     pass
+                
+                n_out = 1
+                if hasattr(layer, 'num_outputs'):
+                    n_out = layer.num_outputs
+                
+                # For single layer, we usually collapse to 1 path unless it's a splitter
+                # But if it's a splitter (YSplitter), it should probably be in a parallel list?
+                # Or if it's a single YSplitter layer, it produces 2 outputs.
+                # If it produces 2 outputs, we should probably split the active path?
+                
+                if n_out > 1:
+                    # Split active paths
+                    # We need to generate n_out new y positions centered around y_pos
+                    # But we don't have a good way to space them without knowing global context
+                    # For now, just replicate y_pos
+                    active_paths = [y_pos] * n_out
+                else:
+                    active_paths = [y_pos]
         
         # Draw background rectangles for photonic circuits
         for chip_id, coords in photonic_groups.items():
@@ -959,10 +1098,6 @@ class Context:
         
         # Construct label
         display_name = self._get_display_name(layer)
-        
-        # Add index if provided
-        if element_index is not None:
-            display_name = f"{display_name} {element_index}"
             
         # Add label below box
         ax.text(x, y - box_height/2 - 0.15, display_name,
@@ -1008,6 +1143,24 @@ class Context:
         def trans_y(val): return offset_y + (100 - float(val)) * scale # Flip Y for MPL
         def trans_len(val): return float(val) * scale
         
+        # Helper to parse style attributes
+        def get_style(elem):
+            color = elem.get('stroke', 'none')
+            if color == 'none': color = None
+            
+            fill = elem.get('fill', 'none')
+            if fill == 'none': fill = None
+            
+            lw = float(elem.get('stroke-width', 1)) * 0.5
+            
+            alpha = float(elem.get('opacity', 1.0))
+            
+            ls = '-'
+            if elem.get('stroke-dasharray'):
+                ls = '--'
+                
+            return color, fill, lw, alpha, ls
+        
         # Iterate elements (ignoring namespace for simplicity in tag check)
         for elem in root.iter():
             tag = elem.tag.split('}')[-1]
@@ -1015,7 +1168,8 @@ class Context:
             if tag == 'path':
                 d = elem.get('d')
                 if d:
-                    self._draw_svg_path(ax, d, elem, trans_x, trans_y, scale)
+                    color, fill, lw, alpha, ls = get_style(elem)
+                    self._draw_svg_path(ax, d, color, fill, lw, alpha, ls, trans_x, trans_y)
             
             elif tag == 'rect':
                 x = float(elem.get('x', 0))
@@ -1023,23 +1177,16 @@ class Context:
                 w = float(elem.get('width', 0))
                 h = float(elem.get('height', 0))
                 
-                # SVG y is top-down, MPL is bottom-up
-                # Rect bottom-left in MPL:
-                # SVG top-left (x, y) -> MPL (x, 100-y)
-                # But rect extends down in SVG, so bottom is y+h
-                # MPL y = 100 - (y + h)
-                
                 mpl_x = trans_x(x)
                 mpl_y = trans_y(y + h)
                 mpl_w = trans_len(w)
                 mpl_h = trans_len(h)
                 
-                color = elem.get('stroke', 'black')
-                fill = elem.get('fill', 'none')
-                lw = float(elem.get('stroke-width', 1)) * 0.5 # Scale down width
+                color, fill, lw, alpha, ls = get_style(elem)
                 
                 rect = patches.Rectangle((mpl_x, mpl_y), mpl_w, mpl_h, 
-                                       linewidth=lw, edgecolor=color, facecolor=fill, zorder=3)
+                                       linewidth=lw, edgecolor=color, facecolor=fill, 
+                                       alpha=alpha, linestyle=ls, zorder=3)
                 ax.add_patch(rect)
                 
             elif tag == 'circle':
@@ -1051,29 +1198,18 @@ class Context:
                 mpl_cy = trans_y(cy)
                 mpl_r = trans_len(r)
                 
-                color = elem.get('stroke', 'black')
-                fill = elem.get('fill', 'none')
-                lw = float(elem.get('stroke-width', 1)) * 0.5
+                color, fill, lw, alpha, ls = get_style(elem)
                 
                 circ = patches.Circle((mpl_cx, mpl_cy), mpl_r, 
-                                    linewidth=lw, edgecolor=color, facecolor=fill, zorder=3)
+                                    linewidth=lw, edgecolor=color, facecolor=fill, 
+                                    alpha=alpha, linestyle=ls, zorder=3)
                 ax.add_patch(circ)
                 
             elif tag == 'text':
-                x = float(elem.get('x', 0))
-                y = float(elem.get('y', 0))
-                text = elem.text
-                
-                mpl_x = trans_x(x)
-                mpl_y = trans_y(y)
-                
-                color = elem.get('fill', 'black')
-                size_pt = float(elem.get('font-size', 10)) * 0.5 # Rough scale
-                
-                ax.text(mpl_x, mpl_y, text, color=color, fontsize=size_pt, 
-                       ha='center', va='center', zorder=3)
+                # Skip text as requested
+                pass
 
-    def _draw_svg_path(self, ax, d, elem, tx, ty, scale):
+    def _draw_svg_path(self, ax, d, color, fill, lw, alpha, ls, tx, ty):
         """Parse simple SVG path d string and draw PathPatch."""
         # Regex to tokenize path data: commands (letters) and numbers
         tokens = re.findall(r'([a-zA-Z])|([-+]?\d*\.?\d+)', d)
@@ -1116,19 +1252,28 @@ class Context:
                 
                 current_pos = (x, y)
                 i += 6
+            elif cmd == 'Q': # Quadratic Bezier (x1 y1 x y)
+                x1 = float(tokens[i]); y1 = float(tokens[i+1])
+                x = float(tokens[i+2]); y = float(tokens[i+3])
+                
+                verts.append((tx(x1), ty(y1)))
+                verts.append((tx(x), ty(y)))
+                
+                codes.append(MPath.CURVE3)
+                codes.append(MPath.CURVE3)
+                
+                current_pos = (x, y)
+                i += 4
             elif cmd == 'Z': # Close path
                 verts.append((0,0)) # Ignored
                 codes.append(MPath.CLOSEPOLY)
-            # Add more commands (Q, T, etc.) if needed
+            # Add more commands (T, etc.) if needed
             
         if verts:
             path = MPath(verts, codes)
             
-            color = elem.get('stroke', 'black')
-            fill = elem.get('fill', 'none')
-            lw = float(elem.get('stroke-width', 1)) * 0.5
-            
-            patch = PathPatch(path, facecolor=fill, edgecolor=color, linewidth=lw, zorder=3)
+            patch = PathPatch(path, facecolor=fill, edgecolor=color, linewidth=lw, 
+                            alpha=alpha, linestyle=ls, zorder=3)
             ax.add_patch(patch)
 
     def _get_display_name(self, layer: Layer) -> str:

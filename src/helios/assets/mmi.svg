@@ -1,5 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <rect x="10" y="20" width="80" height="60" fill="#9B59B6" stroke="#8E44AD" stroke-width="2"/>
-  <path d="M10 30 L90 70 M10 70 L90 30" stroke="white" stroke-width="2" opacity="0.5"/>
-  <text x="50" y="55" font-family="Arial" font-size="16" fill="white" text-anchor="middle">MMI</text>
-</svg>
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect x="20" y="20" width="60" height="60" fill="#F5EEF8" stroke="#8E44AD" stroke-width="4"/><path d="M10,35 L20,35 M10,65 L20,65" fill="none" stroke="#8E44AD" stroke-width="3"/><path d="M80,30 L90,30 M80,50 L90,50 M80,70 L90,70" fill="none" stroke="#8E44AD" stroke-width="3"/><path d="M30,35 C40,35 40,65 50,50 C60,35 60,65 70,50" fill="none" stroke="#8E44AD" stroke-width="1" opacity="0.5"/><path d="M30,65 C40,65 40,35 50,50 C60,65 60,35 70,50" fill="none" stroke="#8E44AD" stroke-width="1" opacity="0.5"/></svg>
