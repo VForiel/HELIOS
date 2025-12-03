@@ -1205,7 +1205,10 @@ class Context:
         total_height = (num_branches - 1) * spacing
         start_y = 0.5 - total_height / 2
         
-        return [start_y + i * spacing for i in range(num_branches)]
+        # Return positions in reverse order (Top to Bottom)
+        # Index 0 (low index) -> Highest Y
+        # Index N (high index) -> Lowest Y
+        return [start_y + (num_branches - 1 - i) * spacing for i in range(num_branches)]
     
     def _draw_layer_icon(self, ax: plt.Axes, layer: Layer, 
                         x: float, y: float, asset_dir: Path, 

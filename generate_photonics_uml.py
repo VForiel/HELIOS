@@ -84,8 +84,8 @@ def generate_uml():
     ctx.add_layer([copy(mmi) for _ in range(2)])
 
     # Layer 6: CrossSection (Permutation)
-    cross = photonics.Swap(mapping=[0, 2, 1, 3], name="Router")
-    ctx.add_layer(cross)
+    swap1 = photonics.Swap(mapping=[0, 2, 1, 3], name="Router")
+    ctx.add_layer(swap1)
 
     ctx.add_layer([copy(tops) for _ in range(4)])
 
@@ -95,6 +95,9 @@ def generate_uml():
     y_splitter = photonics.YSplitter(name="Splitter")
 
     ctx.add_layer([None] + [copy(y_splitter) for _ in range(3)])
+
+    swap2 = photonics.Swap(mapping=[0, 1, 3, 2, 5, 4, 6], name="Router")
+    ctx.add_layer(swap2)
 
     ctx.add_layer([None] + [copy(tops) for _ in range(6)])
 
@@ -112,7 +115,7 @@ def generate_uml():
     
     # Manually link elements to chip (simulating adding them to chip)
     # In a real workflow, we might use chip.add_element(), but here we construct the pipeline manually
-    for elem in [fiber_in, tops, mmi, cross, fiber_out, fiber_out]:
+    for elem in [fiber_in, tops, mmi, fiber_out, fiber_out]:
         elem.layer = chip
 
     # 4. Generate and Show Diagram
