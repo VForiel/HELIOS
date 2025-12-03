@@ -3,7 +3,7 @@
 
 Demonstrates atmospheric turbulence effects:
 1. Frozen-flow temporal evolution (6 snapshots) using a JWST pupil.
-2. Animation of turbulence drift over a simple pupil (cross spider).
+2. Animation of turbulence drift over the VLTI array.
 """
 import sys
 import os
@@ -59,30 +59,25 @@ def run_demo():
     cbar.set_label('Phase (radians)', fontsize=11)
     plt.show()
 
-    # 2. Animation (Simple Pupil with Cross Spider)
-    print("Generating animation (Simple Pupil)...")
+    # 2. Animation (VLTI Array)
+    print("Generating animation (VLTI Array)...")
     
-    # Create simple pupil with cross spiders
-    pupil_simple = helios.Pupil(8*u.m)
-    pupil_simple.add_disk(radius=4.0 * u.m)
-    pupil_simple.add_spiders(arms=4, width=0.1 * u.m) # Cross spider
-    
-    collectors_simple = helios.TelescopeArray(latitude=0*u.deg, altitude=2400*u.m)
-    collectors_simple.add_collector(pupil=pupil_simple, position=(0, 0), size=8*u.m)
+    # Use VLTI preset (4 UTs)
+    vlti = helios.TelescopeArray.vlti(uts=True)
 
     atm_anim = helios.Atmosphere(rms=150*u.nm, wind_speed=12*u.m/u.s, wind_direction=30, seed=456)
-    anim_single = atm_anim.plot_animation(
-        collectors=collectors_simple, 
-        duration=2*u.s,
+    anim_vlti = atm_anim.plot_animation(
+        collectors=vlti, 
+        duration=5*u.s,
         wavelength=550e-9*u.m,
         npix=256,
-        fps=10,
+        fps=30,
         figsize=(8, 8)
     )
     
     try:
-        anim_single.save('animation_simple_pupil.mp4', writer='ffmpeg')
-        print("Saved animation_simple_pupil.mp4")
+        anim_vlti.save('animation_vlti.mp4', writer='ffmpeg')
+        print("Saved animation_vlti.mp4")
     except Exception as e:
         print(f"Could not save MP4 (ffmpeg might be missing): {e}")
         print("Animation object created successfully.")

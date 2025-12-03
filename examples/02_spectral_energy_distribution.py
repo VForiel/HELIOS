@@ -16,8 +16,13 @@ import helios
 
 def run_demo():
     # Create objects
+    scene = helios.Scene(distance=10*u.pc)
     star = helios.Star(temperature=5700*u.K, magnitude=5, mass=1*u.M_sun, position=(0*u.AU, 0*u.AU))
     planet = helios.Planet(mass=1*u.M_jup, position=(1*u.AU, 0*u.AU), albedo=0.3, radius=1*u.R_jup)
+    
+    # Add to scene to enable reflection calculation
+    scene.add(star)
+    scene.add(planet)
 
     # Plot SEDs
     print("Plotting Spectral Energy Distributions...")
