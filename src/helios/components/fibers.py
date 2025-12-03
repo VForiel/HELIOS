@@ -3,11 +3,11 @@
 This module provides FiberIn and FiberOut classes for modeling single-mode
 and multi-mode fiber coupling in photonic integrated circuits.
 """
-from ..core.context import Layer, Context
+from ..core.context import Element, Context
 from ..core.simulation import Wavefront
 
 
-class FiberIn(Layer):
+class FiberIn(Element):
     """Fiber input coupler.
     
     Models coupling of light from free-space optics into optical fiber(s).
@@ -31,6 +31,7 @@ class FiberIn(Layer):
     def __init__(self, modes: int = 1, **kwargs):
         self.modes = modes
         super().__init__()
+        self.num_inputs = 1
     
     def process(self, wavefront: Wavefront, context: Context) -> Wavefront:
         """Couple wavefront into fiber.
@@ -54,11 +55,12 @@ class FiberIn(Layer):
         - Apply coupling efficiency losses
         - Model modal decomposition for multi-mode fibers
         """
-        # TODO: Implement fiber mode coupling
+        # Set max_modes to simulate coupling into fiber
+        wavefront.max_modes = self.modes
         return wavefront
 
 
-class FiberOut(Layer):
+class FiberOut(Element):
     """Fiber output coupler.
     
     Models light exiting from optical fiber back into free-space optics.
@@ -74,6 +76,7 @@ class FiberOut(Layer):
     """
     def __init__(self, **kwargs):
         super().__init__()
+        self.num_inputs = 1
 
     def process(self, wavefront: Wavefront, context: Context) -> Wavefront:
         """Output light from fiber.
@@ -97,5 +100,6 @@ class FiberOut(Layer):
         - Model beam divergence
         - Account for Gaussian beam propagation
         """
-        # TODO: Implement fiber output beam shaping
+        # Reset max_modes to None (free space)
+        wavefront.max_modes = None
         return wavefront

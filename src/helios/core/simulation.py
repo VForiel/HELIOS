@@ -1,5 +1,6 @@
 import numpy as np
 from astropy import units as u
+from typing import Optional
 
 class Wavefront:
     """
@@ -60,6 +61,7 @@ class Wavefront:
         self.wavelength = wavelength
         self.field = np.ones((size, size), dtype=np.complex128)
         self.pixel_scale = 1.0 * u.m # Placeholder
+        self.max_modes: Optional[int] = None  # None for free-space, int for guided modes
 
     def propagate(self, distance: u.Quantity):
         """

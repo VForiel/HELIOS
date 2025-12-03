@@ -246,6 +246,7 @@ Scene and optical components implement `.plot()` methods:
 - **Add educational comments**: Explain the "why" not just the "what"
 - **Include references**: When implementing published algorithms, cite the paper/textbook
 - **Validate physically**: Tests should verify that results make physical sense, not just that code runs
+- **Maintain consistency**: Unless otherwise instructed, when creating or modifying a class, check how other classes are constructed and try to maintain global consistency.
 
 ### Every Function Must Have
 1. **English docstring** (numpy-style for Sphinx autodoc)

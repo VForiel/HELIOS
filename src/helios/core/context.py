@@ -4,9 +4,12 @@ from typing import List, Union, Optional, Any, Tuple
 import copy
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
+from matplotlib.patches import FancyBboxPatch, FancyArrowPatch, PathPatch
+from matplotlib.path import Path as MPath
 from pathlib import Path
 import os
+import xml.etree.ElementTree as ET
+import re
 
 class Element:
     """
@@ -46,6 +49,7 @@ class Element:
         self.name = name
         self.layer: Optional['Layer'] = None
         self.context: Optional['Context'] = None
+        self.num_inputs: int = 1  # Number of inputs this element consumes
 
     def description(self, indent: int = 0, full: bool = False) -> str:
         """
@@ -70,7 +74,7 @@ class Element:
         CustomElement
         >>> print(element.description(full=True))
         CustomElement
-          - parameter: value
+        >>>   - parameter: value
         """
         prefix = " " * indent
         class_name = self.__class__.__name__
@@ -171,6 +175,7 @@ class Layer:
         self.name = name
         self.elements: List[Element] = []
         self.context: Optional['Context'] = None
+        self.num_inputs: int = 1  # Number of inputs this layer consumes (if single layer)
     
     def add_element(self, element: Element):
         """
@@ -211,12 +216,12 @@ class Layer:
         >>> layer.add_element(CustomElement())
         >>> print(layer.description())
         CustomLayer
-          └─ CustomElement
+        >>>   └─ CustomElement
         >>> print(layer.description(full=True))
         CustomLayer
-          • parameter: value
-          └─ CustomElement
-            • element_param: value
+        >>>   • parameter: value
+        >>>   └─ CustomElement
+        >>>     • element_param: value
         """
         prefix = " " * indent
         class_name = self.__class__.__name__
@@ -382,11 +387,12 @@ class Context:
         # Set context reference for layer(s)
         if isinstance(layer, list):
             for l in layer:
-                l.context = self
-                # Propagate to elements if layer has them
-                if hasattr(l, 'elements') and l.elements:
-                    for element in l.elements:
-                        element.context = self
+                if l is not None:
+                    l.context = self
+                    # Propagate to elements if layer has them
+                    if hasattr(l, 'elements') and l.elements:
+                        for element in l.elements:
+                            element.context = self
         else:
             layer.context = self
             # Propagate to elements if layer has them
@@ -419,21 +425,21 @@ class Context:
         ========================
         Layer 1: Scene
         Layer 2: TelescopeArray
-          └─ Collector 1
+        >>>   └─ Collector 1
         Layer 3: Camera
         
         >>> print(ctx.description(full=True))
         HELIOS Simulation Context
         ========================
         Context Parameters:
-          • date: 2025-01-01
-          • declination: 10.0 deg
+        >>>   • date: 2025-01-01
+        >>>   • declination: 10.0 deg
         
         Layer 1: Scene 'Target'
-          • distance: 10.0 pc
-          └─ Star
-            • temperature: 5700 K
-            • magnitude: 5.0
+        >>>   • distance: 10.0 pc
+        >>>   └─ Star
+        >>>     • temperature: 5700 K
+        >>>     • magnitude: 5.0
         ...
         """
         lines = ["HELIOS Simulation Context", "=" * 50, ""]
@@ -456,8 +462,11 @@ class Context:
                 lines.append(f"Layer {i}: [Parallel Layers]")
                 for j, layer in enumerate(layer_item, 1):
                     lines.append(f"  Branch {j}:")
-                    layer_desc = layer.description(indent=4, full=full)
-                    lines.append(layer_desc)
+                    if layer is None:
+                        lines.append("    [Pass-through]")
+                    else:
+                        layer_desc = layer.description(indent=4, full=full)
+                        lines.append(layer_desc)
             else:
                 # Single layer
                 lines.append(f"Layer {i}: {layer_item.description(full=full)}")
@@ -493,24 +502,55 @@ class Context:
 
         for i, layer in enumerate(self.layers):
             if isinstance(layer, list):
-                # Parallel processing (e.g., splitting paths)
-                # If current_signal is a list, we assume 1-to-1 mapping or broadcasting
-                # For now, let's assume the previous layer returned a list of signals 
-                # OR we broadcast the single signal to all parallel layers
-                
+                # Parallel processing (N-to-M routing)
                 outputs = []
-                if isinstance(current_signal, list):
-                    if len(current_signal) != len(layer):
-                         # Try broadcasting if single signal, else error
-                         pass # TODO: Handle mismatch
+                
+                # Ensure current_signal is a list for consistent processing
+                if not isinstance(current_signal, list):
+                    current_signal = [current_signal] if current_signal is not None else []
+                
+                input_idx = 0
+                for sub_layer in layer:
+                    # Determine how many inputs this element consumes
+                    if sub_layer is None:
+                        num_inputs = 1
+                    elif hasattr(sub_layer, 'num_inputs'):
+                        num_inputs = sub_layer.num_inputs
+                    else:
+                        num_inputs = 1
                     
-                    for sig, sub_layer in zip(current_signal, layer):
-                        outputs.append(sub_layer.process(sig, self))
-                else:
-                    # Broadcast
-                    for sub_layer in layer:
-                        # We might need to copy the signal if it's mutable
-                        outputs.append(sub_layer.process(copy.deepcopy(current_signal), self))
+                    # Gather inputs for this element
+                    if input_idx + num_inputs > len(current_signal):
+                        # Not enough inputs available - this might be a configuration error
+                        # or we might need to recycle inputs (broadcasting)
+                        # For now, let's raise a warning or error, but strictly following
+                        # the user request, we assume the user configures it correctly.
+                        # Fallback: take what's left or None
+                        inputs = current_signal[input_idx:]
+                    else:
+                        inputs = current_signal[input_idx : input_idx + num_inputs]
+                    
+                    input_idx += num_inputs
+                    
+                    # Process
+                    if sub_layer is None:
+                        # Pass-through
+                        outputs.extend(inputs)
+                    else:
+                        # If the element expects a single input but we have a list of 1, unwrap it
+                        # If it expects multiple, pass the list
+                        if num_inputs == 1 and len(inputs) == 1:
+                            proc_input = inputs[0]
+                        else:
+                            proc_input = inputs
+                            
+                        result = sub_layer.process(proc_input, self)
+                        
+                        # Result handling: always extend the outputs list
+                        if isinstance(result, list):
+                            outputs.extend(result)
+                        else:
+                            outputs.append(result)
                 
                 current_signal = outputs
 
@@ -617,15 +657,15 @@ class Context:
         elif return_type == 'image':
             # Convert figure to numpy array
             fig.canvas.draw()
-            image = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
-            image = image.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+            image = np.asarray(fig.canvas.buffer_rgba())
+            image = image[:, :, :3]  # Keep only RGB channels
             plt.close(fig)
             return image
         elif return_type == 'both':
             # Return both figure and image
             fig.canvas.draw()
-            image = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
-            image = image.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+            image = np.asarray(fig.canvas.buffer_rgba())
+            image = image[:, :, :3]  # Keep only RGB channels
             return fig, image
         else:
             raise ValueError(f"Invalid return_type: {return_type}. Must be 'figure', 'image', or 'both'")
@@ -648,6 +688,14 @@ class Context:
                     'x': i,
                     'is_parallel': True,
                     'num_branches': len(layer)
+                })
+            elif type(layer).__name__ == 'TelescopeArray' and hasattr(layer, 'elements') and len(layer.elements) > 1:
+                # Explode TelescopeArray into parallel collectors for visualization
+                tree.append({
+                    'layer': layer.elements,
+                    'x': i,
+                    'is_parallel': True,
+                    'num_branches': len(layer.elements)
                 })
             else:
                 tree.append({
@@ -684,10 +732,16 @@ class Context:
         spacing : float
             Horizontal spacing between layers
         asset_dir : Path
-            Path to assets directory
         """
         # Track active paths (y-positions)
         active_paths = [0.5]  # Start with single path at center
+        
+        # Track photonic components for background rectangles
+        # Dictionary mapping chip_id (or 'default') to list of coordinates
+        photonic_groups = {}
+        photonic_types = {'FiberIn', 'FiberOut', 'PhotonicChip', 'YSplitter', 
+                         'TOPS', 'ThermoOpticPhaseShifter', 'MMI', 
+                         'MultiModeInterferometer', 'Waveguide'}
         
         for i, node in enumerate(tree):
             x_pos = i * spacing
@@ -703,12 +757,35 @@ class Context:
                 # Draw each branch
                 for j, (layer, y_pos) in enumerate(zip(layer_list, y_positions)):
                     # Draw layer icon
-                    self._draw_layer_icon(ax, layer, x_pos, y_pos, asset_dir)
+                    self._draw_layer_icon(ax, layer, x_pos, y_pos, asset_dir, 
+                                        layer_index=i+1, element_index=j+1)
+                    
+                    # Track photonic components
+                    if type(layer).__name__ in photonic_types:
+                        # Determine group (chip)
+                        chip_id = 'default'
+                        if hasattr(layer, 'layer') and layer.layer is not None:
+                            # If element belongs to a PhotonicChip layer
+                            if type(layer.layer).__name__ == 'PhotonicChip':
+                                chip_id = id(layer.layer)
+                        
+                        if chip_id not in photonic_groups:
+                            photonic_groups[chip_id] = []
+                        photonic_groups[chip_id].append((x_pos, y_pos))
                     
                     # Draw connection from previous layer(s)
                     if i > 0:
-                        for prev_y in active_paths:
+                        # Intelligent connection routing
+                        if len(active_paths) == num_branches:
+                            # 1-to-1 connection (Parallel -> Parallel)
+                            # Connect j-th input to j-th output
+                            prev_y = active_paths[j]
                             self._draw_arrow(ax, (i-1)*spacing + 0.4, prev_y, 
+                                           x_pos - 0.4, y_pos)
+                        else:
+                            # All-to-All connection (Split or Combine)
+                            for prev_y in active_paths:
+                                self._draw_arrow(ax, (i-1)*spacing + 0.4, prev_y, 
                                            x_pos - 0.4, y_pos)
                 
                 # Update active paths
@@ -722,7 +799,20 @@ class Context:
                 y_pos = sum(active_paths) / len(active_paths)
                 
                 # Draw layer icon
-                self._draw_layer_icon(ax, layer, x_pos, y_pos, asset_dir)
+                self._draw_layer_icon(ax, layer, x_pos, y_pos, asset_dir, 
+                                    layer_index=i+1)
+                
+                # Track photonic components
+                if type(layer).__name__ in photonic_types:
+                    # Determine group (chip)
+                    chip_id = 'default'
+                    if hasattr(layer, 'layer') and layer.layer is not None:
+                        if type(layer.layer).__name__ == 'PhotonicChip':
+                            chip_id = id(layer.layer)
+                    
+                    if chip_id not in photonic_groups:
+                        photonic_groups[chip_id] = []
+                    photonic_groups[chip_id].append((x_pos, y_pos))
                 
                 # Draw connections from all active paths
                 if i > 0:
@@ -732,6 +822,44 @@ class Context:
                 
                 # Single output path
                 active_paths = [y_pos]
+        
+        # Draw background rectangles for photonic circuits
+        for chip_id, coords in photonic_groups.items():
+            if not coords:
+                continue
+                
+            xs = [p[0] for p in coords]
+            ys = [p[1] for p in coords]
+            min_x, max_x = min(xs), max(xs)
+            min_y, max_y = min(ys), max(ys)
+            
+            # Add padding
+            pad_x = 0.8
+            pad_y = 0.8
+            
+            rect = patches.Rectangle(
+                (min_x - pad_x, min_y - pad_y),
+                (max_x - min_x) + 2*pad_x,
+                (max_y - min_y) + 2*pad_y,
+                linewidth=1,
+                edgecolor='#BDC3C7',
+                facecolor='#ECF0F1',
+                alpha=0.5,
+                zorder=0,
+                linestyle='--'
+            )
+            ax.add_patch(rect)
+            
+            # Add label "Photonic Circuit"
+            label = "Photonic Circuit"
+            if chip_id != 'default':
+                # Try to get chip name if possible, but we only have ID here
+                # We could store the chip object instead of ID
+                pass
+                
+            ax.text((min_x + max_x)/2, max_y + pad_y, label,
+                   ha='center', va='bottom', fontsize=10, fontweight='bold',
+                   color='#7F8C8D')
     
     def _calculate_branch_positions(self, num_branches: int) -> List[float]:
         """Calculate y-positions for parallel branches."""
@@ -746,7 +874,9 @@ class Context:
         return [start_y + i * spacing for i in range(num_branches)]
     
     def _draw_layer_icon(self, ax: plt.Axes, layer: Layer, 
-                        x: float, y: float, asset_dir: Path):
+                        x: float, y: float, asset_dir: Path, 
+                        layer_index: Optional[int] = None, 
+                        element_index: Optional[int] = None):
         """
         Draw a layer icon with label.
         
@@ -762,33 +892,41 @@ class Context:
             Y-position
         asset_dir : Path
             Path to assets directory
+        layer_index : int, optional
+            Index of the layer (1-based)
+        element_index : int, optional
+            Index of the element in a parallel layer (1-based)
         """
         # Get layer type name
         layer_name = type(layer).__name__
         
-        # Map layer types to icon files
+        # Map layer types to icon files and markers
+        # (icon_file, marker_style, color)
         icon_map = {
-            'Scene': 'scene.svg',
-            'Star': 'scene.svg',
-            'Planet': 'scene.svg',
-            'Telescope': 'telescope.svg',
-            'TelescopeArray': 'telescope.svg',
-            'Collector': 'telescope.svg',
-            'Interferometer': 'interferometer.svg',
-            'Atmosphere': 'atmosphere.svg',
-            'AdaptiveOptics': 'adaptive_optics.svg',
-            'Coronagraph': 'coronagraph.svg',
-            'BeamSplitter': 'beam_splitter.svg',
-            'FiberIn': 'fiber_in.svg',
-            'FiberOut': 'fiber_out.svg',
-            'PhotonicChip': 'photonic_chip.svg',
-            'TOPS': 'photonic_chip.svg',
-            'MMI': 'photonic_chip.svg',
-            'Camera': 'camera.svg'
+            'Scene': ('scene.svg', '*', '#F1C40F'),
+            'Star': ('scene.svg', '*', '#F1C40F'),
+            'Planet': ('scene.svg', 'o', '#E67E22'),
+            'Telescope': ('telescope.svg', 'o', '#3498DB'),
+            'TelescopeArray': ('telescope.svg', 'o', '#3498DB'),
+            'Collector': ('telescope.svg', 'o', '#3498DB'),
+            'Interferometer': ('interferometer.svg', 'D', '#9B59B6'),
+            'Atmosphere': ('atmosphere.svg', 'H', '#95A5A6'),
+            'AdaptiveOptics': ('adaptive_optics.svg', 's', '#2ECC71'),
+            'Coronagraph': ('coronagraph.svg', '8', '#34495E'),
+            'BeamSplitter': ('beam_splitter.svg', 'D', '#E74C3C'),
+            'FiberIn': ('fiber_in.svg', 'h', '#1ABC9C'),
+            'FiberOut': ('fiber_out.svg', 'h', '#1ABC9C'),
+            'PhotonicChip': ('photonic_chip.svg', 's', '#34495E'),
+            'YSplitter': ('splitter.svg', 'v', '#E74C3C'),
+            'TOPS': ('phase_shifter.svg', 's', '#E67E22'),
+            'ThermoOpticPhaseShifter': ('phase_shifter.svg', 's', '#E67E22'),
+            'MMI': ('mmi.svg', 's', '#8E44AD'),
+            'MultiModeInterferometer': ('mmi.svg', 's', '#8E44AD'),
+            'Camera': ('camera.svg', 's', '#2C3E50')
         }
         
-        icon_file = icon_map.get(layer_name, 'telescope.svg')  # Default to telescope
-        icon_path = asset_dir / icon_file
+        icon_info = icon_map.get(layer_name, ('telescope.svg', 'o', '#95A5A6'))
+        icon_file, marker, color = icon_info
         
         # Draw box for component
         box_width = 0.6
@@ -806,19 +944,193 @@ class Context:
         )
         ax.add_patch(box)
         
-        # Add icon if SVG exists
+        # Try to render SVG icon
+        icon_path = asset_dir / icon_file
         if icon_path.exists():
-            # For now, just indicate icon presence with a marker
-            # Full SVG rendering would require additional library (e.g., svgpath2mpl)
-            ax.plot(x, y, 'o', markersize=15, color='#3498DB', zorder=3, alpha=0.3)
+            try:
+                self._render_svg_icon(ax, icon_path, x, y, box_width*0.8)
+            except Exception as e:
+                # Fallback to marker if SVG rendering fails
+                # print(f"SVG render failed for {icon_file}: {e}")
+                ax.plot(x, y, marker, markersize=15, color=color, zorder=3, alpha=0.8)
+        else:
+            # Fallback to marker
+            ax.plot(x, y, marker, markersize=15, color=color, zorder=3, alpha=0.8)
         
-        # Add label below box
+        # Construct label
         display_name = self._get_display_name(layer)
+        
+        # Add index if provided
+        if element_index is not None:
+            display_name = f"{display_name} {element_index}"
+            
+        # Add label below box
         ax.text(x, y - box_height/2 - 0.15, display_name,
-               ha='center', va='top', fontsize=9, fontweight='bold',
+               ha='center', va='top', fontsize=8, fontweight='bold',
                bbox=dict(boxstyle='round,pad=0.3', facecolor='white', 
                         edgecolor='none', alpha=0.8))
+        
+        # Add type in parentheses (gray, smaller)
+        type_text = f"({layer_name})"
+        ax.text(x, y - box_height/2 - 0.4, type_text,
+               ha='center', va='top', fontsize=7, color='#7F8C8D')
+               
+        # Add indices in code format [i] or [i,j]
+        if layer_index is not None:
+            if element_index is not None:
+                idx_text = f"[{layer_index},{element_index}]"
+            else:
+                idx_text = f"[{layer_index}]"
+            
+            ax.text(x, y - box_height/2 - 0.55, idx_text,
+                   ha='center', va='top', fontsize=7, family='monospace', color='#2C3E50')
     
+    def _render_svg_icon(self, ax: plt.Axes, svg_path: Path, center_x: float, center_y: float, size: float):
+        """
+        Render a simple SVG icon onto the axes.
+        
+        Supports basic SVG elements: path (M, L, C, Z), rect, circle.
+        Assumes SVG viewBox is 0 0 100 100.
+        """
+        tree = ET.parse(svg_path)
+        root = tree.getroot()
+        
+        # Namespace handling
+        ns = {'svg': 'http://www.w3.org/2000/svg'}
+        
+        # Scale factor (SVG 100x100 -> size x size)
+        scale = size / 100.0
+        offset_x = center_x - size/2
+        offset_y = center_y - size/2
+        
+        # Helper to transform coordinates
+        def trans_x(val): return offset_x + float(val) * scale
+        def trans_y(val): return offset_y + (100 - float(val)) * scale # Flip Y for MPL
+        def trans_len(val): return float(val) * scale
+        
+        # Iterate elements (ignoring namespace for simplicity in tag check)
+        for elem in root.iter():
+            tag = elem.tag.split('}')[-1]
+            
+            if tag == 'path':
+                d = elem.get('d')
+                if d:
+                    self._draw_svg_path(ax, d, elem, trans_x, trans_y, scale)
+            
+            elif tag == 'rect':
+                x = float(elem.get('x', 0))
+                y = float(elem.get('y', 0))
+                w = float(elem.get('width', 0))
+                h = float(elem.get('height', 0))
+                
+                # SVG y is top-down, MPL is bottom-up
+                # Rect bottom-left in MPL:
+                # SVG top-left (x, y) -> MPL (x, 100-y)
+                # But rect extends down in SVG, so bottom is y+h
+                # MPL y = 100 - (y + h)
+                
+                mpl_x = trans_x(x)
+                mpl_y = trans_y(y + h)
+                mpl_w = trans_len(w)
+                mpl_h = trans_len(h)
+                
+                color = elem.get('stroke', 'black')
+                fill = elem.get('fill', 'none')
+                lw = float(elem.get('stroke-width', 1)) * 0.5 # Scale down width
+                
+                rect = patches.Rectangle((mpl_x, mpl_y), mpl_w, mpl_h, 
+                                       linewidth=lw, edgecolor=color, facecolor=fill, zorder=3)
+                ax.add_patch(rect)
+                
+            elif tag == 'circle':
+                cx = float(elem.get('cx', 0))
+                cy = float(elem.get('cy', 0))
+                r = float(elem.get('r', 0))
+                
+                mpl_cx = trans_x(cx)
+                mpl_cy = trans_y(cy)
+                mpl_r = trans_len(r)
+                
+                color = elem.get('stroke', 'black')
+                fill = elem.get('fill', 'none')
+                lw = float(elem.get('stroke-width', 1)) * 0.5
+                
+                circ = patches.Circle((mpl_cx, mpl_cy), mpl_r, 
+                                    linewidth=lw, edgecolor=color, facecolor=fill, zorder=3)
+                ax.add_patch(circ)
+                
+            elif tag == 'text':
+                x = float(elem.get('x', 0))
+                y = float(elem.get('y', 0))
+                text = elem.text
+                
+                mpl_x = trans_x(x)
+                mpl_y = trans_y(y)
+                
+                color = elem.get('fill', 'black')
+                size_pt = float(elem.get('font-size', 10)) * 0.5 # Rough scale
+                
+                ax.text(mpl_x, mpl_y, text, color=color, fontsize=size_pt, 
+                       ha='center', va='center', zorder=3)
+
+    def _draw_svg_path(self, ax, d, elem, tx, ty, scale):
+        """Parse simple SVG path d string and draw PathPatch."""
+        # Regex to tokenize path data: commands (letters) and numbers
+        tokens = re.findall(r'([a-zA-Z])|([-+]?\d*\.?\d+)', d)
+        tokens = [t[0] or t[1] for t in tokens]
+        
+        verts = []
+        codes = []
+        
+        i = 0
+        current_pos = (0, 0)
+        
+        while i < len(tokens):
+            cmd = tokens[i]
+            i += 1
+            
+            if cmd == 'M': # Move to x,y
+                x = float(tokens[i]); y = float(tokens[i+1])
+                verts.append((tx(x), ty(y)))
+                codes.append(MPath.MOVETO)
+                current_pos = (x, y)
+                i += 2
+            elif cmd == 'L': # Line to x,y
+                x = float(tokens[i]); y = float(tokens[i+1])
+                verts.append((tx(x), ty(y)))
+                codes.append(MPath.LINETO)
+                current_pos = (x, y)
+                i += 2
+            elif cmd == 'C': # Cubic Bezier (x1 y1 x2 y2 x y)
+                x1 = float(tokens[i]); y1 = float(tokens[i+1])
+                x2 = float(tokens[i+2]); y2 = float(tokens[i+3])
+                x = float(tokens[i+4]); y = float(tokens[i+5])
+                
+                verts.append((tx(x1), ty(y1)))
+                verts.append((tx(x2), ty(y2)))
+                verts.append((tx(x), ty(y)))
+                
+                codes.append(MPath.CURVE4)
+                codes.append(MPath.CURVE4)
+                codes.append(MPath.CURVE4)
+                
+                current_pos = (x, y)
+                i += 6
+            elif cmd == 'Z': # Close path
+                verts.append((0,0)) # Ignored
+                codes.append(MPath.CLOSEPOLY)
+            # Add more commands (Q, T, etc.) if needed
+            
+        if verts:
+            path = MPath(verts, codes)
+            
+            color = elem.get('stroke', 'black')
+            fill = elem.get('fill', 'none')
+            lw = float(elem.get('stroke-width', 1)) * 0.5
+            
+            patch = PathPatch(path, facecolor=fill, edgecolor=color, linewidth=lw, zorder=3)
+            ax.add_patch(patch)
+
     def _get_display_name(self, layer: Layer) -> str:
         """Get display name for a layer."""
         layer_name = type(layer).__name__
