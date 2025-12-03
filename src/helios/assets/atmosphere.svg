@@ -1,9 +1,14 @@
-<svg width="80" height="80" xmlns="http://www.w3.org/2000/svg">
-  <!-- Atmosphere: Wavy lines representing turbulence -->
-  <path d="M 10,20 Q 20,15 30,20 T 50,20 T 70,20" fill="none" stroke="#87CEEB" stroke-width="2" opacity="0.7"/>
-  <path d="M 10,35 Q 25,30 35,35 T 55,35 T 70,35" fill="none" stroke="#87CEEB" stroke-width="2" opacity="0.7"/>
-  <path d="M 10,50 Q 20,45 30,50 T 50,50 T 70,50" fill="none" stroke="#4682B4" stroke-width="2.5" opacity="0.8"/>
-  <path d="M 10,65 Q 25,60 35,65 T 55,65 T 70,65" fill="none" stroke="#87CEEB" stroke-width="2" opacity="0.7"/>
-  <!-- Wind arrow -->
-  <path d="M 15,40 L 50,40 L 45,35 M 50,40 L 45,45" stroke="#4682B4" stroke-width="2" fill="none"/>
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <!-- Turbulence Layers -->
+  <path d="M10,20 Q30,10 50,20 T90,20" fill="none" stroke="#BDC3C7" stroke-width="2"/>
+  <path d="M10,40 Q30,50 50,40 T90,40" fill="none" stroke="#95A5A6" stroke-width="3"/>
+  <path d="M10,60 Q30,50 50,60 T90,60" fill="none" stroke="#7F8C8D" stroke-width="4"/>
+  <path d="M10,80 Q30,90 50,80 T90,80" fill="none" stroke="#2C3E50" stroke-width="5"/>
+  
+  <!-- Swirls/Eddies -->
+  <path d="M70,30 A 5 5 0 1 0 70 40" fill="none" stroke="#3498DB" stroke-width="2"/>
+  <path d="M30,70 A 5 5 0 1 1 30 60" fill="none" stroke="#3498DB" stroke-width="2"/>
+  
+  <!-- Star/Light Ray -->
+  <path d="M50,5 L50,15 L52,35 L48,55 L51,75 L50,95" fill="none" stroke="#F1C40F" stroke-width="3" stroke-dasharray="4,2"/>
 </svg>
