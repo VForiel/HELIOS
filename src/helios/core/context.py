@@ -852,6 +852,51 @@ class Context:
         tree = []
         for i, layer in enumerate(self.layers):
             if isinstance(layer, list):
+                # Check if purely Swap/None layer
+                is_pure_swap = True
+                has_swap = False
+                for elem in layer:
+                    if elem is not None:
+                        if type(elem).__name__ != 'Swap':
+                            is_pure_swap = False
+                            break
+                        else:
+                            has_swap = True
+                
+                if is_pure_swap and has_swap and len(layer) > 0:
+                    # Calculate global mapping
+                    global_mapping = []
+                    current_in_offset = 0
+                    
+                    # We need a Swap class to instantiate. 
+                    # Since we can't easily import it, we'll use the class of the first Swap found.
+                    swap_class = None
+                    
+                    for elem in layer:
+                        if elem is None:
+                            # Identity for 1 path
+                            global_mapping.append(current_in_offset)
+                            current_in_offset += 1
+                        else:
+                            # Swap component
+                            if swap_class is None:
+                                swap_class = elem.__class__
+                                
+                            # elem.mapping contains local indices
+                            for local_in_idx in elem.mapping:
+                                global_mapping.append(current_in_offset + local_in_idx)
+                            current_in_offset += len(elem.mapping)
+                    
+                    if swap_class:
+                        virtual_swap = swap_class(mapping=global_mapping, name="Combined Swap")
+                        tree.append({
+                            'layer': virtual_swap,
+                            'x': i,
+                            'is_parallel': False, # Treat as single layer!
+                            'num_branches': 1
+                        })
+                        continue # Skip the standard parallel handling
+
                 # Parallel layers - create branching
                 tree.append({
                     'layer': layer,
@@ -961,12 +1006,12 @@ class Context:
                     elif type(layer).__name__ == 'Swap':
                         # Draw as a standard block when in parallel mode
                         self._draw_layer_icon(ax, layer, x_pos, y_pos, asset_dir, 
-                                            layer_index=i+1, element_index=j+1)
+                                            layer_index=i, element_index=j)
 
                     else:
                         # Draw standard layer icon
                         self._draw_layer_icon(ax, layer, x_pos, y_pos, asset_dir, 
-                                            layer_index=i+1, element_index=j+1)
+                                            layer_index=i, element_index=j)
                     
                     # Track photonic components
                     if layer is not None and type(layer).__name__ in photonic_types:
@@ -1134,7 +1179,7 @@ class Context:
                     
                     # Draw layer icon
                     self._draw_layer_icon(ax, layer, x_pos, y_pos, asset_dir, 
-                                        layer_index=i+1)
+                                        layer_index=i)
                 
                     # Track photonic components
                     if type(layer).__name__ in photonic_types:
