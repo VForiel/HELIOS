@@ -477,8 +477,6 @@ class Scene(Layer):
         
         For reference: magnitude 0 star at 10 pc gives ~1e10 photons/s/m²/nm
         """
-        # Create initial wavefront
-        wf = Wavefront(wavelength=1.0*u.um, size=512)
         
         # Calculate total flux scaling from all objects
         flux_scaling = 0.0
@@ -498,9 +496,9 @@ class Scene(Layer):
         
         # Apply flux scaling to wavefront field (amplitude scales as sqrt(flux))
         if flux_scaling > 0:
-            wf.field = wf.field * np.sqrt(flux_scaling)
+            wavefront.field = wavefront.field * np.sqrt(flux_scaling)
         
-        return wf
+        return wavefront
     def render(self, npix: int = 256, fov: u.Quantity = 1.0 * u.arcsec, return_coords: bool = False):
         """Render the scene to a 2D intensity array in angular units and centered on (0,0).
 

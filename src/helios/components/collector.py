@@ -32,9 +32,10 @@ class Collector(Element):
     ----------
     pupil : Pupil
         Pupil geometry defining the aperture transmission pattern.
-    position : Tuple[float, float]
-        (x, y) position in the aperture plane (meters). For single telescopes,
-        use (0, 0). For interferometric arrays, specify baseline coordinates.
+    position : Tuple[float, float] or Tuple[astropy.Quantity, astropy.Quantity]
+        (x, y) position in the aperture plane. If floats, assumed to be meters.
+        Can also be astropy Quantities. For single telescopes, use (0, 0).
+        For interferometric arrays, specify baseline coordinates.
     size : astropy.Quantity, optional
         Diameter of the collector aperture. If None, inferred from pupil.diameter.
     name : str, optional
@@ -66,12 +67,17 @@ class Collector(Element):
     def __init__(self, pupil: Pupil, position: Tuple[float, float] = (0, 0),
                  size: Optional[u.Quantity] = None, name: Optional[str] = None,
                  **metadata):
+        # Handle position units (convert to meters if Quantity)
+        x, y = position
+        x = x.to(u.m).value if hasattr(x, 'to') else float(x)
+        y = y.to(u.m).value if hasattr(y, 'to') else float(y)
+        self.position = (x, y)
+
         # Initialize Element with name
-        default_name = f"Collector@({position[0]:.1f},{position[1]:.1f})"
+        default_name = f"Collector@({self.position[0]:.1f},{self.position[1]:.1f})"
         super().__init__(name=name or default_name)
         
         self.pupil = pupil
-        self.position = tuple(position)
         
         # Infer size from pupil if not provided
         if size is None:

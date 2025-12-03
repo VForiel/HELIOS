@@ -1,6 +1,8 @@
 import numpy as np
 from astropy import units as u
 from typing import Optional
+import matplotlib.pyplot as plt
+import copy
 
 class Wavefront:
     """
@@ -42,6 +44,8 @@ class Wavefront:
     >>> # Add phase aberration
     >>> phase = np.random.randn(256, 256) * 0.5  # radians
     >>> wf.field *= np.exp(1j * phase)
+    >>> # Visualize
+    >>> wf.plot(title="Aberrated Wavefront")
     
     Notes
     -----
@@ -62,6 +66,62 @@ class Wavefront:
         self.field = np.ones((size, size), dtype=np.complex128)
         self.pixel_scale = 1.0 * u.m # Placeholder
         self.max_modes: Optional[int] = None  # None for free-space, int for guided modes
+
+    def copy(self) -> 'Wavefront':
+        """
+        Return a deep copy of the wavefront.
+        
+        Returns
+        -------
+        Wavefront
+            A new Wavefront instance with independent field array.
+        """
+        new_wf = copy.copy(self)
+        new_wf.field = self.field.copy()
+        return new_wf
+
+    def plot(self, title: Optional[str] = None, figsize: tuple = (12, 5), 
+             show: bool = True):
+        """
+        Plot the wavefront amplitude and phase side by side.
+        
+        Parameters
+        ----------
+        title : str, optional
+            Super title for the figure.
+        figsize : tuple, optional
+            Figure size (width, height). Default (12, 5).
+        show : bool, optional
+            If True, call plt.show(). Default True.
+            
+        Returns
+        -------
+        fig : matplotlib.figure.Figure
+            The figure object.
+        axes : list of matplotlib.axes.Axes
+            The axes objects (ax1, ax2).
+        """
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figsize)
+        
+        # Amplitude
+        im1 = ax1.imshow(np.abs(self.field), cmap='inferno', origin='lower')
+        ax1.set_title("Amplitude")
+        plt.colorbar(im1, ax=ax1)
+        
+        # Phase
+        im2 = ax2.imshow(np.angle(self.field), cmap='twilight', vmin=-np.pi, vmax=np.pi, origin='lower')
+        ax2.set_title("Phase (rad)")
+        plt.colorbar(im2, ax=ax2)
+        
+        if title:
+            fig.suptitle(title)
+            
+        plt.tight_layout()
+        
+        if show:
+            plt.show()
+            
+        return fig, (ax1, ax2)
 
     def propagate(self, distance: u.Quantity):
         """
