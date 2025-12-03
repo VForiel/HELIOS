@@ -51,6 +51,12 @@ def generate_uml():
     mmi_matrix = np.array([[1, 1], [1, -1]]) / np.sqrt(2)
     mmi = photonics.MMI(matrix=mmi_matrix, name="Beam Combiner (MMI)")
     
+    cross_mmi_matrix = np.array([
+            [np.exp(1j*np.pi/4), np.exp(-1j*np.pi/4)],
+            [np.exp(-1j*np.pi/4), np.exp(1j*np.pi/4)]
+        ]) / np.sqrt(2)
+    cross_mmi = photonics.MMI(matrix=cross_mmi_matrix, name="Cross MMI")
+    
     # Output coupling
     fiber_out = fibers.FiberOut(name="Detector Port")
     
@@ -77,14 +83,28 @@ def generate_uml():
     # Layer 5: MMI Recombiner
     ctx.add_layer([copy(mmi) for _ in range(2)])
 
-    # Layer 5: MMI Recombiner
+    # Layer 6: CrossSection (Permutation)
+    cross = photonics.Swap(mapping=[0, 2, 1, 3], name="Router")
+    ctx.add_layer(cross)
+
+    ctx.add_layer([copy(tops) for _ in range(4)])
+
+    # Layer 7: MMI Recombiner (Second stage)
     ctx.add_layer([copy(mmi) for _ in range(2)])
+
+    y_splitter = photonics.YSplitter(name="Splitter")
+
+    ctx.add_layer([None] + [copy(y_splitter) for _ in range(3)])
+
+    ctx.add_layer([None] + [copy(tops) for _ in range(6)])
+
+    ctx.add_layer([None] + [copy(cross_mmi) for _ in range(3)])
     
-    # Layer 6: Fiber Outputs
-    ctx.add_layer([copy(fiber_out) for _ in range(4)])
+    # Layer 8: Fiber Outputs
+    ctx.add_layer([copy(fiber_out) for _ in range(7)])
     
-    # Layer 7: Detectors
-    ctx.add_layer([copy(cam) for _ in range(4)])
+    # Layer 9: Detectors
+    ctx.add_layer([copy(cam) for _ in range(7)])
 
     # Create Photonic Chip container to group elements
     # This ensures they are visualized as a single circuit
@@ -92,7 +112,7 @@ def generate_uml():
     
     # Manually link elements to chip (simulating adding them to chip)
     # In a real workflow, we might use chip.add_element(), but here we construct the pipeline manually
-    for elem in [fiber_in, tops, mmi, fiber_out, fiber_out]:
+    for elem in [fiber_in, tops, mmi, cross, fiber_out, fiber_out]:
         elem.layer = chip
 
     # 4. Generate and Show Diagram

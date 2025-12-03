@@ -144,6 +144,57 @@ class MultiModeInterferometer(Element):
 # Alias for convenience
 MMI = MultiModeInterferometer
 
+class Swap(Layer):
+    """
+    A layer that permutes the order of optical paths.
+    
+    This component is used to reorder wavefronts between layers, for example
+    to implement waveguide crossings or specific routing topologies.
+    It does not modify the wavefronts themselves, only their order in the list.
+    
+    Parameters
+    ----------
+    mapping : List[int]
+        Permutation indices. The i-th output will be the mapping[i]-th input.
+        Example: [0, 2, 1, 3] means:
+        - Output 0 comes from Input 0
+        - Output 1 comes from Input 2
+        - Output 2 comes from Input 1
+        - Output 3 comes from Input 3
+    name : str, optional
+        Name of the component.
+    """
+    def __init__(self, mapping: List[int], name: Optional[str] = None):
+        super().__init__(name=name or "Swap")
+        self.mapping = mapping
+        self.num_inputs = len(mapping)
+        self.num_outputs = len(mapping)
+        
+    def process(self, wavefronts: Union[Wavefront, List[Wavefront]], context: Context) -> List[Wavefront]:
+        # Ensure input is a list
+        if not isinstance(wavefronts, list):
+            inputs = [wavefronts]
+        else:
+            inputs = wavefronts
+            
+        if len(inputs) != self.num_inputs:
+            # If we have fewer inputs than expected, we can't map correctly
+            # But maybe we just map what we have?
+            # Strict check is safer
+            if len(inputs) < self.num_inputs:
+                 raise ValueError(f"Swap expects {self.num_inputs} inputs, got {len(inputs)}")
+        
+        # Apply permutation
+        # Output[i] = Input[mapping[i]]
+        outputs = []
+        for idx in self.mapping:
+            if idx < len(inputs):
+                outputs.append(inputs[idx])
+            else:
+                outputs.append(None) # Should not happen if check passes
+                
+        return outputs
+
 def test_photonics():
     # Test YSplitter
     ys = YSplitter()

@@ -1,0 +1,16 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+    <!-- Crossed paths (Left to Right flow) -->
+    <!-- Top-Left to Bottom-Right -->
+    <path d="M 25 25 L 75 75" stroke="#7F8C8D" stroke-width="8" fill="none" />
+    <!-- Bottom-Left to Top-Right -->
+    <path d="M 25 75 L 75 25" stroke="#7F8C8D" stroke-width="8" fill="none" />
+    
+    <!-- Arrow heads (Pointing Right) -->
+    <!-- At Bottom-Right (End of TL->BR path) -->
+    <!-- Arrow pointing South-East -->
+    <path d="M 60 75 L 75 75 L 75 60" stroke="#7F8C8D" stroke-width="8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    
+    <!-- At Top-Right (End of BL->TR path) -->
+    <!-- Arrow pointing North-East -->
+    <path d="M 60 25 L 75 25 L 75 40" stroke="#7F8C8D" stroke-width="8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

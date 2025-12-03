@@ -52,6 +52,37 @@ class Element:
         self.num_inputs: int = 1  # Number of inputs this element consumes
         self.num_outputs: int = 1 # Number of outputs this element produces
 
+    def twin(self) -> 'Element':
+        """
+        Create a twin copy of this element.
+        
+        A twin is a deep copy of the element that preserves the reference to its
+        parent layer (if any). This is useful for creating multiple instances
+        of the same component type that share the same physical container (e.g.,
+        multiple MMI components on the same PhotonicChip).
+        
+        Returns
+        -------
+        Element
+            A new instance of the element with identical attributes but sharing
+            the parent layer reference.
+        """
+        # Create a deep copy of the element
+        # We need to temporarily detach the layer to avoid deep copying the parent
+        parent_layer = self.layer
+        self.layer = None
+        
+        try:
+            new_element = copy.deepcopy(self)
+        finally:
+            # Restore the layer reference on the original object
+            self.layer = parent_layer
+            
+        # Restore the layer reference on the new object
+        new_element.layer = parent_layer
+        
+        return new_element
+
     def description(self, indent: int = 0, full: bool = False) -> str:
         """
         Generate a text description of this element.
@@ -181,6 +212,68 @@ class Layer:
     
     num_outputs: int = 1 # Default number of outputs
     
+    def twin(self) -> 'Layer':
+        """
+        Create a twin copy of this layer.
+        
+        A twin is a deep copy of the layer that preserves the reference to its
+        parent context (if any) and potentially other shared resources.
+        
+        Returns
+        -------
+        Layer
+            A new instance of the layer with identical attributes.
+        """
+        # Similar logic to Element.twin() if needed, but Layer usually doesn't have a 'parent' 
+        # in the same way Element has 'layer'. Layer has 'context'.
+        # However, the user asked for "elements" to have twin().
+        # Since Layer is also used as a component (e.g. MMI inherits from Layer),
+        # we should implement it here too or ensure MMI inherits from Element?
+        # Wait, in HELIOS, components like MMI inherit from Layer, not Element?
+        # Let's check photonics.py.
+        
+        # If MMI inherits from Layer, then we need twin() on Layer.
+        # But Layer has 'context', not 'layer'.
+        # The user said "conservent leurs éléments parents".
+        # If MMI is a Layer, does it have a parent?
+        # In generate_photonics_uml.py:
+        # chip = photonics.PhotonicChip(...)
+        # mmi.layer = chip
+        # So MMI *does* have a .layer attribute if it's part of a chip.
+        # But Layer class definition doesn't have .layer attribute by default.
+        # It seems components might dynamically get .layer attribute or inherit from something else?
+        
+        # Let's check if Layer has .layer attribute.
+        # In the provided code for Layer class:
+        # def __init__(self, name=None):
+        #     self.name = name
+        #     self.elements = []
+        #     self.context = None
+        
+        # It does NOT have self.layer.
+        # But in generate_photonics_uml.py:
+        # for elem in [fiber_in, tops, mmi, cross, fiber_out, fiber_out]:
+        #     elem.layer = chip
+        
+        # So it's added dynamically.
+        
+        # So we should implement twin() on Layer as well, handling .layer if it exists.
+        
+        parent_layer = getattr(self, 'layer', None)
+        if parent_layer is not None:
+            self.layer = None
+            
+        try:
+            new_layer = copy.deepcopy(self)
+        finally:
+            if parent_layer is not None:
+                self.layer = parent_layer
+                
+        if parent_layer is not None:
+            new_layer.layer = parent_layer
+            
+        return new_layer
+
     def add_element(self, element: Element):
         """
         Add an element to this layer.
@@ -701,7 +794,7 @@ class Context:
         self.validate_architecture()
         
         fig, ax = plt.subplots(figsize=figsize)
-        ax.set_xlim(-1, len(self.layers) * layer_spacing + 1)
+        # ax.set_xlim will be set later or auto-scaled
         
         # Get asset directory
         asset_dir = Path(__file__).parent.parent / "assets"
@@ -720,6 +813,7 @@ class Context:
         # Configure axes
         ax.set_aspect('equal', adjustable='datalim')
         ax.axis('off')
+        ax.autoscale(enable=True, axis='x', tight=True)
         ax.set_title('HELIOS Optical System Diagram', fontsize=16, fontweight='bold', pad=20)
         
         plt.tight_layout()
@@ -812,6 +906,32 @@ class Context:
         # Track active paths (y-positions)
         active_paths = [0.5]  # Start with single path at center
         
+        # Pre-calculate x-positions to handle Swap spacing
+        # Swap should not consume a full spacing slot
+        x_coords = []
+        current_x = 0.0
+        for node in tree:
+            if not node['is_parallel'] and type(node['layer']).__name__ == 'Swap':
+                # Permutator sits "between" layers, effectively at the same X as previous?
+                # Or we just don't increment for it.
+                # Let's assign it the current X, but NOT increment for the next layer.
+                # This means Permutator and Next Layer share the same X?
+                # No, that would overlap.
+                # We want: Prev(X) -> Perm -> Next(X+spacing).
+                # So Perm is effectively at X (or X+0.5 spacing).
+                # If we assign Perm = X, and Next = X+spacing.
+                # Then Perm draws from Prev(X-spacing) to Next(X+spacing).
+                # Wait, if Prev is at X-spacing.
+                # We want Prev(0) -> Next(2).
+                # Perm is at index i. Prev at i-1. Next at i+1.
+                # x_coords[i-1] = 0.
+                # x_coords[i+1] = 2.
+                # x_coords[i] = ? (Doesn't matter for drawing, but matters for loop).
+                x_coords.append(current_x)
+            else:
+                x_coords.append(current_x)
+                current_x += spacing
+
         # Track photonic components for background rectangles
         # Dictionary mapping chip_id (or 'default') to list of coordinates
         photonic_groups = {}
@@ -820,7 +940,7 @@ class Context:
                          'MultiModeInterferometer', 'Waveguide'}
         
         for i, node in enumerate(tree):
-            x_pos = i * spacing
+            x_pos = x_coords[i]
             
             if node['is_parallel']:
                 # Beam splitter creates multiple paths
@@ -832,12 +952,24 @@ class Context:
                 
                 # Draw each branch
                 for j, (layer, y_pos) in enumerate(zip(layer_list, y_positions)):
-                    # Draw layer icon
-                    self._draw_layer_icon(ax, layer, x_pos, y_pos, asset_dir, 
-                                        layer_index=i+1, element_index=j+1)
+                    # Handle different layer types
+                    if layer is None:
+                        # Draw pass-through line
+                        ax.plot([x_pos - 0.4, x_pos + 0.4], [y_pos, y_pos], 
+                               color='#E74C3C', linestyle='-', linewidth=2, zorder=1)
+                        
+                    elif type(layer).__name__ == 'Swap':
+                        # Draw as a standard block when in parallel mode
+                        self._draw_layer_icon(ax, layer, x_pos, y_pos, asset_dir, 
+                                            layer_index=i+1, element_index=j+1)
+
+                    else:
+                        # Draw standard layer icon
+                        self._draw_layer_icon(ax, layer, x_pos, y_pos, asset_dir, 
+                                            layer_index=i+1, element_index=j+1)
                     
                     # Track photonic components
-                    if type(layer).__name__ in photonic_types:
+                    if layer is not None and type(layer).__name__ in photonic_types:
                         # Determine group (chip)
                         chip_id = 'default'
                         if hasattr(layer, 'layer') and layer.layer is not None:
@@ -851,12 +983,22 @@ class Context:
                     
                     # Draw connection from previous layer(s)
                     if i > 0:
+                        # Check if previous layer was Swap
+                        prev_node = tree[i-1]
+                        is_prev_permutator = False
+                        if not prev_node['is_parallel']:
+                            if type(prev_node['layer']).__name__ == 'Swap':
+                                is_prev_permutator = True
+
                         # Intelligent connection routing
                         
+                        # Determine arrow style based on destination
+                        arrow_style = '-' if layer is None else '-|>'
+
                         # Calculate total inputs expected by current layer
                         expected_inputs = []
                         for elem in layer_list:
-                            if hasattr(elem, 'num_inputs'):
+                            if elem is not None and hasattr(elem, 'num_inputs'):
                                 expected_inputs.append(elem.num_inputs)
                             else:
                                 expected_inputs.append(1)
@@ -874,26 +1016,38 @@ class Context:
                             for k in range(n_in):
                                 if start_idx + k < len(active_paths):
                                     prev_y = active_paths[start_idx + k]
-                                    self._draw_arrow(ax, (i-1)*spacing + 0.4, prev_y, 
-                                               x_pos - 0.4, y_pos)
+                                    if is_prev_permutator:
+                                        # Connection already drawn by Swap
+                                        pass
+                                    else:
+                                        self._draw_arrow(ax, x_coords[i-1] + 0.4, prev_y, 
+                                                   x_pos - 0.4, y_pos, arrowstyle=arrow_style)
                                                
                         elif len(active_paths) == num_branches:
                             # 1-to-1 connection (Parallel -> Parallel) fallback
                             prev_y = active_paths[j]
-                            self._draw_arrow(ax, (i-1)*spacing + 0.4, prev_y, 
-                                           x_pos - 0.4, y_pos)
+                            if is_prev_permutator:
+                                # Connection already drawn by Swap
+                                pass
+                            else:
+                                self._draw_arrow(ax, x_coords[i-1] + 0.4, prev_y, 
+                                               x_pos - 0.4, y_pos, arrowstyle=arrow_style)
                         else:
                             # All-to-All connection (Split or Combine)
                             for prev_y in active_paths:
-                                self._draw_arrow(ax, (i-1)*spacing + 0.4, prev_y, 
-                                           x_pos - 0.4, y_pos)
+                                if is_prev_permutator:
+                                    # Connection already drawn by Swap
+                                    pass
+                                else:
+                                    self._draw_arrow(ax, x_coords[i-1] + 0.4, prev_y, 
+                                               x_pos - 0.4, y_pos, arrowstyle=arrow_style)
                 
                 # Update active paths
                 # We need to calculate output paths based on num_outputs of each element
                 new_active_paths = []
                 for j, (layer, y_pos) in enumerate(zip(layer_list, y_positions)):
                     n_out = 1
-                    if hasattr(layer, 'num_outputs'):
+                    if layer is not None and hasattr(layer, 'num_outputs'):
                         n_out = layer.num_outputs
                     
                     # If n_out > 1, we should probably spread them around y_pos?
@@ -912,55 +1066,96 @@ class Context:
                 # Single layer
                 layer = node['layer']
                 
-                # Draw at center of active paths
-                y_pos = sum(active_paths) / len(active_paths)
-                
-                # Draw layer icon
-                self._draw_layer_icon(ax, layer, x_pos, y_pos, asset_dir, 
-                                    layer_index=i+1)
-                
-                # Track photonic components
-                if type(layer).__name__ in photonic_types:
-                    # Determine group (chip)
-                    chip_id = 'default'
-                    if hasattr(layer, 'layer') and layer.layer is not None:
-                        if type(layer.layer).__name__ == 'PhotonicChip':
-                            chip_id = id(layer.layer)
+                if type(layer).__name__ == 'Swap':
+                    # Special handling for Swap (CrossSection)
+                    # No icon, just crossed connections
                     
-                    if chip_id not in photonic_groups:
-                        photonic_groups[chip_id] = []
-                    photonic_groups[chip_id].append((x_pos, y_pos))
-                
-                # Draw connections from all active paths
-                if i > 0:
-                    for prev_y in active_paths:
-                        self._draw_arrow(ax, (i-1)*spacing + 0.4, prev_y,
-                                       x_pos - 0.4, y_pos)
-                
-                # Single output path (or multiple if single layer produces multiple)
-                # If TelescopeArray, it produces N outputs (visually)
-                if type(layer).__name__ == 'TelescopeArray':
-                     # This case is actually handled by the "explode" logic in _build_layer_tree
-                     # So we shouldn't reach here for TelescopeArray unless it has 1 element
-                     pass
-                
-                n_out = 1
-                if hasattr(layer, 'num_outputs'):
-                    n_out = layer.num_outputs
-                
-                # For single layer, we usually collapse to 1 path unless it's a splitter
-                # But if it's a splitter (YSplitter), it should probably be in a parallel list?
-                # Or if it's a single YSplitter layer, it produces 2 outputs.
-                # If it produces 2 outputs, we should probably split the active path?
-                
-                if n_out > 1:
-                    # Split active paths
-                    # We need to generate n_out new y positions centered around y_pos
-                    # But we don't have a good way to space them without knowing global context
-                    # For now, just replicate y_pos
-                    active_paths = [y_pos] * n_out
+                    # Calculate new spread-out positions for the outputs of the permutator
+                    # This ensures connections fan out to match the next layer's spacing
+                    num_paths = len(active_paths)
+                    new_y_positions = self._calculate_branch_positions(num_paths)
+                    
+                    if i > 0:
+                        mapping = layer.mapping
+                        # Draw crossed arrows from prev layer to this layer
+                        for dest_idx, src_idx in enumerate(mapping):
+                            if src_idx < len(active_paths) and dest_idx < len(new_y_positions):
+                                y_src = active_paths[src_idx]
+                                y_dest = new_y_positions[dest_idx]
+                                
+                                # Arrow from prev layer output directly to next layer input
+                                # Spanning across the permutator layer
+                                # Use x_coords to get correct positions
+                                self._draw_arrow(ax, x_coords[i-1] + 0.4, y_src, 
+                                               x_coords[i+1] - 0.4, y_dest)
+                    
+                    # Update active paths to the new spread-out positions
+                    active_paths = new_y_positions
+                    
                 else:
-                    active_paths = [y_pos]
+                    # Standard Single Layer Logic
+                    
+                    # Draw at center of active paths
+                    y_pos = sum(active_paths) / len(active_paths)
+                    
+                    # Draw layer icon
+                    self._draw_layer_icon(ax, layer, x_pos, y_pos, asset_dir, 
+                                        layer_index=i+1)
+                
+                    # Track photonic components
+                    if type(layer).__name__ in photonic_types:
+                        # Determine group (chip)
+                        chip_id = 'default'
+                        if hasattr(layer, 'layer') and layer.layer is not None:
+                            if type(layer.layer).__name__ == 'PhotonicChip':
+                                chip_id = id(layer.layer)
+                        
+                        if chip_id not in photonic_groups:
+                            photonic_groups[chip_id] = []
+                        photonic_groups[chip_id].append((x_pos, y_pos))
+                
+                    # Draw connections from all active paths
+                    if i > 0:
+                        # Check if previous layer was Swap
+                        prev_node = tree[i-1]
+                        is_prev_permutator = False
+                        if not prev_node['is_parallel']:
+                            if type(prev_node['layer']).__name__ == 'Swap':
+                                is_prev_permutator = True
+                        
+                        for prev_y in active_paths:
+                            if is_prev_permutator:
+                                # Connection already drawn by Swap
+                                pass
+                            else:
+                                self._draw_arrow(ax, x_coords[i-1] + 0.4, prev_y,
+                                               x_pos - 0.4, y_pos)
+                    
+                    # Update active paths
+                    # Single output path (or multiple if single layer produces multiple)
+                    # If TelescopeArray, it produces N outputs (visually)
+                    if type(layer).__name__ == 'TelescopeArray':
+                         # This case is actually handled by the "explode" logic in _build_layer_tree
+                         # So we shouldn't reach here for TelescopeArray unless it has 1 element
+                         pass
+                
+                    n_out = 1
+                    if hasattr(layer, 'num_outputs'):
+                        n_out = layer.num_outputs
+                
+                    # For single layer, we usually collapse to 1 path unless it's a splitter
+                    # But if it's a splitter (YSplitter), it should probably be in a parallel list?
+                    # Or if it's a single YSplitter layer, it produces 2 outputs.
+                    # If it produces 2 outputs, we should probably split the active path?
+                
+                    if n_out > 1:
+                        # Split active paths
+                        # We need to generate n_out new y positions centered around y_pos
+                        # But we don't have a good way to space them without knowing global context
+                        # For now, just replicate y_pos
+                        active_paths = [y_pos] * n_out
+                    else:
+                        active_paths = [y_pos]
         
         # Draw background rectangles for photonic circuits
         for chip_id, coords in photonic_groups.items():
@@ -1061,6 +1256,7 @@ class Context:
             'ThermoOpticPhaseShifter': ('phase_shifter.svg', 's', '#E67E22'),
             'MMI': ('mmi.svg', 's', '#8E44AD'),
             'MultiModeInterferometer': ('mmi.svg', 's', '#8E44AD'),
+            'Swap': ('swap.svg', 's', '#7F8C8D'),
             'Camera': ('camera.svg', 's', '#2C3E50')
         }
         
@@ -1280,6 +1476,9 @@ class Context:
         """Get display name for a layer."""
         layer_name = type(layer).__name__
         
+        if layer_name == 'Swap':
+            return f"Swap: {layer.mapping}"
+        
         # Check for name attribute (TelescopeArray, Scene, etc.)
         if hasattr(layer, 'name') and layer.name:
             return layer.name
@@ -1288,7 +1487,7 @@ class Context:
         return layer_name
     
     def _draw_arrow(self, ax: plt.Axes, x1: float, y1: float, 
-                   x2: float, y2: float):
+                   x2: float, y2: float, arrowstyle: str = '-|>'):
         """
         Draw an arrow representing signal flow.
         
@@ -1300,10 +1499,12 @@ class Context:
             Start position
         x2, y2 : float
             End position
+        arrowstyle : str, optional
+            Style of the arrow (default: '-|>')
         """
         arrow = FancyArrowPatch(
             (x1, y1), (x2, y2),
-            arrowstyle='-|>',
+            arrowstyle=arrowstyle,
             color='#E74C3C',
             linewidth=2,
             mutation_scale=20,
