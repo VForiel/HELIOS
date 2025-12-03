@@ -1083,11 +1083,45 @@ class Context:
                                 y_src = active_paths[src_idx]
                                 y_dest = new_y_positions[dest_idx]
                                 
+                                # Check if next layer exists and if the destination is None
+                                arrow_style = '-|>'
+                                if i + 1 < len(tree):
+                                    next_node = tree[i+1]
+                                    if next_node['is_parallel']:
+                                        # If next layer is parallel, check if the corresponding element is None
+                                        # We need to map dest_idx to the element in next layer
+                                        # Assuming 1-to-1 mapping for now or simple sequential
+                                        # This is tricky because we don't know exactly which element consumes which output
+                                        # But if we assume 1 output per path...
+                                        
+                                        # Let's try to find the element at dest_idx
+                                        # We need to count inputs of elements in next layer
+                                        next_layer_list = next_node['layer']
+                                        current_input_idx = 0
+                                        target_element = None
+                                        
+                                        for elem in next_layer_list:
+                                            n_in = 1
+                                            if elem is not None and hasattr(elem, 'num_inputs'):
+                                                n_in = elem.num_inputs
+                                            
+                                            if current_input_idx <= dest_idx < current_input_idx + n_in:
+                                                target_element = elem
+                                                break
+                                            current_input_idx += n_in
+                                            
+                                        if target_element is None:
+                                            arrow_style = '-'
+                                    else:
+                                        # Next layer is single
+                                        if next_node['layer'] is None:
+                                            arrow_style = '-'
+
                                 # Arrow from prev layer output directly to next layer input
                                 # Spanning across the permutator layer
                                 # Use x_coords to get correct positions
                                 self._draw_arrow(ax, x_coords[i-1] + 0.4, y_src, 
-                                               x_coords[i+1] - 0.4, y_dest)
+                                               x_coords[i+1] - 0.4, y_dest, arrowstyle=arrow_style)
                     
                     # Update active paths to the new spread-out positions
                     active_paths = new_y_positions
