@@ -1,8 +1,8 @@
 import numpy as np
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Any
 from astropy import units as u
 from ..core.context import Element, Context
-from ..core.simulation import Wavefront
+from ..core.simulation import Wavefront, WavefrontArray
 
 class Camera(Element):
     """
@@ -94,7 +94,50 @@ class Camera(Element):
         # Random number generator for reproducible noise
         self._rng = np.random.default_rng()
     
-    def get_raw_image(self, wavefront: Optional[Wavefront], context: Optional[Context] = None) -> np.ndarray:
+    def _combine_wavefronts(self, wf_array: WavefrontArray) -> np.ndarray:
+        """Combine wavefronts from an array into a single focal plane intensity image."""
+        if not wf_array.wavefronts:
+            return np.zeros(self.pixels)
+            
+        # Assume all wavefronts have same properties
+        wf0 = wf_array.wavefronts[0]
+        scale = wf0.pixel_scale.to(u.m).value
+        
+        # Use the size of the input wavefronts as the base canvas size
+        h, w = wf0.field.shape
+        canvas = np.zeros((h, w), dtype=np.complex128)
+        
+        # Check if locations are available
+        locations = wf_array.locations
+        if locations is None:
+            # If no locations, assume co-located (incoherent or coherent sum?)
+            # For interferometry, we usually want coherent sum if they are split beams.
+            # But without locations, we can't do spatial synthesis.
+            # Let's assume they are just superimposed.
+            locations = [(0.0, 0.0)] * len(wf_array.wavefronts)
+            
+        for wf, loc in zip(wf_array.wavefronts, locations):
+            # Calculate shift in pixels
+            lx, ly = loc
+            shift_x = int(lx / scale)
+            shift_y = int(ly / scale)
+            
+            # Shift the field using roll (valid for small shifts relative to array size)
+            # Note: wf.field is assumed to be centered. 
+            # We shift it to its baseline position.
+            field_shifted = np.roll(wf.field, (shift_y, shift_x), axis=(0, 1))
+            
+            # Add to canvas (coherent combination)
+            canvas += field_shifted
+            
+        # FFT to get focal plane field
+        # fftshift moves zero freq to center
+        focal_field = np.fft.fftshift(np.fft.fft2(np.fft.fftshift(canvas)))
+        
+        # Return intensity
+        return np.abs(focal_field)**2
+
+    def get_raw_image(self, wavefront: Optional[Any], context: Optional[Context] = None) -> np.ndarray:
         """
         Acquire raw detector image including signal, dark current, and noise.
         
@@ -106,7 +149,7 @@ class Camera(Element):
         
         Parameters
         ----------
-        wavefront : Wavefront or None
+        wavefront : Wavefront or WavefrontArray or None
             Input wavefront containing the electromagnetic field. If None,
             only dark current and noise are generated (dark frame).
         context : Context, optional
@@ -132,9 +175,15 @@ class Camera(Element):
         >>> print(f"Raw image range: [{raw.min():.1f}, {raw.max():.1f}] e-")
         """
         # 1. Signal from wavefront (if provided)
-        if wavefront is not None and hasattr(wavefront, 'field'):
-            # Compute intensity (photon flux per pixel)
-            intensity = np.abs(wavefront.field) ** 2
+        if wavefront is not None:
+            if isinstance(wavefront, WavefrontArray):
+                # Combine wavefronts for interferometry
+                intensity = self._combine_wavefronts(wavefront)
+            elif hasattr(wavefront, 'field'):
+                # Single wavefront
+                intensity = np.abs(wavefront.field) ** 2
+            else:
+                intensity = np.zeros(self.pixels)
             
             # Resize intensity to match camera pixels if needed
             if intensity.shape != self.pixels:

@@ -14,7 +14,7 @@ from typing import Tuple, Optional, Any
 import matplotlib.pyplot as _plt
 
 from ..core.context import Layer, Element, Context
-from ..core.simulation import Wavefront
+from ..core.simulation import Wavefront, WavefrontArray
 from .pupil import Pupil
 
 
@@ -114,11 +114,16 @@ class Collector(Element):
             N = wavefront.field.shape[0]
             mask = self.pupil.get_array(npix=N, soft=True)
             wavefront.field = wavefront.field * mask.astype(wavefront.field.dtype)
+            # If no focal length has been set yet, use the pupil's default focal length
+            if getattr(wavefront, '_last_focal_length_m', None) is None and hasattr(self.pupil, 'focal_length_m'):
+                wavefront._last_focal_length_m = float(self.pupil.focal_length_m)
         except Exception:
             # Fallback: try without soft edges
             try:
                 mask = self.pupil.get_array(npix=N, soft=False)
                 wavefront.field = wavefront.field * mask.astype(wavefront.field.dtype)
+                if getattr(wavefront, '_last_focal_length_m', None) is None and hasattr(self.pupil, 'focal_length_m'):
+                    wavefront._last_focal_length_m = float(self.pupil.focal_length_m)
             except Exception:
                 pass  # Skip if pupil can't be rendered
         
@@ -544,87 +549,60 @@ class TelescopeArray(Layer):
         
         return ax
     
-    def process(self, wavefront: Wavefront, context: Context) -> Wavefront:
+    def process(self, wavefront: Any, context: Context) -> Any:
         """Apply telescope array aperture mask to wavefront.
         
         This method overrides the default Layer.process() to implement custom
-        combination logic for telescope collectors:
-        - If all collectors are at (0, 0): Pupils are combined multiplicatively (co-phased)
-        - If collectors have different positions: Pupils are placed at their baseline positions
+        combination logic for telescope collectors.
         
-        For true interferometric fringe formation and beam combination, use dedicated
-        photonics layers (PhotonicChip, TOPS, etc.) after this layer.
+        It supports two modes of operation:
+        1. **Single Wavefront Input**:
+           - The input wavefront is broadcasted to all collectors (copied).
+           - Each collector applies its pupil mask to its copy.
+           - Returns a WavefrontArray containing one wavefront per collector.
+             
+        2. **WavefrontArray/List Input** (Optimization Mode):
+           - If input is a list of wavefronts (one per collector), each collector's
+             pupil is applied to the corresponding wavefront.
+           - This allows simulating large arrays without huge wavefront arrays,
+             by processing each pupil in its own local coordinate system.
         
         Parameters
         ----------
-        wavefront : Wavefront
-            Input wavefront to process.
+        wavefront : Wavefront or WavefrontArray or List[Wavefront]
+            Input wavefront(s) to process.
         context : Context
-            Simulation context (unused in this implementation).
+            Simulation context.
         
         Returns
         -------
-        wavefront : Wavefront
-            Wavefront with aperture mask applied.
+        wavefront : WavefrontArray
+            Wavefronts with aperture mask applied (one per collector).
         """
-        try:
-            N = wavefront.field.shape[0]
-        except Exception:
-            return wavefront
+        # Check for list/WavefrontArray input
+        is_list_input = isinstance(wavefront, list) or (hasattr(wavefront, '__iter__') and not hasattr(wavefront, 'field'))
         
-        if len(self.elements) == 0:  # Use self.elements instead of self.collectors
-            return wavefront
-        
-        # Determine if we need spatial positioning
-        is_interferometric = self.is_interferometric()
-        
-        if not is_interferometric:
-            # Single telescope or co-located: combine multiplicatively at center
-            total_mask = np.ones((N, N), dtype=float)
-            for collector in self.elements:  # Use self.elements
-                if isinstance(collector.pupil, Pupil):
-                    try:
-                        mask = collector.pupil.get_array(npix=N, soft=True)
-                    except Exception:
-                        mask = collector.pupil.get_array(npix=N, soft=False)
-                    total_mask = total_mask * mask
-            wavefront.field = wavefront.field * total_mask.astype(wavefront.field.dtype)
+        if not is_list_input:
+            # Broadcast single wavefront to all collectors
+            # Create deep copies to ensure independence
+            wf_list = [wavefront.copy() for _ in range(len(self.elements))]
         else:
-            # Interferometric: position each pupil at its baseline coordinates
-            combined_mask = np.zeros((N, N), dtype=float)
-            
-            # Determine array extent
-            baselines = self.get_baseline_array()
-            max_extent = np.max(np.abs(baselines)) if len(baselines) > 0 else 1.0
-            for collector in self.elements:  # Use self.elements
-                size_m = collector.size.to(u.m).value if hasattr(collector.size, 'to') else float(collector.size)
-                max_extent = max(max_extent, size_m)
-            
-            # Pixel scale: meters per pixel
-            pixel_scale = 2.0 * max_extent / float(N)
-            
-            # Render each collector pupil at its position
-            for collector in self.elements:  # Use self.elements
-                pupil = collector.pupil
-                x, y = collector.position
-                
-                # Render pupil
-                pupil_arr = pupil.get_array(npix=N, soft=True)
-                
-                # Compute shift in pixels
-                shift_x = int(x / pixel_scale)
-                shift_y = int(y / pixel_scale)
-                
-                # Shift pupil to baseline position
-                shifted_pupil = np.roll(pupil_arr, shift=(shift_y, shift_x), axis=(0, 1))
-                
-                # Add to combined mask
-                combined_mask = np.maximum(combined_mask, shifted_pupil)
-            
-            # Apply to wavefront
-            wavefront.field = wavefront.field * combined_mask.astype(wavefront.field.dtype)
+            wf_list = list(wavefront)
+            # Handle mismatch length if needed (broadcast if len=1)
+            if len(wf_list) == 1 and len(self.elements) > 1:
+                 wf_list = [wf_list[0].copy() for _ in range(len(self.elements))]
         
-        return wavefront
+        output_list = []
+        locations = []
+        for i, collector in enumerate(self.elements):
+            if i < len(wf_list):
+                wf = wf_list[i]
+                # Apply collector pupil
+                wf_processed = collector.process(wf, context)
+                output_list.append(wf_processed)
+                locations.append(collector.position)
+        
+        return WavefrontArray(output_list, locations=locations)
 
 
 # Legacy aliases for backward compatibility

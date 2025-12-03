@@ -19,8 +19,10 @@ class Pupil:
     - Presets: `Pupil.jwst()`, `Pupil.vlt()`, `Pupil.elt()` provide realistic basic configs
     """
 
-    def __init__(self, diameter: u.Quantity = 1.0 * u.m):
+    def __init__(self, diameter: u.Quantity = 1.0 * u.m, focal_length: u.Quantity = 1.0 * u.m):
         self.diameter = diameter.to(u.m).value
+        # default focal length used for simple propagation when no lens provided
+        self.focal_length_m = float(focal_length.to(u.m).value)
         self.elements: List[dict] = []
 
     # --- element adders -------------------------------------------------

@@ -14,7 +14,7 @@ except PackageNotFoundError:
 
 # Expose core components
 from .core.context import Context, Layer, Element
-from .core.simulation import Simulation, Wavefront
+from .core.simulation import Simulation, Wavefront, WavefrontArray
 
 # Expose submodules
 from . import components
@@ -25,7 +25,7 @@ from .components import (
     # Scene components
     Scene, Star, Planet, ExoZodiacal, Zodiacal,
     # Optical components
-    Pupil, Collector, TelescopeArray, Telescope, Interferometer, Coronagraph, BeamSplitter, FiberIn, FiberOut, Atmosphere, AdaptiveOptics,
+    Pupil, Collector, TelescopeArray, Telescope, Interferometer, Coronagraph, BeamSplitter, FiberIn, FiberOut, Atmosphere, AdaptiveOptics, Lens,
     # Detector components
     Camera,
     # Photonic components
@@ -37,13 +37,13 @@ __all__ = [
     # Version
     '__version__',
     # Core
-    'Context', 'Layer', 'Element', 'Simulation', 'Wavefront',
+    'Context', 'Layer', 'Element', 'Simulation', 'Wavefront', 'WavefrontArray',
     # Submodules
     'components', 'core',
     # Scene components
     'Scene', 'Star', 'Planet', 'ExoZodiacal', 'Zodiacal',
     # Optical components
-    'Pupil', 'Collector', 'TelescopeArray', 'Telescope', 'Interferometer', 'Coronagraph', 'BeamSplitter', 'FiberIn', 'FiberOut', 'Atmosphere', 'AdaptiveOptics',
+    'Pupil', 'Collector', 'TelescopeArray', 'Telescope', 'Interferometer', 'Coronagraph', 'BeamSplitter', 'FiberIn', 'FiberOut', 'Atmosphere', 'AdaptiveOptics', 'Lens',
     # Detector components
     'Camera',
     # Photonic components

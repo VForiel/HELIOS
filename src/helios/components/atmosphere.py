@@ -10,7 +10,7 @@ from typing import Tuple, List, Union, Optional
 import matplotlib.pyplot as _plt
 
 from ..core.context import Element, Context
-from ..core.simulation import Wavefront
+from ..core.simulation import Wavefront, WavefrontArray
 from .collector import TelescopeArray
 
 
@@ -257,24 +257,55 @@ class Atmosphere(Element):
         
         return screen
 
-    def process(self, wavefront: Wavefront, context: Context = None) -> Wavefront:
+    def process(self, wavefront: Union[Wavefront, List[Wavefront]], context: Context = None) -> Union[Wavefront, WavefrontArray]:
         """Apply atmospheric turbulence to wavefront.
         
         Converts OPD (optical path difference) to phase: φ = 2π * OPD / λ
         This makes the aberration chromatic - shorter wavelengths see larger phase shifts.
         
+        If a downstream TelescopeArray is detected in the context, this method can
+        optimize processing by splitting the wavefront into multiple patches (one per
+        collector) instead of processing a single huge wavefront.
+        
         Parameters
         ----------
-        wavefront : Wavefront
-            Input wavefront with wavelength information
+        wavefront : Wavefront or List[Wavefront]
+            Input wavefront(s).
         context : Context, optional
             Simulation context (may contain time information)
         
         Returns
         -------
-        wavefront : Wavefront
-            Wavefront with atmospheric phase applied
+        wavefront : Wavefront or WavefrontArray
+            Wavefront(s) with atmospheric phase applied
         """
+        # 1. Check for downstream TelescopeArray to optimize
+        target_collectors = []
+        if context is not None:
+            # Find this atmosphere layer index
+            my_index = -1
+            for i, layer in enumerate(context.layers):
+                if layer is self:
+                    my_index = i
+                    break
+            
+            # Look for next TelescopeArray
+            if my_index != -1:
+                for i in range(my_index + 1, len(context.layers)):
+                    layer = context.layers[i]
+                    if type(layer).__name__ == 'TelescopeArray':
+                        target_collectors = layer.collectors
+                        break
+        
+        # Check if we should use optimization (multiple collectors found)
+        # And input is a single Wavefront (not already split)
+        use_optimization = (len(target_collectors) > 0 and 
+                           not isinstance(wavefront, (list, WavefrontArray)))
+        
+        if use_optimization:
+            return self._process_optimized(wavefront, target_collectors, context)
+
+        # Standard processing (single wavefront)
         try:
             N = wavefront.field.shape[0]
         except Exception:
@@ -306,6 +337,169 @@ class Atmosphere(Element):
         # Apply phase screen (pure phase modulation)
         wavefront.field = wavefront.field * np.exp(1j * phase).astype(wavefront.field.dtype)
         return wavefront
+
+    def _process_optimized(self, wavefront: Wavefront, collectors: List['Collector'], context: Context) -> WavefrontArray:
+        """Optimized processing for telescope arrays."""
+        N_in = wavefront.field.shape[0]
+        
+        # Get time
+        if context is not None and hasattr(context, 'time'):
+            time = context.time
+        else:
+            time = 0.0 * u.s
+        time_s = time.to(u.s).value if hasattr(time, 'to') else float(time)
+            
+        # 1. Determine geometry
+        # Assume all collectors have roughly same size for pixel scale calculation
+        # Use the first one as reference
+        ref_size = collectors[0].size
+        ref_size_m = ref_size.to(u.m).value if hasattr(ref_size, 'to') else float(ref_size)
+        
+        # Pixel scale required to match input wavefront resolution
+        pixel_scale_m = ref_size_m / N_in
+        
+        # Find bounding box of array
+        positions = np.array([c.position for c in collectors])
+        min_x, min_y = np.min(positions, axis=0)
+        max_x, max_y = np.max(positions, axis=0)
+        
+        # Add padding for collector size
+        padding = ref_size_m / 2.0
+        min_x -= padding
+        max_x += padding
+        min_y -= padding
+        max_y += padding
+        
+        # Array dimensions
+        width_m = max_x - min_x
+        height_m = max_y - min_y
+        
+        # Required screen size in pixels
+        W_pix = int(np.ceil(width_m / pixel_scale_m))
+        H_pix = int(np.ceil(height_m / pixel_scale_m))
+        N_global = max(W_pix, H_pix)
+        
+        # Limit global screen size to avoid memory explosion
+        MAX_N = 4096
+        if N_global > MAX_N:
+            # We must downsample the global screen
+            # This means we lose high-frequency correlations, but keep piston/tip-tilt
+            scale_factor = MAX_N / N_global
+            N_global = MAX_N
+            effective_pixel_scale = pixel_scale_m / scale_factor
+            # print(f"Warning: Atmosphere screen downsampled by {1/scale_factor:.1f}x (Global N={N_global})")
+        else:
+            effective_pixel_scale = pixel_scale_m
+            
+        # 2. Generate global frozen screen (if needed)
+        # We use the existing _generate_frozen_screen but we need to manage the size
+        # The existing method caches based on N.
+        # If we change N, it regenerates.
+        
+        # We need to ensure the screen covers the array + wind drift
+        # _generate_frozen_screen generates N*oversample.
+        # Let's use N_global.
+        
+        # Note: _extract_screen_at_time assumes the screen corresponds to the requested N.
+        # Here we are doing manual extraction.
+        
+        if self._frozen_screen is None or self._screen_size != N_global:
+            self._frozen_screen = self._generate_frozen_screen(N_global, oversample=2)
+            self._screen_size = N_global
+            
+        # 3. Extract patches for each collector
+        patches = []
+        
+        # Wind shift in pixels
+        # shift_m = velocity * time
+        shift_m = self.wind_velocity * time_s
+        shift_pix_x = shift_m[0] / effective_pixel_scale
+        shift_pix_y = shift_m[1] / effective_pixel_scale
+        
+        # The frozen screen is N_global * 2 (oversample=2)
+        # Center of frozen screen corresponds to (0,0) of the array?
+        # Or (0,0) of the generated screen?
+        # Usually FFT screen is periodic.
+        # Let's assume the screen covers the bounding box centered.
+        
+        screen_center_pix = self._frozen_screen.shape[0] // 2
+        
+        # Center of the array bounding box relative to (0,0) world
+        bbox_center_x = (min_x + max_x) / 2.0
+        bbox_center_y = (min_y + max_y) / 2.0
+        
+        for col in collectors:
+            # Collector position relative to array bounding box center
+            rel_x = col.position[0] - bbox_center_x
+            rel_y = col.position[1] - bbox_center_y
+            
+            # Convert to pixels in the screen
+            # Note: we subtract wind shift because screen moves? 
+            # Taylor: Phase(x, t) = Screen(x - v*t)
+            # So we sample at x - v*t
+            
+            sample_x_m = rel_x - shift_m[0]
+            sample_y_m = rel_y - shift_m[1]
+            
+            sample_pix_x = int(sample_x_m / effective_pixel_scale)
+            sample_pix_y = int(sample_y_m / effective_pixel_scale)
+            
+            # Center in array
+            center_x = screen_center_pix + sample_pix_x
+            center_y = screen_center_pix + sample_pix_y
+            
+            # Extract patch
+            # We need N_in pixels if scale matches, or scaled amount
+            patch_size_pix = int(ref_size_m / effective_pixel_scale)
+            
+            start_x = center_x - patch_size_pix // 2
+            start_y = center_y - patch_size_pix // 2
+            end_x = start_x + patch_size_pix
+            end_y = start_y + patch_size_pix
+            
+            # Handle boundaries (periodic wrap)
+            # Simple way: np.roll then slice
+            # Efficient way: slice with wrap
+            
+            # For simplicity, let's use roll on the whole screen? No, slow.
+            # Just handle indices.
+            rows = np.arange(start_y, end_y) % self._frozen_screen.shape[0]
+            cols = np.arange(start_x, end_x) % self._frozen_screen.shape[1]
+            
+            patch = self._frozen_screen[np.ix_(rows, cols)]
+            
+            # Resize to N_in if needed (if we downsampled)
+            if patch.shape[0] != N_in:
+                from scipy.ndimage import zoom
+                zoom_factor = N_in / patch.shape[0]
+                patch = zoom(patch, zoom_factor, order=1)
+            
+            patches.append(patch)
+            
+        # 4. Create output WavefrontArray
+        output_wfs = []
+        
+        # Wavelength
+        if hasattr(wavefront, 'wavelength') and wavefront.wavelength is not None:
+            if hasattr(wavefront.wavelength, 'to'):
+                wavelength_m = wavefront.wavelength.to(u.m).value
+            else:
+                wavelength_m = float(wavefront.wavelength)
+        else:
+            wavelength_m = 550e-9
+            
+        for patch in patches:
+            # Create copy of input wavefront
+            new_wf = wavefront.copy()
+            
+            # Convert OPD to phase
+            phase = 2.0 * np.pi * patch / wavelength_m
+            
+            # Apply phase
+            new_wf.field = new_wf.field * np.exp(1j * phase).astype(new_wf.field.dtype)
+            output_wfs.append(new_wf)
+            
+        return WavefrontArray(output_wfs)
 
     def plot_screen_animation(self,
                              collectors: Optional[Union['Collectors', 'TelescopeArray', List['Collectors']]] = None,

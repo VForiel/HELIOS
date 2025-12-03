@@ -7,3 +7,4 @@ from .fibers import FiberIn, FiberOut
 from .atmosphere import Atmosphere, AdaptiveOptics
 from .detectors import Camera
 from .photonics import PhotonicChip, TOPS, MMI
+from .lens import Lens
