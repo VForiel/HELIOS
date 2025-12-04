@@ -30,12 +30,14 @@ def run_demo():
     camera = helios.Camera(pixels=(256, 256))
 
     # 4. Context & Simulation
-    context = helios.Context()
+    # We can specify simulation parameters like wavelength and grid size here
+    context = helios.Context(wavelength=600*u.nm, npix=512)
     context.add_layer(scene)
     context.add_layer(collectors)
     context.add_layer(camera)
 
     print("Running simulation...")
+    # observe() calls get_input_wavefront() internally using context parameters
     result = context.observe()
     
     print(f"Simulation complete!")

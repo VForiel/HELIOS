@@ -573,19 +573,28 @@ class Context:
         
         return "\n".join(lines)
 
-    def get_input_wavefront(self) -> Union[Wavefront, WavefrontArray]:
+    def get_input_wavefront(self, wavelength: Optional[u.Quantity] = None, size: Optional[int] = None) -> Union[Wavefront, WavefrontArray]:
         """
         Generate the input wavefront(s) from Scene and Atmosphere in the context.
         
         Retrieves simulation parameters (wavelength, npix) from context.kwargs,
         creates a new Wavefront, and applies Scene flux and Atmosphere phase.
+
+        Parameters
+        ----------
+        wavelength : astropy.Quantity, optional
+            Wavelength of the wavefront. If None, uses context.kwargs['wavelength'] or default 550nm.
+        size : int, optional
+            Size of the wavefront (pixels). If None, uses context.kwargs['npix'] or default 512.
         """
         # Determine simulation parameters
-        wavelength = self.kwargs.get('wavelength', 550 * u.nm)
-        npix = self.kwargs.get('npix', 512)
+        if wavelength is None:
+            wavelength = self.kwargs.get('wavelength', 550 * u.nm)
+        if size is None:
+            size = self.kwargs.get('npix', 512)
         
         # Create base wavefront
-        wf = Wavefront(wavelength=wavelength, size=npix)
+        wf = Wavefront(wavelength=wavelength, size=size)
         
         # Find Scene and apply flux
         scene = None
