@@ -3,6 +3,7 @@ from astropy import units as u
 from typing import Optional, List, Tuple, Callable
 import matplotlib.pyplot as plt
 import copy
+from tqdm.auto import tqdm
 
 def _get_smart_extent(shape: Tuple[int, ...], pixel_scale: u.Quantity):
     """
@@ -186,9 +187,10 @@ class Wavefront:
             # Treat as single plot
             fields_to_plot = [(amp_to_plot, phase_to_plot, log_amp_to_plot, "Stacked")]
         else:
-            # Plot each sample independently
+            # Plot each sample independently with progress display
             fields_to_plot = []
-            for i in range(self.field.shape[0]):
+            n_samples = self.field.shape[0]
+            for i in tqdm(range(n_samples), desc="Stacking samples for plot", unit="sample", total=n_samples):
                 amp = np.abs(self.field[i])
                 phase = np.angle(self.field[i])
                 log_amp = np.log10(amp + 1e-12)
@@ -405,7 +407,7 @@ class WavefrontArray:
         
         fig, axes = plt.subplots(total_rows, n_channels, figsize=(fig_width, fig_height), squeeze=False)
 
-        for i, wf in enumerate(self.wavefronts):
+        for i, wf in enumerate(tqdm(self.wavefronts, desc="Plotting channels", unit="ch", total=len(self.wavefronts))):
             # Prepare data
             if stack_method is not None:
                 amp = stack_method(np.abs(wf.field), axis=0)
@@ -414,7 +416,7 @@ class WavefrontArray:
                 samples_to_plot = [(amp, phase, log_amp, "Stacked")]
             else:
                 samples_to_plot = []
-                for s in range(n_samples):
+                for s in tqdm(range(n_samples), desc=f"Samples ch {i+1}", unit="sample", total=n_samples):
                     amp = np.abs(wf.field[s])
                     phase = np.angle(wf.field[s])
                     log_amp = np.log10(amp + 1e-12)
@@ -479,7 +481,7 @@ class WavefrontArray:
             New array with propagated wavefronts. Locations are preserved.
         """
         propagated_wfs = []
-        for wf in self.wavefronts:
+        for wf in tqdm(self.wavefronts, desc="Propagating wavefronts", unit="wf", total=len(self.wavefronts)):
             propagated_wfs.append(wf.copy().propagate(distance))
         new_locs = list(self.locations) if self.locations is not None else None
         return WavefrontArray(propagated_wfs, locations=new_locs)

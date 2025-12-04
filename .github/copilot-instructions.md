@@ -383,6 +383,39 @@ print("✓ Validation passed")
 
 **Always validate changes before finalizing** - this catches bugs early and ensures physical coherence.
 
+## Progress Bars for Long-Running Loops
+
+When implementing loops that may take noticeable time (processing samples, segments, propagation steps, IO batches), always include a visible progress bar with an estimated time remaining.
+
+- Preferred library: `tqdm` (works in notebooks and scripts).
+- Usage pattern:
+    - In Python scripts: `from tqdm import tqdm` and wrap iterables: `for i in tqdm(range(N), desc="Processing", unit="item"):`
+    - In notebooks: `from tqdm.auto import tqdm` to get the best renderer.
+    - For nested loops, use `tqdm(total=...)` with manual updates, or `tqdm` per level with `leave=False` to reduce clutter.
+- Include descriptive labels and units; `tqdm` shows processed/total, percentage, and ETA automatically.
+- If `tqdm` is unavailable, add a lightweight textual fallback (print every 5–10% completed).
+
+Example:
+
+```python
+from tqdm.auto import tqdm
+
+def process_batch(items):
+        for idx, item in enumerate(tqdm(items, desc="Simulating wavefronts", unit="wf")):
+                simulate(item)
+
+# Manual total with ETA
+bar = tqdm(total=total_steps, desc="Propagating", unit="step")
+for step in range(total_steps):
+        propagate_step(step)
+        bar.update(1)
+bar.close()
+```
+
+Scope:
+- Apply to loops in `src/helios/**`, `examples/**`, and `tools/**` where runtime can exceed ~1s or iterate over >500 elements.
+- Keep output clean in CI: prefer `tqdm` with `disable=not sys.stdout.isatty()` when necessary.
+
 ## What NOT to Do
 - ❌ Don't use raw floats for physical quantities in APIs
 - ❌ Don't break Layer abstraction (components must implement `process()`)
