@@ -104,16 +104,16 @@ class Camera(Element):
         scale = wf0.pixel_scale.to(u.m).value
         
         # Use the size of the input wavefronts as the base canvas size
-        h, w = wf0.field.shape
-        canvas = np.zeros((h, w), dtype=np.complex128)
+        if wf0.field.ndim == 3:
+            samples, h, w = wf0.field.shape
+            canvas = np.zeros((samples, h, w), dtype=np.complex128)
+        else:
+            h, w = wf0.field.shape
+            canvas = np.zeros((h, w), dtype=np.complex128)
         
         # Check if locations are available
         locations = wf_array.locations
         if locations is None:
-            # If no locations, assume co-located (incoherent or coherent sum?)
-            # For interferometry, we usually want coherent sum if they are split beams.
-            # But without locations, we can't do spatial synthesis.
-            # Let's assume they are just superimposed.
             locations = [(0.0, 0.0)] * len(wf_array.wavefronts)
             
         for wf, loc in zip(wf_array.wavefronts, locations):
@@ -123,19 +123,26 @@ class Camera(Element):
             shift_y = int(ly / scale)
             
             # Shift the field using roll (valid for small shifts relative to array size)
-            # Note: wf.field is assumed to be centered. 
-            # We shift it to its baseline position.
-            field_shifted = np.roll(wf.field, (shift_y, shift_x), axis=(0, 1))
+            if wf.field.ndim == 3:
+                field_shifted = np.roll(wf.field, (shift_y, shift_x), axis=(1, 2))
+            else:
+                field_shifted = np.roll(wf.field, (shift_y, shift_x), axis=(0, 1))
             
             # Add to canvas (coherent combination)
             canvas += field_shifted
             
         # FFT to get focal plane field
         # fftshift moves zero freq to center
-        focal_field = np.fft.fftshift(np.fft.fft2(np.fft.fftshift(canvas)))
+        if canvas.ndim == 3:
+            focal_field = np.fft.fftshift(np.fft.fft2(np.fft.fftshift(canvas, axes=(1,2)), axes=(1,2)), axes=(1,2))
+            # Sum intensities (incoherent sum of samples)
+            intensity = np.sum(np.abs(focal_field)**2, axis=0)
+        else:
+            focal_field = np.fft.fftshift(np.fft.fft2(np.fft.fftshift(canvas)))
+            intensity = np.abs(focal_field)**2
         
         # Return intensity
-        return np.abs(focal_field)**2
+        return intensity
 
     def get_raw_image(self, wavefront: Optional[Any], context: Optional[Context] = None) -> np.ndarray:
         """
@@ -181,7 +188,11 @@ class Camera(Element):
                 intensity = self._combine_wavefronts(wavefront)
             elif hasattr(wavefront, 'field'):
                 # Single wavefront
-                intensity = np.abs(wavefront.field) ** 2
+                if wavefront.field.ndim == 3:
+                    # Sum intensities of samples (incoherent sum)
+                    intensity = np.sum(np.abs(wavefront.field) ** 2, axis=0)
+                else:
+                    intensity = np.abs(wavefront.field) ** 2
             else:
                 intensity = np.zeros(self.pixels)
             

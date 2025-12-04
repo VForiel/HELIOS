@@ -77,12 +77,17 @@ class Coronagraph(Element):
         """
         try:
             field = wavefront.field
-            N = field.shape[0]
+            if field.ndim == 3:
+                N = field.shape[-1]
+                axes = (-2, -1)
+            else:
+                N = field.shape[0]
+                axes = (-2, -1)
         except Exception:
             return wavefront
 
         # Focal-plane field
-        ffield = np.fft.fftshift(np.fft.fft2(np.fft.ifftshift(field)))
+        ffield = np.fft.fftshift(np.fft.fft2(np.fft.ifftshift(field, axes=axes), axes=axes), axes=axes)
 
         # Build mask
         mask = self.mask_array(npix=N)
@@ -91,7 +96,7 @@ class Coronagraph(Element):
         ffield_masked = ffield * mask
 
         # Back to pupil/image plane
-        field_after = np.fft.fftshift(np.fft.ifft2(np.fft.ifftshift(ffield_masked)))
+        field_after = np.fft.fftshift(np.fft.ifft2(np.fft.ifftshift(ffield_masked, axes=axes), axes=axes), axes=axes)
         wavefront.field = field_after.astype(wavefront.field.dtype)
         return wavefront
 

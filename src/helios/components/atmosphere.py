@@ -310,7 +310,10 @@ class Atmosphere(Element):
 
         # Standard processing (single wavefront)
         try:
-            N = wavefront.field.shape[0]
+            if wavefront.field.ndim == 3:
+                N = wavefront.field.shape[-1]
+            else:
+                N = wavefront.field.shape[0]
         except Exception:
             return wavefront
 
@@ -343,7 +346,10 @@ class Atmosphere(Element):
 
     def _process_optimized(self, wavefront: Wavefront, collectors: List['Collector'], context: Context) -> WavefrontArray:
         """Optimized processing for telescope arrays."""
-        N_in = wavefront.field.shape[0]
+        if wavefront.field.ndim == 3:
+            N_in = wavefront.field.shape[-1]
+        else:
+            N_in = wavefront.field.shape[0]
         
         # Get time
         if context is not None and hasattr(context, 'time'):

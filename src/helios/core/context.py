@@ -573,7 +573,10 @@ class Context:
         
         return "\n".join(lines)
 
-    def get_input_wavefront(self, wavelength: Optional[u.Quantity] = None, size: Optional[int] = None) -> Union[Wavefront, WavefrontArray]:
+    def get_input_wavefront(self, wavelength: Optional[u.Quantity] = None, 
+                            size: Optional[int] = None,
+                            angular_samples: int = 1,
+                            coherent_sources: bool = True) -> Union[Wavefront, WavefrontArray]:
         """
         Generate the input wavefront(s) from Scene and Atmosphere in the context.
         
@@ -586,27 +589,124 @@ class Context:
             Wavelength of the wavefront. If None, uses context.kwargs['wavelength'] or default 550nm.
         size : int, optional
             Size of the wavefront (pixels). If None, uses context.kwargs['npix'] or default 512.
+        angular_samples : int, optional
+            Number of angular samples along one dimension for extended sources (default: 1).
+            Total samples = angular_samples^2 if coherent_sources=False.
+        coherent_sources : bool, optional
+            If True, creates one wavefront sample per discrete source (Star, Planet).
+            If False, creates a grid of angular_samples^2 wavefronts sampling the scene.
+            Default: True.
         """
         # Determine simulation parameters
         if wavelength is None:
             wavelength = self.kwargs.get('wavelength', 550 * u.nm)
         if size is None:
             size = self.kwargs.get('npix', 512)
-        
-        # Create base wavefront
-        wf = Wavefront(wavelength=wavelength, size=size)
-        
-        # Find Scene and apply flux
+            
+        # Find Scene
         scene = None
         for layer in self.layers:
             if type(layer).__name__ == 'Scene':
                 scene = layer
                 break
         
-        if scene and hasattr(scene, 'get_flux_scaling'):
-            flux = scene.get_flux_scaling()
-            if flux > 0:
-                wf.field = wf.field * np.sqrt(flux)
+        # Determine samples and directions
+        samples = 1
+        directions = [(0.0, 0.0)] # (theta_x, theta_y) in radians
+        amplitudes = [1.0]
+        
+        if scene:
+            if coherent_sources:
+                # One sample per source
+                # We look for objects that are likely point sources or discrete bodies
+                sources = [obj for obj in scene.objects if type(obj).__name__ in ['Star', 'Planet']]
+                
+                if not sources and len(scene.objects) > 0:
+                     # Fallback if no Star/Planet but other objects exist
+                     sources = scene.objects
+                
+                if sources:
+                    samples = len(sources)
+                    directions = []
+                    amplitudes = []
+                    
+                    # Distance for angular conversion
+                    dist = getattr(scene, 'distance', None)
+                    
+                    for obj in sources:
+                        # Position
+                        px, py = 0.0 * u.rad, 0.0 * u.rad
+                        if hasattr(obj, 'position'):
+                            pos = obj.position
+                            if len(pos) == 2:
+                                px, py = pos
+                        
+                        # Convert to radians
+                        tx, ty = 0.0, 0.0
+                        if hasattr(px, 'unit'):
+                            if px.unit.is_equivalent(u.m) and dist is not None:
+                                tx = (px / dist).to(u.rad).value
+                                ty = (py / dist).to(u.rad).value
+                            elif px.unit.is_equivalent(u.rad):
+                                tx = px.to(u.rad).value
+                                ty = py.to(u.rad).value
+                        
+                        directions.append((tx, ty))
+                        
+                        # Amplitude (Flux)
+                        # Fallback to magnitude scaling as in Scene.get_flux_scaling
+                        d_factor = 1.0
+                        if dist is not None:
+                            d_ref = 10 * u.pc
+                            d_factor = (d_ref / dist).to(u.dimensionless_unscaled).value**2
+                            
+                        mag = getattr(obj, 'magnitude', 0.0)
+                        mag_factor = 10**(-0.4 * mag)
+                        
+                        flux = d_factor * mag_factor
+                        amplitudes.append(np.sqrt(flux))
+            else:
+                # Grid sampling (Extended source mode)
+                samples = angular_samples ** 2
+                
+                # Render scene to get spatial distribution
+                fov = 2.0 * u.arcsec # Default
+                
+                if hasattr(scene, 'render'):
+                    try:
+                        img, x, y = scene.render(npix=angular_samples, fov=fov, return_coords=True)
+                        # img is intensity map, x, y are 1D arrays of coordinates in arcsec
+                        
+                        # Flatten
+                        amplitudes = np.sqrt(img.flatten())
+                        
+                        # Directions
+                        xg, yg = np.meshgrid(x, y)
+                        tx = xg.flatten().to(u.rad).value
+                        ty = yg.flatten().to(u.rad).value
+                        directions = list(zip(tx, ty))
+                        
+                    except Exception as e:
+                        print(f"Warning: Scene rendering failed: {e}. Using default source.")
+                        samples = 1
+                        directions = [(0.0, 0.0)]
+                        amplitudes = [1.0]
+                else:
+                    samples = 1
+                    directions = [(0.0, 0.0)]
+                    amplitudes = [1.0]
+
+        # Create wavefront with samples
+        wf = Wavefront(wavelength=wavelength, size=size, samples=samples)
+        
+        # Set directions
+        wf.source_directions = np.array(directions) * u.rad
+        
+        # Set amplitudes
+        # wf.field is (samples, size, size)
+        # We broadcast amplitude to (size, size)
+        for i in range(samples):
+            wf.field[i] *= amplitudes[i]
         
         # Find Atmosphere and apply phase
         atmosphere = None

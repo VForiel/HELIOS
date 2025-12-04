@@ -47,7 +47,11 @@ class Lens(Element):
         # Determine pixel scale (meters per pixel)
         scale_m = float(wf.pixel_scale.to(u.m).value) if hasattr(wf, 'pixel_scale') and hasattr(wf.pixel_scale, 'to') else 1.0
 
-        h, w = wf.field.shape
+        if wf.field.ndim == 3:
+            h, w = wf.field.shape[1], wf.field.shape[2]
+        else:
+            h, w = wf.field.shape
+            
         # Coordinate grids centered at zero
         y = (np.arange(h) - (h - 1) / 2.0) * scale_m
         x = (np.arange(w) - (w - 1) / 2.0) * scale_m
