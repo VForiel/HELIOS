@@ -446,12 +446,16 @@ class Context:
     --------
     Layer : Base class for all simulation components
     """
-    def __init__(self, date: Any = None, declination: Any = None, **kwargs):
+    def __init__(self, date: Any = None, declination: Any = None, layers: Optional[List[Union[Layer, List[Layer]]]] = None, **kwargs):
         self.date = date
         self.declination = declination
         self.kwargs = kwargs
         self.layers: List[Union[Layer, List[Layer]]] = []
         self.results = {}
+        
+        if layers:
+            for layer in layers:
+                self.add_layer(layer)
 
     def add_layer(self, layer: Union[Layer, List[Layer]]):
         """
@@ -576,7 +580,8 @@ class Context:
     def get_input_wavefront(self, wavelength: Optional[u.Quantity] = None, 
                             size: Optional[int] = None,
                             angular_samples: int = 1,
-                            coherent_sources: bool = True) -> Union[Wavefront, WavefrontArray]:
+                            coherent_sources: bool = True,
+                            collectors: Optional[List[Any]] = None) -> Union[Wavefront, WavefrontArray]:
         """
         Generate the input wavefront(s) from Scene and Atmosphere in the context.
         
@@ -596,6 +601,9 @@ class Context:
             If True, creates one wavefront sample per discrete source (Star, Planet).
             If False, creates a grid of angular_samples^2 wavefronts sampling the scene.
             Default: True.
+        collectors : list of Collector, optional
+            If provided, generates a WavefrontArray with one wavefront per collector,
+            including geometric phase shifts (piston + tilt) corresponding to each collector's position.
         """
         # Determine simulation parameters
         if wavelength is None:
@@ -605,10 +613,22 @@ class Context:
             
         # Find Scene
         scene = None
+        # DEBUG
+        with open("debug_log.txt", "a") as f:
+            f.write(f"Context layers: {len(self.layers)}\n")
+            for l in self.layers:
+                f.write(f"  - {type(l).__name__} ({type(l)})\n")
+
         for layer in self.layers:
             if type(layer).__name__ == 'Scene':
                 scene = layer
-                break
+            elif type(layer).__name__ == 'TelescopeArray' and collectors is None:
+                # Auto-detect TelescopeArray if collectors not explicitly provided
+                collectors = layer.elements
+        
+        # Error handling: Need at least a Scene or a TelescopeArray (to define collectors)
+        if scene is None and collectors is None:
+             raise ValueError("Context must contain at least a Scene or a TelescopeArray to generate input wavefront.")
         
         # Determine samples and directions
         samples = 1
@@ -617,6 +637,13 @@ class Context:
         sources_list = ["Default Source"]
         
         if scene:
+            # DEBUG
+            with open("debug_log.txt", "a") as f:
+                f.write(f"Scene found. Coherent: {coherent_sources}\n")
+                f.write(f"Scene objects: {len(scene.objects)}\n")
+                for o in scene.objects:
+                    f.write(f"  - {type(o).__name__}\n")
+
             if coherent_sources:
                 # One sample per source
                 # We look for objects that are likely point sources or discrete bodies
@@ -645,6 +672,13 @@ class Context:
                         
                         # Convert to radians
                         tx, ty = 0.0, 0.0
+                        
+                        # DEBUG
+                        with open("debug_log.txt", "a") as f:
+                            f.write(f"Object: {type(obj).__name__}, Position: {px}, {py}\n")
+                            if hasattr(px, 'unit'):
+                                f.write(f"  Unit: {px.unit}, Equiv rad: {px.unit.is_equivalent(u.rad)}\n")
+                        
                         if hasattr(px, 'unit'):
                             if px.unit.is_equivalent(u.m) and dist is not None:
                                 tx = (px / dist).to(u.rad).value
@@ -708,17 +742,118 @@ class Context:
                     amplitudes = [1.0]
                     sources_list = ["Default Source"]
 
+        # If collectors are provided, generate WavefrontArray
+        if collectors is not None:
+            wf_list = []
+            locations = []
+            
+            # Wavenumber
+            k = 2 * np.pi / wavelength.to(u.m).value
+            
+            for collector in collectors:
+                # Create wavefront for this collector
+                wf = Wavefront(wavelength=wavelength, size=size, samples=samples, sources=sources_list)
+                wf.source_directions = np.array(directions) * u.rad
+                
+                # Determine collector size for local grid
+                if hasattr(collector, 'size') and collector.size is not None:
+                    diameter = collector.size
+                else:
+                    diameter = 1.0 * u.m # Default
+                
+                # DEBUG
+                # print(f"Collector: {collector.name}, Size: {diameter}, Type: {type(diameter)}")
+                
+                wf.pixel_scale = (diameter / size)
+                try:
+                    size_m = diameter.to(u.m).value
+                except AttributeError:
+                    print(f"ERROR: diameter has no .to() method. Type: {type(diameter)}, Value: {diameter}")
+                    # Fallback if it's a float (assume meters)
+                    size_m = float(diameter)
+                    diameter = size_m * u.m
+                    wf.pixel_scale = (diameter / size)
+                
+                # Create local grid (u, v)
+                u_vec = np.linspace(-size_m/2, size_m/2, size)
+                v_vec = np.linspace(-size_m/2, size_m/2, size)
+                U, V = np.meshgrid(u_vec, v_vec)
+                
+                # Collector position for piston
+                if hasattr(collector, 'position'):
+                    cx, cy = collector.position
+                else:
+                    cx, cy = 0.0, 0.0
+                
+                # Apply phase shifts
+                for s in range(samples):
+                    if s < len(directions):
+                        tx, ty = directions[s] # radians
+                        
+                        # Piston: k * (cx * tx + cy * ty)
+                        piston = k * (cx * tx + cy * ty)
+                        
+                        # Tilt: k * (u * tx + v * ty)
+                        tilt = k * (U * tx + V * ty)
+                        
+                        # Total phase
+                        total_phase = piston + tilt
+                        
+                        total_phase = piston + tilt
+                        
+                        total_phase = piston + tilt
+                        
+                        # Apply to field
+                        wf.field[s] *= np.exp(1j * total_phase)
+                # Set amplitudes
+                for i in range(samples):
+                    if i < len(amplitudes):
+                        wf.field[i] *= amplitudes[i]
+                
+                wf_list.append(wf)
+                locations.append((cx, cy))
+            
+            return WavefrontArray(wf_list, locations=locations)
+
+        # Default single wavefront behavior (if no collectors provided)
         # Create wavefront with samples
         wf = Wavefront(wavelength=wavelength, size=size, samples=samples, sources=sources_list)
+        
+        # Set pixel scale
+        # Default diameter 10m if not specified
+        diameter = self.kwargs.get('diameter', 10.0 * u.m)
+        wf.pixel_scale = (diameter / size)
         
         # Set directions
         wf.source_directions = np.array(directions) * u.rad
         
+        # Apply phase tilt for off-axis sources
+        # k = 2pi / lambda
+        k = 2 * np.pi / wavelength.to(u.m).value
+        
+        # Create grid (u, v) in meters
+        # centered on 0
+        size_m = diameter.to(u.m).value
+        u_vec = np.linspace(-size_m/2, size_m/2, size)
+        v_vec = np.linspace(-size_m/2, size_m/2, size)
+        U, V = np.meshgrid(u_vec, v_vec)
+        
+        for s in range(samples):
+            if s < len(directions):
+                tx, ty = directions[s] # radians
+                
+                # Tilt phase: k * (u * tx + v * ty)
+                tilt = k * (U * tx + V * ty)
+                
+                # Apply to field (which is ones initially)
+                wf.field[s] *= np.exp(1j * tilt)
+
         # Set amplitudes
         # wf.field is (samples, size, size)
         # We broadcast amplitude to (size, size)
         for i in range(samples):
-            wf.field[i] *= amplitudes[i]
+            if i < len(amplitudes):
+                wf.field[i] *= amplitudes[i]
         
         # Find Atmosphere and apply phase
         atmosphere = None

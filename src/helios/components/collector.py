@@ -89,7 +89,7 @@ class Collector(Element):
         
         self.metadata = metadata
     
-    def process(self, wavefront: Any, context: Context) -> Any:
+    def process(self, wavefront: Wavefront, context: Context) -> Any:
         """
         Process the wavefront through this collector's pupil.
         
@@ -108,34 +108,23 @@ class Collector(Element):
         wavefront : Wavefront
             Wavefront with pupil mask applied and pixel scale updated.
         """
-        if wavefront is None or not hasattr(wavefront, 'field'):
-            return wavefront
         
-        try:
-            N = wavefront.field.shape[0]
-            
-            # Update pixel scale based on collector size
-            # The wavefront now represents the field at the pupil plane of this collector
-            if self.size is not None:
-                # Ensure size is in meters
-                size_m = self.size.to(u.m).value if hasattr(self.size, 'to') else float(self.size)
-                wavefront.pixel_scale = (size_m / N) * u.m
+        # Use the last dimension for spatial size (assuming square)
+        # field shape is typically (samples, height, width) or just (height, width)
+        N = wavefront.field.shape[-1]
+        
+        # Update pixel scale based on collector size
+        # The wavefront now represents the field at the pupil plane of this collector
+        if self.size is not None:
+            # Ensure size is in meters
+            size_m = self.size.to(u.m).value if hasattr(self.size, 'to') else float(self.size)
+            wavefront.pixel_scale = (size_m / N) * u.m
 
-            mask = self.pupil.get_array(npix=N, soft=True)
-            wavefront.field = wavefront.field * mask.astype(wavefront.field.dtype)
-            # If no focal length has been set yet, use the pupil's default focal length
-            if getattr(wavefront, '_last_focal_length_m', None) is None and hasattr(self.pupil, 'focal_length_m'):
-                wavefront._last_focal_length_m = float(self.pupil.focal_length_m)
-        except Exception:
-            # Fallback: try without soft edges
-            try:
-                mask = self.pupil.get_array(npix=N, soft=False)
-                wavefront.field = wavefront.field * mask.astype(wavefront.field.dtype)
-                if getattr(wavefront, '_last_focal_length_m', None) is None and hasattr(self.pupil, 'focal_length_m'):
-                    wavefront._last_focal_length_m = float(self.pupil.focal_length_m)
-            except Exception:
-                pass  # Skip if pupil can't be rendered
-        
+        mask = self.pupil.get_array(npix=N, soft=True)
+        wavefront.field = wavefront.field * mask
+
+        wavefront._last_focal_length_m = float(self.pupil.focal_length_m)
+
         return wavefront
     
     def __repr__(self):
@@ -588,9 +577,6 @@ class TelescopeArray(Layer):
         wavefront : WavefrontArray
             Wavefronts with aperture mask applied (one per collector).
         """
-        # If wavefront is None (start of simulation), generate it
-        if wavefront is None:
-            wavefront = context.get_input_wavefront()
 
         # Check for list/WavefrontArray input
         is_list_input = isinstance(wavefront, list) or (hasattr(wavefront, '__iter__') and not hasattr(wavefront, 'field'))
@@ -611,35 +597,10 @@ class TelescopeArray(Layer):
             if i < len(wf_list):
                 wf = wf_list[i]
                 
-                # Apply geometric phase shift for off-axis sources
-                # Phase shift = k * (x * theta_x + y * theta_y)
-                # This assumes the wavefront represents the field at the array center (0,0)
-                # and we are shifting to the collector position (x, y).
-                if wf.source_directions is not None:
-                    # wf.source_directions is (samples, 2) in radians
-                    # wf.field is (samples, size, size)
-                    
-                    # Collector position
-                    cx, cy = collector.position # in meters
-                    
-                    # Wavenumber
-                    k = 2 * np.pi / wf.wavelength.to(u.m).value
-                    
-                    # Iterate over samples/sources
-                    for s in range(wf.field.shape[0]):
-                        if s < len(wf.source_directions):
-                            tx = wf.source_directions[s, 0].to(u.rad).value
-                            ty = wf.source_directions[s, 1].to(u.rad).value
-                            
-                            # Phase shift
-                            # phi = k * (x * tx + y * ty)
-                            # Note: sign convention depends on definition of theta.
-                            # Usually phase = k * r * theta for incoming wave.
-                            # Let's assume standard definition.
-                            phase_shift = k * (cx * tx + cy * ty)
-                            
-                            # Apply to field
-                            wf.field[s] *= np.exp(1j * phase_shift)
+                # Phase shift is now handled in Context.get_input_wavefront if collectors were passed.
+                # If a generic wavefront was passed, we assume it's already correct or we might need
+                # to re-implement piston here if needed for external wavefronts.
+                # But for now, we assume Context handles it.
                 
                 # Apply collector pupil
                 wf_processed = collector.process(wf, context)
