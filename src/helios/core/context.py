@@ -10,6 +10,7 @@ from pathlib import Path
 import os
 import xml.etree.ElementTree as ET
 import re
+from .simulation import Wavefront, WavefrontArray
 
 class Element:
     """
@@ -448,6 +449,7 @@ class Context:
     def __init__(self, date: Any = None, declination: Any = None, **kwargs):
         self.date = date
         self.declination = declination
+        self.kwargs = kwargs
         self.layers: List[Union[Layer, List[Layer]]] = []
         self.results = {}
 
@@ -570,6 +572,46 @@ class Context:
             lines.append("")  # Empty line between layers
         
         return "\n".join(lines)
+
+    def get_input_wavefront(self) -> Union[Wavefront, WavefrontArray]:
+        """
+        Generate the input wavefront(s) from Scene and Atmosphere in the context.
+        
+        Retrieves simulation parameters (wavelength, npix) from context.kwargs,
+        creates a new Wavefront, and applies Scene flux and Atmosphere phase.
+        """
+        # Determine simulation parameters
+        wavelength = self.kwargs.get('wavelength', 550 * u.nm)
+        npix = self.kwargs.get('npix', 512)
+        
+        # Create base wavefront
+        wf = Wavefront(wavelength=wavelength, size=npix)
+        
+        # Find Scene and apply flux
+        scene = None
+        for layer in self.layers:
+            if type(layer).__name__ == 'Scene':
+                scene = layer
+                break
+        
+        if scene and hasattr(scene, 'get_flux_scaling'):
+            flux = scene.get_flux_scaling()
+            if flux > 0:
+                wf.field = wf.field * np.sqrt(flux)
+        
+        # Find Atmosphere and apply phase
+        atmosphere = None
+        for layer in self.layers:
+            if type(layer).__name__ == 'Atmosphere':
+                atmosphere = layer
+                break
+        
+        if atmosphere:
+            # Atmosphere.process might return Wavefront or WavefrontArray
+            # It will detect this TelescopeArray in context and optimize (split) if needed
+            wf = atmosphere.process(wf, self)
+            
+        return wf
 
     def observe(self) -> Any:
         """

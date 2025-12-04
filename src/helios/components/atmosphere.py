@@ -279,6 +279,9 @@ class Atmosphere(Element):
         wavefront : Wavefront or WavefrontArray
             Wavefront(s) with atmospheric phase applied
         """
+        if wavefront is None:
+            return None
+
         # 1. Check for downstream TelescopeArray to optimize
         target_collectors = []
         if context is not None:

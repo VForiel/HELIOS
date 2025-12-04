@@ -10,7 +10,7 @@ TelescopeArray unifies single-telescope and interferometric observations:
 """
 import numpy as np
 from astropy import units as u
-from typing import Tuple, Optional, Any
+from typing import Tuple, Optional, Any, Union
 import matplotlib.pyplot as _plt
 
 from ..core.context import Layer, Element, Context
@@ -94,6 +94,7 @@ class Collector(Element):
         Process the wavefront through this collector's pupil.
         
         Applies the pupil transmission pattern to the wavefront field.
+        Also updates the wavefront's pixel scale to match the collector size.
         
         Parameters
         ----------
@@ -105,13 +106,21 @@ class Collector(Element):
         Returns
         -------
         wavefront : Wavefront
-            Wavefront with pupil mask applied.
+            Wavefront with pupil mask applied and pixel scale updated.
         """
         if wavefront is None or not hasattr(wavefront, 'field'):
             return wavefront
         
         try:
             N = wavefront.field.shape[0]
+            
+            # Update pixel scale based on collector size
+            # The wavefront now represents the field at the pupil plane of this collector
+            if self.size is not None:
+                # Ensure size is in meters
+                size_m = self.size.to(u.m).value if hasattr(self.size, 'to') else float(self.size)
+                wavefront.pixel_scale = (size_m / N) * u.m
+
             mask = self.pupil.get_array(npix=N, soft=True)
             wavefront.field = wavefront.field * mask.astype(wavefront.field.dtype)
             # If no focal length has been set yet, use the pupil's default focal length
@@ -579,6 +588,10 @@ class TelescopeArray(Layer):
         wavefront : WavefrontArray
             Wavefronts with aperture mask applied (one per collector).
         """
+        # If wavefront is None (start of simulation), generate it
+        if wavefront is None:
+            wavefront = context.get_input_wavefront()
+
         # Check for list/WavefrontArray input
         is_list_input = isinstance(wavefront, list) or (hasattr(wavefront, '__iter__') and not hasattr(wavefront, 'field'))
         

@@ -467,18 +467,15 @@ class Scene(Layer):
         attrs['num_objects'] = len(self.elements)
         return attrs
 
-    def process(self, wavefront: None, context: Context) -> Wavefront:
+    def get_flux_scaling(self) -> float:
         """
-        Generates the initial wavefront from the scene.
+        Calculate the total flux scaling factor from all objects in the scene.
         
-        The wavefront amplitude is scaled by:
-        1. Distance: flux decreases as (d/d_ref)^-2 where d_ref = 10 pc
-        2. Magnitude: flux decreases as 10^(-0.4 * magnitude)
-        
-        For reference: magnitude 0 star at 10 pc gives ~1e10 photons/s/m²/nm
+        Returns
+        -------
+        float
+            Total flux scaling factor.
         """
-        
-        # Calculate total flux scaling from all objects
         flux_scaling = 0.0
         
         for obj in self.objects:
@@ -493,6 +490,26 @@ class Scene(Layer):
                 
                 # Combined scaling
                 flux_scaling += float(distance_factor.value) * magnitude_factor
+                
+        return flux_scaling
+
+    def process(self, wavefront: None, context: Context) -> Wavefront:
+        """
+        Generates the initial wavefront from the scene.
+        
+        The wavefront amplitude is scaled by:
+        1. Distance: flux decreases as (d/d_ref)^-2 where d_ref = 10 pc
+        2. Magnitude: flux decreases as 10^(-0.4 * magnitude)
+        
+        For reference: magnitude 0 star at 10 pc gives ~1e10 photons/s/m²/nm
+        """
+        # If wavefront is None, we are in the new flow where Scene is just a container.
+        # The wavefront generation is handled by the Collector.
+        if wavefront is None:
+            return None
+        
+        # Calculate total flux scaling
+        flux_scaling = self.get_flux_scaling()
         
         # Apply flux scaling to wavefront field (amplitude scales as sqrt(flux))
         if flux_scaling > 0:
