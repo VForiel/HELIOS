@@ -614,26 +614,28 @@ class Context:
         samples = 1
         directions = [(0.0, 0.0)] # (theta_x, theta_y) in radians
         amplitudes = [1.0]
+        sources_list = ["Default Source"]
         
         if scene:
             if coherent_sources:
                 # One sample per source
                 # We look for objects that are likely point sources or discrete bodies
-                sources = [obj for obj in scene.objects if type(obj).__name__ in ['Star', 'Planet']]
+                scene_objects = [obj for obj in scene.objects if type(obj).__name__ in ['Star', 'Planet']]
                 
-                if not sources and len(scene.objects) > 0:
+                if not scene_objects and len(scene.objects) > 0:
                      # Fallback if no Star/Planet but other objects exist
-                     sources = scene.objects
+                     scene_objects = scene.objects
                 
-                if sources:
-                    samples = len(sources)
+                if scene_objects:
+                    samples = len(scene_objects)
                     directions = []
                     amplitudes = []
+                    sources_list = []
                     
                     # Distance for angular conversion
                     dist = getattr(scene, 'distance', None)
                     
-                    for obj in sources:
+                    for obj in scene_objects:
                         # Position
                         px, py = 0.0 * u.rad, 0.0 * u.rad
                         if hasattr(obj, 'position'):
@@ -665,6 +667,12 @@ class Context:
                         
                         flux = d_factor * mag_factor
                         amplitudes.append(np.sqrt(flux))
+                        
+                        # Source name
+                        name = getattr(obj, 'name', None)
+                        if not name:
+                            name = type(obj).__name__
+                        sources_list.append(name)
             else:
                 # Grid sampling (Extended source mode)
                 samples = angular_samples ** 2
@@ -685,19 +693,23 @@ class Context:
                         tx = xg.flatten().to(u.rad).value
                         ty = yg.flatten().to(u.rad).value
                         directions = list(zip(tx, ty))
+                        # Store sources as Quantities for better formatting later
+                        sources_list = [np.array([txi, tyi]) * u.rad for txi, tyi in zip(tx, ty)]
                         
                     except Exception as e:
                         print(f"Warning: Scene rendering failed: {e}. Using default source.")
                         samples = 1
                         directions = [(0.0, 0.0)]
                         amplitudes = [1.0]
+                        sources_list = ["Default Source"]
                 else:
                     samples = 1
                     directions = [(0.0, 0.0)]
                     amplitudes = [1.0]
+                    sources_list = ["Default Source"]
 
         # Create wavefront with samples
-        wf = Wavefront(wavelength=wavelength, size=size, samples=samples)
+        wf = Wavefront(wavelength=wavelength, size=size, samples=samples, sources=sources_list)
         
         # Set directions
         wf.source_directions = np.array(directions) * u.rad

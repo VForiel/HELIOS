@@ -610,6 +610,37 @@ class TelescopeArray(Layer):
         for i, collector in enumerate(self.elements):
             if i < len(wf_list):
                 wf = wf_list[i]
+                
+                # Apply geometric phase shift for off-axis sources
+                # Phase shift = k * (x * theta_x + y * theta_y)
+                # This assumes the wavefront represents the field at the array center (0,0)
+                # and we are shifting to the collector position (x, y).
+                if wf.source_directions is not None:
+                    # wf.source_directions is (samples, 2) in radians
+                    # wf.field is (samples, size, size)
+                    
+                    # Collector position
+                    cx, cy = collector.position # in meters
+                    
+                    # Wavenumber
+                    k = 2 * np.pi / wf.wavelength.to(u.m).value
+                    
+                    # Iterate over samples/sources
+                    for s in range(wf.field.shape[0]):
+                        if s < len(wf.source_directions):
+                            tx = wf.source_directions[s, 0].to(u.rad).value
+                            ty = wf.source_directions[s, 1].to(u.rad).value
+                            
+                            # Phase shift
+                            # phi = k * (x * tx + y * ty)
+                            # Note: sign convention depends on definition of theta.
+                            # Usually phase = k * r * theta for incoming wave.
+                            # Let's assume standard definition.
+                            phase_shift = k * (cx * tx + cy * ty)
+                            
+                            # Apply to field
+                            wf.field[s] *= np.exp(1j * phase_shift)
+                
                 # Apply collector pupil
                 wf_processed = collector.process(wf, context)
                 output_list.append(wf_processed)

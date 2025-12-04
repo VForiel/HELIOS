@@ -1,6 +1,6 @@
 import numpy as np
 from astropy import units as u
-from typing import Optional, List, Tuple, Callable
+from typing import Optional, List, Tuple, Callable, Union
 import matplotlib.pyplot as plt
 import copy
 from tqdm.auto import tqdm
@@ -64,6 +64,56 @@ def _get_smart_extent(shape: Tuple[int, ...], pixel_scale: u.Quantity):
         
     return extent, xlabel, ylabel
 
+def _format_coord(coord: Union[u.Quantity, Tuple, List]) -> str:
+    """
+    Format a coordinate (tuple or Quantity) into a readable string with integer values if possible.
+    Tries to find a unit (deg, arcmin, arcsec, mas, uas) where values are in [0, 999].
+    """
+    if isinstance(coord, (tuple, list)):
+        # Check if elements are quantities
+        if all(isinstance(c, u.Quantity) for c in coord):
+            # Convert to array quantity
+            try:
+                coord = u.Quantity(coord)
+            except:
+                pass # Mixed units?
+        else:
+            # Plain numbers, assume radians if small? Or just print as is.
+            # User said "si c'est des tuples ... affiche les en int en convertissant"
+            # If plain floats, we don't know unit. Just format nicely.
+            try:
+                return f"({coord[0]:.2e}, {coord[1]:.2e})"
+            except:
+                return str(coord)
+
+    if isinstance(coord, u.Quantity):
+        # Flatten if needed
+        vals = coord.flatten()
+        if vals.size != 2:
+            return str(coord)
+        
+        # Try units from smallest to largest to find best fit
+        # Default for 0 is mas
+        if np.max(np.abs(vals.value)) == 0:
+             return "0, 0 mas"
+
+        for unit in [u.uas, u.mas, u.arcsec, u.arcmin, u.deg]:
+            try:
+                v = vals.to(unit).value
+                max_val = np.max(np.abs(v))
+                
+                if 0.1 <= max_val < 1000:
+                    # Good range. Format as int if close to int, else float
+                    # User asked for "affiche les en int"
+                    return f"{int(round(v[0]))}, {int(round(v[1]))} {unit}"
+            except:
+                continue
+        
+        # Fallback
+        return f"{vals[0].value:.2e}, {vals[1].value:.2e} {vals.unit}"
+
+    return str(coord)
+
 class Wavefront:
     """
     Represents the electromagnetic field (complex amplitude).
@@ -126,7 +176,8 @@ class Wavefront:
     --------
     Layer : Components that transform wavefronts
     """
-    def __init__(self, wavelength: u.Quantity, size: int, samples: int = 1):
+    def __init__(self, wavelength: u.Quantity, size: int, samples: int = 1, 
+                 sources: Optional[List[Union[Tuple[float, float], str]]] = None):
         self.wavelength = wavelength
         self.field = np.ones((samples, size, size), dtype=np.complex128)
         self.pixel_scale = 1.0 * u.m # Placeholder
@@ -134,6 +185,7 @@ class Wavefront:
         # Last optical focal length encountered (meters), set by lens-like elements
         self._last_focal_length_m: Optional[float] = None
         self.source_directions: Optional[u.Quantity] = None # (M, 2) angles
+        self.sources = sources
 
     def copy(self) -> 'Wavefront':
         """
@@ -146,10 +198,13 @@ class Wavefront:
         """
         new_wf = copy.copy(self)
         new_wf.field = self.field.copy()
+        if self.sources is not None:
+            new_wf.sources = copy.deepcopy(self.sources)
         return new_wf
 
     def plot(self, title: Optional[str] = None, figsize: Optional[tuple] = None, 
-             show: bool = True, log_scale: bool = True, stack_method: Optional[Callable] = None):
+             show: bool = True, log_scale: bool = True, stack_method: Optional[Callable] = None,
+             max_plots: int = 5):
         """
         Plot the wavefront amplitude and phase side by side.
         
@@ -165,6 +220,8 @@ class Wavefront:
             If True, adds a third plot with log10(Amplitude). Default False.
         stack_method : callable, optional
             Function to aggregate samples (e.g., np.mean). If None, plots each sample independently.
+        max_plots : int, optional
+            Maximum number of wavefronts to plot if stack_method is None. Default 5.
             
         Returns
         -------
@@ -190,11 +247,26 @@ class Wavefront:
             # Plot each sample independently with progress display
             fields_to_plot = []
             n_samples = self.field.shape[0]
-            for i in tqdm(range(n_samples), desc="Stacking samples for plot", unit="sample", total=n_samples):
+            
+            n_to_plot = min(n_samples, max_plots)
+            if n_samples > max_plots:
+                print(f"Warning: Displaying only first {max_plots} of {n_samples} wavefronts.")
+                
+            for i in tqdm(range(n_to_plot), desc="Stacking samples for plot", unit="sample", total=n_to_plot):
                 amp = np.abs(self.field[i])
                 phase = np.angle(self.field[i])
                 log_amp = np.log10(amp + 1e-12)
-                fields_to_plot.append((amp, phase, log_amp, f"Sample {i+1}"))
+                
+                # Determine label
+                label = f"Sample {i+1}"
+                if self.sources is not None and i < len(self.sources):
+                    src = self.sources[i]
+                    if isinstance(src, str):
+                        label = src
+                    else:
+                        label = _format_coord(src)
+                
+                fields_to_plot.append((amp, phase, log_amp, label))
         
         # Determine layout
         n_plots = len(fields_to_plot)
@@ -396,66 +468,120 @@ class WavefrontArray:
         n_samples = self.wavefronts[0].field.shape[0]
         
         if stack_method is not None:
-            n_rows_per_sample = 3 if log_scale else 2
-            total_rows = n_rows_per_sample
-        else:
-            n_rows_per_sample = 3 if log_scale else 2
-            total_rows = n_samples * n_rows_per_sample
+            # Stacked mode: 1 set of plots per channel (stacked over samples)
+            # Layout: Channel 1, Channel 2, ...
+            n_rows_per_item = 3 if log_scale else 2
+            total_rows = n_channels * n_rows_per_item
             
-        fig_width = max(8, min(14, 4 * n_channels))
-        fig_height = 4 * total_rows
-        
-        fig, axes = plt.subplots(total_rows, n_channels, figsize=(fig_width, fig_height), squeeze=False)
-
-        for i, wf in enumerate(tqdm(self.wavefronts, desc="Plotting channels", unit="ch", total=len(self.wavefronts))):
-            # Prepare data
-            if stack_method is not None:
+            fig_width = max(8, min(14, 4 * 2)) # Fixed width for Amp/Phase cols
+            fig_height = 4 * total_rows
+            
+            fig, axes = plt.subplots(total_rows, 2 + (1 if log_scale else 0), figsize=(fig_width, fig_height), squeeze=False)
+            
+            for i, wf in enumerate(tqdm(self.wavefronts, desc="Plotting channels (stacked)", unit="ch")):
                 amp = stack_method(np.abs(wf.field), axis=0)
                 phase = stack_method(np.angle(wf.field), axis=0)
                 log_amp = np.log10(amp + 1e-12)
-                samples_to_plot = [(amp, phase, log_amp, "Stacked")]
-            else:
-                samples_to_plot = []
-                for s in tqdm(range(n_samples), desc=f"Samples ch {i+1}", unit="sample", total=n_samples):
-                    amp = np.abs(wf.field[s])
-                    phase = np.angle(wf.field[s])
-                    log_amp = np.log10(amp + 1e-12)
-                    samples_to_plot.append((amp, phase, log_amp, f"Sample {s+1}"))
-            
-            extent, xlabel, ylabel = _get_smart_extent(wf.field.shape, wf.pixel_scale)
-            
-            for s_idx, (amp, phase, log_amp, label_suffix) in enumerate(samples_to_plot):
-                row_offset = s_idx * n_rows_per_sample
+                
+                extent, xlabel, ylabel = _get_smart_extent(wf.field.shape, wf.pixel_scale)
+                
+                row_base = i * n_rows_per_item
                 
                 # Amplitude
-                ax_amp = axes[row_offset, i]
+                ax_amp = axes[row_base, 0]
                 im_amp = ax_amp.imshow(amp, origin='lower', cmap='inferno', extent=extent)
-                ax_amp.set_title(f"Ch {i+1} Amp ({label_suffix})")
+                ax_amp.set_title(f"Ch {i+1} Amp (Stacked)")
                 ax_amp.set_xlabel(xlabel)
                 ax_amp.set_ylabel(ylabel)
                 cb_amp = plt.colorbar(im_amp, ax=ax_amp, fraction=0.046, pad=0.04)
                 cb_amp.set_label('Amplitude')
                 
-                current_row = row_offset + 1
-                if log_scale:
-                    # Log Amplitude
-                    ax_log = axes[current_row, i]
-                    im_log = ax_log.imshow(log_amp, origin='lower', cmap='inferno', extent=extent)
-                    ax_log.set_title(f"Ch {i+1} Log Amp ({label_suffix})")
-                    ax_log.set_xlabel(xlabel)
-                    ax_log.set_ylabel(ylabel)
-                    cb_log = plt.colorbar(im_log, ax=ax_log, fraction=0.046, pad=0.04)
-                    cb_log.set_label('Log Amplitude')
-                    current_row += 1
-                
                 # Phase
-                ax_phase = axes[current_row, i]
+                ax_phase = axes[row_base, 1]
                 im_phase = ax_phase.imshow(phase, origin='lower', cmap='twilight', vmin=-np.pi, vmax=np.pi, extent=extent)
-                ax_phase.set_title(f"Ch {i+1} Phase ({label_suffix})")
+                ax_phase.set_title(f"Ch {i+1} Phase (Stacked)")
                 ax_phase.set_xlabel(xlabel)
                 ax_phase.set_ylabel(ylabel)
                 cb_phase = plt.colorbar(im_phase, ax=ax_phase, fraction=0.046, pad=0.04)
                 cb_phase.set_label('Phase (rad)')
+                
+                if log_scale:
+                    # Log Amplitude
+                    ax_log = axes[row_base, 2]
+                    im_log = ax_log.imshow(log_amp, origin='lower', cmap='inferno', extent=extent)
+                    ax_log.set_title(f"Ch {i+1} Log Amp (Stacked)")
+                    ax_log.set_xlabel(xlabel)
+                    ax_log.set_ylabel(ylabel)
+                    cb_log = plt.colorbar(im_log, ax=ax_log, fraction=0.046, pad=0.04)
+                    cb_log.set_label('Log Amplitude')
+                    
+        else:
+            # Individual samples mode
+            # Layout: Source 1 (Ch 1, Ch 2...), Source 2 (Ch 1, Ch 2...)
+            n_rows_per_item = 1 # We put Amp/Phase side-by-side in one row? 
+            # No, user wants "same logic as Wavefront.plot() with amplitude left and phase right"
+            # In Wavefront.plot, it's 1 row per sample, with columns for Amp, Phase, LogAmp.
+            # So here, for each (Source, Channel) pair, we want 1 row.
+            
+            total_rows = n_samples * n_channels
+            ncols = 3 if log_scale else 2
+            
+            fig_width = max(8, min(14, 4 * ncols))
+            fig_height = 4 * total_rows
+            
+            fig, axes = plt.subplots(total_rows, ncols, figsize=(fig_width, fig_height), squeeze=False)
+            
+            row_idx = 0
+            for s in tqdm(range(n_samples), desc="Plotting sources", unit="src"):
+                for c, wf in enumerate(self.wavefronts):
+                    # Get data
+                    amp = np.abs(wf.field[s])
+                    phase = np.angle(wf.field[s])
+                    log_amp = np.log10(amp + 1e-12)
+                    
+                    # Determine label
+                    label = f"Src {s+1} - Ch {c+1}"
+                    if wf.sources is not None and s < len(wf.sources):
+                        src = wf.sources[s]
+                        if isinstance(src, str):
+                            src_name = src
+                        else:
+                            src_name = _format_coord(src)
+                        label = f"{src_name} - Ch {c+1}"
+                    
+                    extent, xlabel, ylabel = _get_smart_extent(wf.field.shape, wf.pixel_scale)
+                    
+                    # Amplitude
+                    ax_amp = axes[row_idx, 0]
+                    im_amp = ax_amp.imshow(amp, origin='lower', cmap='inferno', extent=extent)
+                    ax_amp.set_title(f"Amp ({label})")
+                    ax_amp.set_xlabel(xlabel)
+                    ax_amp.set_ylabel(ylabel)
+                    cb_amp = plt.colorbar(im_amp, ax=ax_amp, fraction=0.046, pad=0.04)
+                    cb_amp.set_label('Amplitude')
+                    
+                    current_col = 1
+                    # Log Amplitude
+                    if log_scale:
+                        ax_log = axes[row_idx, current_col]
+                        im_log = ax_log.imshow(log_amp, origin='lower', cmap='inferno', extent=extent)
+                        ax_log.set_title(f"Log Amp ({label})")
+                        ax_log.set_xlabel(xlabel)
+                        ax_log.set_ylabel(ylabel)
+                        cb_log = plt.colorbar(im_log, ax=ax_log, fraction=0.046, pad=0.04)
+                        cb_log.set_label('Log Amplitude')
+                        current_col += 1
+                        
+                    # Phase
+                    ax_phase = axes[row_idx, current_col]
+                    im_phase = ax_phase.imshow(phase, origin='lower', cmap='twilight', vmin=-np.pi, vmax=np.pi, extent=extent)
+                    ax_phase.set_title(f"Phase ({label})")
+                    ax_phase.set_xlabel(xlabel)
+                    ax_phase.set_ylabel(ylabel)
+                    cb_phase = plt.colorbar(im_phase, ax=ax_phase, fraction=0.046, pad=0.04)
+                    cb_phase.set_label('Phase (rad)')
+                    
+                    row_idx += 1
 
         if title:
             fig.suptitle(title)
