@@ -236,13 +236,15 @@ class Wavefront:
             # Note: stacking complex field directly might lead to cancellation (interference)
             # User requested "moyenne des amplitudes et phases"
             amp_to_plot = stack_method(np.abs(self.field), axis=0)
+            intensity_to_plot = stack_method(np.abs(self.field)**2, axis=0)
             phase_to_plot = stack_method(np.angle(self.field), axis=0)
             
             # For log amplitude, compute log of stacked amplitude
             log_amp_to_plot = np.log10(amp_to_plot + 1e-12)
+            log_intensity_to_plot = np.log10(intensity_to_plot + 1e-12)
             
             # Treat as single plot
-            fields_to_plot = [(amp_to_plot, phase_to_plot, log_amp_to_plot, "Stacked")]
+            fields_to_plot = [(intensity_to_plot, log_intensity_to_plot, amp_to_plot, log_amp_to_plot, phase_to_plot, "Stacked")]
         else:
             # Plot each sample independently with progress display
             fields_to_plot = []
@@ -254,8 +256,10 @@ class Wavefront:
                 
             for i in tqdm(range(n_to_plot), desc="Stacking samples for plot", unit="sample", total=n_to_plot):
                 amp = np.abs(self.field[i])
+                intensity = amp**2
                 phase = np.angle(self.field[i])
                 log_amp = np.log10(amp + 1e-12)
+                log_intensity = np.log10(intensity + 1e-12)
                 
                 # Determine label
                 label = f"Sample {i+1}"
@@ -266,11 +270,11 @@ class Wavefront:
                     else:
                         label = _format_coord(src)
                 
-                fields_to_plot.append((amp, phase, log_amp, label))
+                fields_to_plot.append((intensity, log_intensity, amp, log_amp, phase, label))
         
         # Determine layout
         n_plots = len(fields_to_plot)
-        ncols = 3 if log_scale else 2
+        ncols = 5 if log_scale else 3
         nrows = n_plots
         
         if figsize is None:
@@ -281,17 +285,38 @@ class Wavefront:
         # Build extent from pixel scale if available
         extent, x_label, y_label = _get_smart_extent(self.field.shape, self.pixel_scale)
 
-        for i, (amp, phase, log_amp, label_suffix) in enumerate(fields_to_plot):
+        for i, (intensity, log_intensity, amp, log_amp, phase, label_suffix) in enumerate(fields_to_plot):
+            # Intensity
+            ax_int = axes[i, 0]
+            im_int = ax_int.imshow(intensity, cmap='inferno', origin='lower', extent=extent)
+            ax_int.set_title(f"Intensity ({label_suffix})")
+            ax_int.set_xlabel(x_label)
+            ax_int.set_ylabel(y_label)
+            cbar_int = plt.colorbar(im_int, ax=ax_int, fraction=0.046, pad=0.04)
+            cbar_int.set_label("Intensity")
+            
+            current_col = 1
+            # Log Intensity (optional)
+            if log_scale:
+                ax_log_int = axes[i, current_col]
+                im_log_int = ax_log_int.imshow(log_intensity, cmap='inferno', origin='lower', extent=extent)
+                ax_log_int.set_title(f"Log Intensity ({label_suffix})")
+                ax_log_int.set_xlabel(x_label)
+                ax_log_int.set_ylabel(y_label)
+                cbar_log_int = plt.colorbar(im_log_int, ax=ax_log_int, fraction=0.046, pad=0.04)
+                cbar_log_int.set_label("Log Intensity")
+                current_col += 1
+
             # Amplitude
-            ax1 = axes[i, 0]
+            ax1 = axes[i, current_col]
             im1 = ax1.imshow(amp, cmap='inferno', origin='lower', extent=extent)
             ax1.set_title(f"Amplitude ({label_suffix})")
             ax1.set_xlabel(x_label)
             ax1.set_ylabel(y_label)
             cbar1 = plt.colorbar(im1, ax=ax1, fraction=0.046, pad=0.04)
             cbar1.set_label("Amplitude")
+            current_col += 1
 
-            current_col = 1
             # Log Amplitude (optional)
             if log_scale:
                 ax_log = axes[i, current_col]
@@ -322,7 +347,7 @@ class Wavefront:
             
         return fig, axes
 
-    def propagate(self, distance: Optional[u.Quantity] = None):
+    def propagate(self, distance: Optional[u.Quantity] = None, padding: int = 1):
         """
         Propagate the wavefront towards the focal (image) plane.
 
@@ -334,13 +359,19 @@ class Wavefront:
         ----------
         distance : astropy.Quantity, optional
             Propagation distance. If None, uses the stored focal length if available.
+        padding : int, optional
+            Zero-padding factor to increase sampling resolution in the focal plane.
+            A value of 2 means the array size is doubled (padded with zeros),
+            resulting in 2x finer resolution in the output. Default: 1 (no padding).
 
         Notes
         -----
         This implementation performs a Fraunhofer propagation (FFT-based):
         E_image = FFT{ E_pupil } with appropriate frequency centering.
-        It does not currently apply physical scaling factors to coordinates
-        or amplitudes; this will be refined in future versions.
+        
+        The pixel scale is updated according to:
+        dx' = (lambda * f) / (N * dx)
+        where N is the total grid size (including padding).
         """
         import warnings
 
@@ -358,10 +389,50 @@ class Wavefront:
         else:
             d_m = float(distance.to(u.m).value)
 
+        # Apply padding if requested
+        if padding > 1:
+            # field shape is (samples, size, size)
+            samples, h, w = self.field.shape
+            new_h, new_w = h * padding, w * padding
+            
+            # Create new array with zeros
+            new_field = np.zeros((samples, new_h, new_w), dtype=np.complex128)
+            
+            # Insert old field in the center
+            start_h = (new_h - h) // 2
+            start_w = (new_w - w) // 2
+            new_field[:, start_h:start_h+h, start_w:start_w+w] = self.field
+            
+            self.field = new_field
+
         # Basic FFT-based Fraunhofer propagation to focal plane
         # Center -> FFT -> center
         # Apply along last two axes (spatial)
         self.field = np.fft.fftshift(np.fft.fft2(np.fft.fftshift(self.field, axes=(-2, -1)), axes=(-2, -1)), axes=(-2, -1))
+        
+        # Update pixel scale
+        # dx' = (lambda * f) / (N * dx)
+        # N is the size of the array used for FFT (now potentially padded)
+        N = self.field.shape[-1]
+        
+        # Ensure units are handled correctly
+        # self.pixel_scale is Quantity [length]
+        # self.wavelength is Quantity [length]
+        # d_m is float [meters]
+        
+        # We need to be careful with units.
+        # If pixel_scale is angular (e.g. rad), this formula is different.
+        # But propagate usually goes from Pupil (m) to Image (m or rad).
+        # Here we calculate the physical size in the focal plane (m).
+        
+        if self.pixel_scale.unit.is_equivalent(u.m):
+            new_scale = (self.wavelength * (d_m * u.m)) / (N * self.pixel_scale)
+            self.pixel_scale = new_scale.to(u.m)
+        else:
+            # If input is already angular? That's unusual for Fraunhofer from pupil.
+            # Assume input is pupil plane in meters.
+            pass
+            
         return self
 
 class Simulation:
@@ -473,47 +544,72 @@ class WavefrontArray:
             n_rows_per_item = 3 if log_scale else 2
             total_rows = n_channels * n_rows_per_item
             
-            fig_width = max(8, min(14, 4 * 2)) # Fixed width for Amp/Phase cols
+            fig_width = max(8, min(14, 4 * (5 if log_scale else 3))) # Fixed width for Amp/Phase cols
             fig_height = 4 * total_rows
             
-            fig, axes = plt.subplots(total_rows, 2 + (1 if log_scale else 0), figsize=(fig_width, fig_height), squeeze=False)
+            fig, axes = plt.subplots(total_rows, 5 if log_scale else 3, figsize=(fig_width, fig_height), squeeze=False)
             
             for i, wf in enumerate(tqdm(self.wavefronts, desc="Plotting channels (stacked)", unit="ch")):
                 amp = stack_method(np.abs(wf.field), axis=0)
+                intensity = stack_method(np.abs(wf.field)**2, axis=0)
                 phase = stack_method(np.angle(wf.field), axis=0)
                 log_amp = np.log10(amp + 1e-12)
+                log_intensity = np.log10(intensity + 1e-12)
                 
                 extent, xlabel, ylabel = _get_smart_extent(wf.field.shape, wf.pixel_scale)
                 
                 row_base = i * n_rows_per_item
                 
+                # Intensity
+                ax_int = axes[row_base, 0]
+                im_int = ax_int.imshow(intensity, origin='lower', cmap='inferno', extent=extent)
+                ax_int.set_title(f"Ch {i+1} Int (Stacked)")
+                ax_int.set_xlabel(xlabel)
+                ax_int.set_ylabel(ylabel)
+                cb_int = plt.colorbar(im_int, ax=ax_int, fraction=0.046, pad=0.04)
+                cb_int.set_label('Intensity')
+                
+                current_col = 1
+                # Log Intensity
+                if log_scale:
+                    ax_log_int = axes[row_base, current_col]
+                    im_log_int = ax_log_int.imshow(log_intensity, origin='lower', cmap='inferno', extent=extent)
+                    ax_log_int.set_title(f"Ch {i+1} Log Int (Stacked)")
+                    ax_log_int.set_xlabel(xlabel)
+                    ax_log_int.set_ylabel(ylabel)
+                    cb_log_int = plt.colorbar(im_log_int, ax=ax_log_int, fraction=0.046, pad=0.04)
+                    cb_log_int.set_label('Log Intensity')
+                    current_col += 1
+
                 # Amplitude
-                ax_amp = axes[row_base, 0]
+                ax_amp = axes[row_base, current_col]
                 im_amp = ax_amp.imshow(amp, origin='lower', cmap='inferno', extent=extent)
                 ax_amp.set_title(f"Ch {i+1} Amp (Stacked)")
                 ax_amp.set_xlabel(xlabel)
                 ax_amp.set_ylabel(ylabel)
                 cb_amp = plt.colorbar(im_amp, ax=ax_amp, fraction=0.046, pad=0.04)
                 cb_amp.set_label('Amplitude')
+                current_col += 1
                 
-                # Phase
-                ax_phase = axes[row_base, 1]
-                im_phase = ax_phase.imshow(phase, origin='lower', cmap='twilight', vmin=-np.pi, vmax=np.pi, extent=extent)
-                ax_phase.set_title(f"Ch {i+1} Phase (Stacked)")
-                ax_phase.set_xlabel(xlabel)
-                ax_phase.set_ylabel(ylabel)
-                cb_phase = plt.colorbar(im_phase, ax=ax_phase, fraction=0.046, pad=0.04)
-                cb_phase.set_label('Phase (rad)')
-                
+                # Log Amplitude
                 if log_scale:
-                    # Log Amplitude
-                    ax_log = axes[row_base, 2]
+                    ax_log = axes[row_base, current_col]
                     im_log = ax_log.imshow(log_amp, origin='lower', cmap='inferno', extent=extent)
                     ax_log.set_title(f"Ch {i+1} Log Amp (Stacked)")
                     ax_log.set_xlabel(xlabel)
                     ax_log.set_ylabel(ylabel)
                     cb_log = plt.colorbar(im_log, ax=ax_log, fraction=0.046, pad=0.04)
                     cb_log.set_label('Log Amplitude')
+                    current_col += 1
+
+                # Phase
+                ax_phase = axes[row_base, current_col]
+                im_phase = ax_phase.imshow(phase, origin='lower', cmap='twilight', vmin=-np.pi, vmax=np.pi, extent=extent)
+                ax_phase.set_title(f"Ch {i+1} Phase (Stacked)")
+                ax_phase.set_xlabel(xlabel)
+                ax_phase.set_ylabel(ylabel)
+                cb_phase = plt.colorbar(im_phase, ax=ax_phase, fraction=0.046, pad=0.04)
+                cb_phase.set_label('Phase (rad)')
                     
         else:
             # Individual samples mode
@@ -524,7 +620,7 @@ class WavefrontArray:
             # So here, for each (Source, Channel) pair, we want 1 row.
             
             total_rows = n_samples * n_channels
-            ncols = 3 if log_scale else 2
+            ncols = 5 if log_scale else 3
             
             fig_width = max(8, min(14, 4 * ncols))
             fig_height = 4 * total_rows
@@ -536,8 +632,10 @@ class WavefrontArray:
                 for c, wf in enumerate(self.wavefronts):
                     # Get data
                     amp = np.abs(wf.field[s])
+                    intensity = amp**2
                     phase = np.angle(wf.field[s])
                     log_amp = np.log10(amp + 1e-12)
+                    log_intensity = np.log10(intensity + 1e-12)
                     
                     # Determine label
                     label = f"Src {s+1} - Ch {c+1}"
@@ -551,16 +649,37 @@ class WavefrontArray:
                     
                     extent, xlabel, ylabel = _get_smart_extent(wf.field.shape, wf.pixel_scale)
                     
+                    # Intensity
+                    ax_int = axes[row_idx, 0]
+                    im_int = ax_int.imshow(intensity, origin='lower', cmap='inferno', extent=extent)
+                    ax_int.set_title(f"Int ({label})")
+                    ax_int.set_xlabel(xlabel)
+                    ax_int.set_ylabel(ylabel)
+                    cb_int = plt.colorbar(im_int, ax=ax_int, fraction=0.046, pad=0.04)
+                    cb_int.set_label('Intensity')
+                    
+                    current_col = 1
+                    # Log Intensity
+                    if log_scale:
+                        ax_log_int = axes[row_idx, current_col]
+                        im_log_int = ax_log_int.imshow(log_intensity, origin='lower', cmap='inferno', extent=extent)
+                        ax_log_int.set_title(f"Log Int ({label})")
+                        ax_log_int.set_xlabel(xlabel)
+                        ax_log_int.set_ylabel(ylabel)
+                        cb_log_int = plt.colorbar(im_log_int, ax=ax_log_int, fraction=0.046, pad=0.04)
+                        cb_log_int.set_label('Log Intensity')
+                        current_col += 1
+
                     # Amplitude
-                    ax_amp = axes[row_idx, 0]
+                    ax_amp = axes[row_idx, current_col]
                     im_amp = ax_amp.imshow(amp, origin='lower', cmap='inferno', extent=extent)
                     ax_amp.set_title(f"Amp ({label})")
                     ax_amp.set_xlabel(xlabel)
                     ax_amp.set_ylabel(ylabel)
                     cb_amp = plt.colorbar(im_amp, ax=ax_amp, fraction=0.046, pad=0.04)
                     cb_amp.set_label('Amplitude')
+                    current_col += 1
                     
-                    current_col = 1
                     # Log Amplitude
                     if log_scale:
                         ax_log = axes[row_idx, current_col]
@@ -591,7 +710,7 @@ class WavefrontArray:
             
         return fig, axes
 
-    def propagate(self, distance: Optional[u.Quantity] = None) -> 'WavefrontArray':
+    def propagate(self, distance: Optional[u.Quantity] = None, padding: int = 1) -> 'WavefrontArray':
         """
         Propagate all wavefronts in the array.
 
@@ -600,6 +719,8 @@ class WavefrontArray:
         distance : astropy.Quantity, optional
             Propagation distance passed to each `Wavefront.propagate()`. If None,
             each wavefront uses its own stored focal length if available.
+        padding : int, optional
+            Zero-padding factor passed to `Wavefront.propagate()`. Default: 1.
 
         Returns
         -------
@@ -608,7 +729,7 @@ class WavefrontArray:
         """
         propagated_wfs = []
         for wf in tqdm(self.wavefronts, desc="Propagating wavefronts", unit="wf", total=len(self.wavefronts)):
-            propagated_wfs.append(wf.copy().propagate(distance))
+            propagated_wfs.append(wf.copy().propagate(distance, padding=padding))
         new_locs = list(self.locations) if self.locations is not None else None
         return WavefrontArray(propagated_wfs, locations=new_locs)
 
