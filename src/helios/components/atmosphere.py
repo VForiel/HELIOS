@@ -284,7 +284,7 @@ class Atmosphere(Element):
 
         # 1. Check for downstream TelescopeArray to optimize
         target_collectors = []
-        if context is not None:
+        if context is not None and hasattr(context, 'layers'):
             # Find this atmosphere layer index
             my_index = -1
             for i, layer in enumerate(context.layers):

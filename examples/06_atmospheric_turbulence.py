@@ -21,8 +21,9 @@ def run_demo():
     # 1. Frozen-Flow Evolution (JWST Pupil)
     print("Simulating frozen-flow evolution (JWST Pupil)...")
     
-    class ObservationContext:
+    class ObservationContext(helios.Context):
         def __init__(self, time):
+            super().__init__()
             self.time = time
 
     atm_flow = helios.Atmosphere(rms=100*u.nm, wind_speed=10*u.m/u.s, wind_direction=45, seed=123)

@@ -503,9 +503,10 @@ class Scene(Layer):
         
         For reference: magnitude 0 star at 10 pc gives ~1e10 photons/s/m²/nm
         """
-        # If wavefront is None, we are in the new flow where Scene is just a container.
-        # The wavefront generation is handled by the Collector.
+        # If wavefront is None, generate it using the context
         if wavefront is None:
+            if context is not None:
+                return context.get_input_wavefront()
             return None
         
         # Calculate total flux scaling
