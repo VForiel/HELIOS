@@ -282,6 +282,99 @@ class Wavefront:
             self.npix = self.field.shape[0]
         self.size = new_size
 
+    def adapt(self, size: u.Quantity, magnify: Optional[bool] = None, npix: Optional[int] = None) -> 'Wavefront':
+        """
+        Adapt wavefront to match an optical element's physical size.
+        
+        This method adjusts the wavefront's metadata (size, pixel_scale) and optionally
+        resamples the field to match a target optical element. It is designed to handle
+        size mismatches between propagating wavefronts and optical components.
+        
+        Parameters
+        ----------
+        size : u.Quantity
+            Target physical size (diameter/width) to adapt to.
+        magnify : bool, optional
+            If True, resize metadata without cropping (changes pixel_scale).
+            If False, crop the wavefront to the target size.
+            If None (default), auto-detect: magnify if sizes don't match, otherwise crop.
+        npix : int, optional
+            Target number of pixels for the adapted wavefront.
+            If provided, resamples the field to this resolution.
+            If None, keeps the current pixel count.
+            
+        Returns
+        -------
+        Wavefront
+            A new wavefront adapted to the target size and resolution.
+            
+        Notes
+        -----
+        - **Magnify mode**: Adjusts `size` and `pixel_scale` without changing the field array.
+          This is useful when the wavefront data is correct but metadata needs updating.
+        - **Crop mode**: Physically crops the field to the target size using `crop()`.
+        - **Resampling**: If `npix` is specified, uses scipy.ndimage.zoom to resample the field.
+          This is useful for upscaling/downscaling the wavefront to match detector resolution.
+          
+        Examples
+        --------
+        Adapt a 2m wavefront to a 1m pupil:
+        
+        >>> wf = Wavefront(size=2*u.m, npix=512)
+        >>> wf_adapted = wf.adapt(size=1*u.m, magnify=False)  # Crops to 1m
+        
+        Rescale a wavefront to 256 pixels:
+        
+        >>> wf_lowres = wf.adapt(size=wf.size, npix=256)  # Downsamples to 256x256
+        """
+        from scipy.ndimage import zoom
+        
+        # Create a copy to avoid modifying the original
+        wf = self.copy()
+        
+        # Auto-magnify logic
+        sizes_match = np.isclose(size.to(u.m).value, wf.size.to(u.m).value, rtol=1e-5)
+        
+        if magnify is None:
+            if not sizes_match:
+                warnings.warn(f"Wavefront size ({wf.size}) does not match target size ({size}). "
+                              f"Resizing wavefront metadata to match (magnify=True).")
+                magnify = True
+            else:
+                magnify = False
+        
+        # Apply size adaptation
+        if magnify:
+            wf.size = size
+            wf.pixel_scale = (size / wf.npix).to(u.m)
+        else:
+            wf.crop(new_size=size, center=(0*u.m, 0*u.m))
+        
+        # Apply resampling if npix is specified
+        if npix is not None and npix != wf.npix:
+            zoom_factor = npix / wf.npix
+            
+            # Resample the field array
+            if wf.field.ndim == 3:
+                # Multi-source: zoom each source independently
+                new_field = np.zeros((wf.nsource, npix, npix), dtype=np.complex128)
+                for i in range(wf.nsource):
+                    # Zoom real and imaginary parts separately
+                    real_part = zoom(wf.field[i].real, zoom_factor, order=3)
+                    imag_part = zoom(wf.field[i].imag, zoom_factor, order=3)
+                    new_field[i] = real_part + 1j * imag_part
+            else:
+                # Single source 2D field
+                real_part = zoom(wf.field.real, zoom_factor, order=3)
+                imag_part = zoom(wf.field.imag, zoom_factor, order=3)
+                new_field = real_part + 1j * imag_part
+            
+            wf.field = new_field
+            wf.npix = npix
+            wf.pixel_scale = (wf.size / npix).to(u.m)
+        
+        return wf
+
     def copy(self) -> 'Wavefront':
         """
         Return a deep copy of the wavefront.

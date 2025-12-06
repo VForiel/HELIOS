@@ -21,116 +21,64 @@ class Pupil:
     """
 
     def __init__(self, diameter: u.Quantity = 1.0 * u.m, focal_length: u.Quantity = 1.0 * u.m):
-        self.diameter = diameter.to(u.m).value
-        # default focal length used for simple propagation when no lens provided
-        self.focal_length_m = float(focal_length.to(u.m).value)
+        self.diameter = diameter
+        self.focal_length = focal_length
         self.elements: List[dict] = []
 
     def process(self, wavefront: 'Wavefront', auto_magnify: Optional[bool] = None) -> 'Wavefront':
         """Process wavefront through pupil."""
-        wavefront = copy(wavefront)
+        # Adapt wavefront to pupil diameter
+        wavefront = wavefront.adapt(size=self.diameter, magnify=auto_magnify)
         
-        # Auto-magnify logic
-        pupil_diameter = self.diameter * u.m
-        wf_size = wavefront.size
-        if not isinstance(wf_size, u.Quantity):
-            wf_size = wf_size * u.m
-            
-        sizes_match = np.isclose(pupil_diameter.to(u.m).value, wf_size.to(u.m).value, rtol=1e-5)
-        
-        if auto_magnify is None:
-            if not sizes_match:
-                import warnings
-                warnings.warn(f"Wavefront size ({wf_size}) does not match Pupil diameter ({pupil_diameter}). "
-                              f"Resizing wavefront metadata to match pupil (auto_magnify=True).")
-                auto_magnify = True
-            else:
-                auto_magnify = False
-        
-        if auto_magnify:
-            wavefront.size = pupil_diameter
-            wavefront.pixel_scale = (pupil_diameter / wavefront.npix).to(u.m)
+        # Apply pupil mask to the wavefront field
+        # pixel_scale is guaranteed to exist in Wavefront.__init__
+        if wavefront.pixel_scale.unit.is_equivalent(u.m):
+            grid_size_m = wavefront.npix * wavefront.pixel_scale.to(u.m).value
+            wavefront.field *= self.get_array(npix=wavefront.npix, soft=True, size_m=grid_size_m)
         else:
-            wavefront.crop(new_size=pupil_diameter, center=(0*u.m, 0*u.m))
-        
-        # Calculate physical size of the grid
-        # If pixel_scale is available (it should be for Wavefront)
-        if hasattr(wavefront, 'pixel_scale') and hasattr(wavefront.pixel_scale, 'unit'):
-             if wavefront.pixel_scale.unit.is_equivalent(u.m):
-                 grid_size_m = wavefront.field.shape[-1] * wavefront.pixel_scale.to(u.m).value
-                 wavefront.field *= self.get_array(npix=wavefront.field.shape[0], soft=True, size_m=grid_size_m)
-             else:
-                 # Fallback if pixel scale is not in meters (e.g. angular?)
-                 # For pupil plane, it should be meters.
-                 wavefront.field *= self.get_array(npix=wavefront.field.shape[0], soft=True)
-        else:
-            wavefront.field *= self.get_array(npix=wavefront.field.shape[0], soft=True)
+            # Fallback if pixel scale is not in meters (e.g. angular?)
+            # For pupil plane, it should be meters.
+            wavefront.field *= self.get_array(npix=wavefront.npix, soft=True)
             
         return wavefront
 
     # --- element adders -------------------------------------------------
-    def add_disk(self, radius: float, center: Tuple[float, float] = (0.0, 0.0), value: float = 1.0):
+    def add_disk(self, radius: u.Quantity, center: Tuple[u.Quantity, u.Quantity] = (0.0*u.m, 0.0*u.m), value: float = 1.0):
         """Add a filled disk (radius in same units as `diameter`)."""
-        # accept astropy.Quantity for radius
-        if hasattr(radius, 'to'):
-            r = float(radius.to(u.m).value)
-        else:
-            r = float(radius)
-        self.elements.append({"type": "disk", "radius": r, "center": tuple(center), "value": float(value)})
+        self.elements.append({"type": "disk", "radius": radius, "center": tuple(center), "value": float(value)})
 
-    def add_hexagon(self, radius: float, center: Tuple[float, float] = (0.0, 0.0), value: float = 1.0, rotation: float = 0.0):
+    def add_hexagon(self, radius: u.Quantity, center: Tuple[u.Quantity, u.Quantity] = (0.0*u.m, 0.0*u.m), value: float = 1.0, rotation: float = 0.0):
         """Add a regular hexagon (radius = circumradius)."""
-        if hasattr(radius, 'to'):
-            r = float(radius.to(u.m).value)
-        else:
-            r = float(radius)
-        self.elements.append({"type": "hex", "radius": r, "center": tuple(center), "value": float(value), "rotation": float(rotation)})
+        self.elements.append({"type": "hex", "radius": radius, "center": tuple(center), "value": float(value), "rotation": float(rotation)})
 
-    def add_central_obscuration(self, diameter: float):
+    def add_central_obscuration(self, diameter: u.Quantity):
         """Add central obscuration (diameter)."""
-        if hasattr(diameter, 'to'):
-            d = float(diameter.to(u.m).value)
-        else:
-            d = float(diameter)
-        self.elements.append({"type": "secondary", "diameter": d})
+        self.elements.append({"type": "secondary", "diameter": diameter})
 
-    def add_spiders(self, arms: int = 4, width: float = 0.01, angle: float = 0.0, angles: Optional[List[float]] = None):
+    def add_spiders(self, arms: int = 4, width: u.Quantity = 0.01*u.m, angle: float = 0.0, angles: Optional[List[float]] = None):
         """Add radially extended rectangular spider vanes.
 
         - `width` is in same linear units as `diameter`.
         - `angle` is rotation offset in degrees.
         """
-        # allow width as Quantity
-        if hasattr(width, 'to'):
-            w = float(width.to(u.m).value)
-        else:
-            w = float(width)
-        entry = {"type": "spiders", "arms": int(arms), "width": float(w), "angle": float(angle)}
+        entry = {"type": "spiders", "arms": int(arms), "width": width, "angle": float(angle)}
         if angles is not None:
             # store explicit angles (degrees)
             entry["angles"] = [float(a) for a in angles]
         self.elements.append(entry)
 
-    def add_segmented_primary(self, seg_flat: float, rings: int = 2, rotation: float = 0.0, gap: float = 0.0):
+    def add_segmented_primary(self, seg_flat: u.Quantity, rings: int = 2, rotation: float = 0.0, gap: u.Quantity = 0.0*u.m):
         """Create a hexagonal segmented primary with given flat-to-flat segment size.
 
         - `seg_flat`: flat-to-flat size of one segment (same units as `diameter`).
         - `rings`: number of hex rings around center (rings=0 -> 1 segment)
         """
-        if hasattr(seg_flat, 'to'):
-            sf = float(seg_flat.to(u.m).value)
-        else:
-            sf = float(seg_flat)
-        if hasattr(gap, 'to'):
-            g = float(gap.to(u.m).value)
-        else:
-            g = float(gap)
-        self.elements.append({"type": "segments", "seg_flat": float(sf), "rings": int(rings), "rotation": float(rotation), "gap": float(g), "value": 1.0})
+        self.elements.append({"type": "segments", "seg_flat": seg_flat, "rings": int(rings), "rotation": float(rotation), "gap": gap, "value": 1.0})
 
     # --- helpers rasterisation -----------------------------------------
     def _make_grid(self, npix: int, oversample: int = 1, size_m: Optional[float] = None) -> Tuple[np.ndarray, np.ndarray, float]:
         if size_m is None:
-            size_m = self.diameter
+            size_m = self.diameter.to(u.m).value
         N = npix * oversample
         half = size_m / 2.0
         xs = np.linspace(-half, half, N, endpoint=False) + (size_m / N) / 2.0
@@ -156,23 +104,33 @@ class Pupil:
             t = el.get("type")
             if t == "disk":
                 cx, cy = el["center"]
+                cx = cx.to(u.m).value if isinstance(cx, u.Quantity) else cx
+                cy = cy.to(u.m).value if isinstance(cy, u.Quantity) else cy
                 r = el["radius"]
+                r = r.to(u.m).value if isinstance(r, u.Quantity) else r
                 mask = ((xg - cx) ** 2 + (yg - cy) ** 2) <= (r ** 2)
                 val = float(el.get("value", 1.0))
                 im[mask] = np.maximum(im[mask], val) if val >= 1.0 else val
             elif t == "hex":
-                verts = self._hex_verts(el["center"][0], el["center"][1], el["radius"], el.get("rotation", 0.0))
+                cx, cy = el["center"]
+                cx = cx.to(u.m).value if isinstance(cx, u.Quantity) else cx
+                cy = cy.to(u.m).value if isinstance(cy, u.Quantity) else cy
+                r = el["radius"]
+                r = r.to(u.m).value if isinstance(r, u.Quantity) else r
+                verts = self._hex_verts(cx, cy, r, el.get("rotation", 0.0))
                 pth = Path(verts)
                 mask = self._rasterize_path(pth, xg, yg)
                 val = float(el.get("value", 1.0))
                 im[mask] = np.maximum(im[mask], val) if val >= 1.0 else val
             elif t == "secondary":
                 d = el["diameter"]
+                d = d.to(u.m).value if isinstance(d, u.Quantity) else d
                 mask = (xg**2 + yg**2) <= (d/2.0)**2
                 im[mask] = 0.0
             elif t == "spiders":
                 arms = el["arms"]
                 width = el["width"]
+                width = width.to(u.m).value if isinstance(width, u.Quantity) else width
                 angle0 = float(el.get("angle", 0.0))
                 angles_list = el.get("angles", None)
                 if angles_list is not None:
@@ -184,7 +142,9 @@ class Pupil:
                 sec_rad = 0.0
                 for e2 in self.elements:
                     if e2.get("type") == "secondary":
-                        sec_rad = max(sec_rad, float(e2.get("diameter",0.0))/2.0)
+                        d_sec = e2.get("diameter", 0.0)
+                        d_sec = d_sec.to(u.m).value if isinstance(d_sec, u.Quantity) else d_sec
+                        sec_rad = max(sec_rad, float(d_sec)/2.0)
                 for ang in use_angles:
                     xr = xg * np.cos(-ang) - yg * np.sin(-ang)
                     yr = xg * np.sin(-ang) + yg * np.cos(-ang)
@@ -192,9 +152,11 @@ class Pupil:
                     im[mask] = 0.0
             elif t == "segments":
                 seg_flat = el["seg_flat"]
+                seg_flat = seg_flat.to(u.m).value if isinstance(seg_flat, u.Quantity) else seg_flat
                 rings = el["rings"]
                 rot = el.get("rotation", 0.0)
                 gapv = el.get("gap", 0.0)
+                gapv = gapv.to(u.m).value if isinstance(gapv, u.Quantity) else gapv
                 val = float(el.get("value", 1.0))
                 a = seg_flat / np.sqrt(3.0)
                 drawn_flat = max(0.0, seg_flat - gapv)
@@ -208,7 +170,7 @@ class Pupil:
                         cx = a * 1.5 * q
                         cy = a * np.sqrt(3.0) * (r + q/2.0)
                         centers.append((cx, cy))
-                primR = self.diameter/2.0
+                primR = self.diameter.to(u.m).value / 2.0
                 for (cx, cy) in centers:
                     if np.hypot(cx, cy) <= primR + 1e-12:
                         verts = self._hex_verts(cx, cy, a_draw, rotation=rot)
@@ -227,7 +189,8 @@ class Pupil:
         arr = self.get_array(npix=npix, soft=soft, oversample=oversample)
         if ax is None:
             fig, ax = _plt.subplots()
-        ax.imshow(arr, origin='lower', cmap=cmap, extent=[-self.diameter/2, self.diameter/2, -self.diameter/2, self.diameter/2])
+        d = self.diameter.to(u.m).value
+        ax.imshow(arr, origin='lower', cmap=cmap, extent=[-d/2, d/2, -d/2, d/2])
         ax.set_xlabel('m')
         ax.set_ylabel('m')
         ax.set_aspect('equal')
@@ -271,10 +234,11 @@ class Pupil:
         # units lambda/D = fx * D
         N = intensity.shape[0]
         # dx used when building pupil: size / N_pixels where size = self.diameter
-        dx = self.diameter / float(N)
+        d = self.diameter.to(u.m).value
+        dx = d / float(N)
         fx = (np.arange(N) - N // 2) / (N * dx)
         # lambda/D units
-        lamD = fx * self.diameter
+        lamD = fx * d
         extent = [lamD[0], lamD[-1], lamD[0], lamD[-1]]
         im = ax.imshow(disp, origin='lower', cmap=cmap, extent=extent)
         ax.set_xlabel('Focal plane (arb. units)')
@@ -337,17 +301,17 @@ class Pupil:
         """Return a Pupil approximating JWST: 6.5 m primary, 18 segments, M2~0.74 m, 3 spiders."""
         p = Pupil(6.5 * u.m)
         # segmented primary only (no full filled disk)
-        seg_flat = 1.2  # approximate flat-to-flat size per JWST segment (meters)
+        seg_flat = 1.2 * u.m  # approximate flat-to-flat size per JWST segment
         rings = 2
         # small visible gap between segments
-        p.add_segmented_primary(seg_flat=seg_flat, rings=rings, rotation=0.0, gap=0.02)
+        p.add_segmented_primary(seg_flat=seg_flat, rings=rings, rotation=0.0, gap=0.02*u.m)
         # secondary: use a hexagon of the same flat-to-flat size as segments, blocking light
         # compute circumradius from flat-to-flat
-        a = seg_flat / np.sqrt(3.0)
-        p.add_hexagon(radius=a, center=(0.0, 0.0), value=0.0)
+        a = seg_flat.to(u.m).value / np.sqrt(3.0)
+        p.add_hexagon(radius=a*u.m, center=(0.0*u.m, 0.0*u.m), value=0.0)
         # spiders: 3 branches with specified angles (degrees)
         # angles chosen so top branch is vertical (90 deg) and bottom two are 60 deg apart
-        p.add_spiders(arms=3, width=0.06, angles=[90.0, 240.0, 300.0])
+        p.add_spiders(arms=3, width=0.06*u.m, angles=[90.0, 240.0, 300.0])
         return p
 
     @staticmethod
@@ -366,9 +330,9 @@ class Pupil:
     def vlt() -> 'Pupil':
         """Return a Pupil approximating a single VLT Unit Telescope: 8.2 m primary, M2~1.1 m, 4 spiders."""
         p = Pupil(8.2 * u.m)
-        p.add_disk(radius=8.2 / 2.0)
-        p.add_central_obscuration(diameter=1.1)
-        p.add_spiders(arms=4, width=0.05)
+        p.add_disk(radius=8.2*u.m / 2.0)
+        p.add_central_obscuration(diameter=1.1*u.m)
+        p.add_spiders(arms=4, width=0.05*u.m)
         return p
 
     @staticmethod
@@ -385,7 +349,7 @@ class Pupil:
 
         corner_to_corner = 1.45
         R_circum = corner_to_corner / 2.0
-        a_draw = R_circum
+        a_draw = R_circum * u.m
         a = R_circum
 
         def generate_centers(rings: int) -> List[Tuple[float, float]]:
@@ -524,13 +488,13 @@ class Pupil:
             primary_final = best_sel
 
         for (cx, cy) in primary_final:
-            p.add_hexagon(radius=a_draw, center=(cx, cy), value=1.0)
+            p.add_hexagon(radius=a_draw, center=(cx*u.m, cy*u.m), value=1.0)
 
         central_rings = 4
         for (cx, cy) in generate_centers(central_rings):
-            p.add_hexagon(radius=a_draw, center=(cx, cy), value=0.0)
+            p.add_hexagon(radius=a_draw, center=(cx*u.m, cy*u.m), value=0.0)
 
         angles = [90.0, 270.0, 30.0, 150.0, 210.0, 330.0]
-        p.add_spiders(arms=6, width=0.25, angles=angles)
+        p.add_spiders(arms=6, width=0.25*u.m, angles=angles)
 
         return p

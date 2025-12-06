@@ -30,7 +30,7 @@ def test_interferometer_phase_generation():
     # Baseline B = 100m along x-axis
     # C1 at (-50, 0), C2 at (+50, 0)
     pupil = Pupil(diameter=diameter)
-    pupil.add_disk(radius=diameter.value/2, center=(0.0, 0.0))
+    pupil.add_disk(radius=diameter/2, center=(0.0*u.m, 0.0*u.m))
     
     c1 = Collector(pupil=pupil, position=(-50.0, 0.0), size=diameter)
     c2 = Collector(pupil=pupil, position=(50.0, 0.0), size=diameter)

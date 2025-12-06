@@ -159,7 +159,7 @@ class Collector(Element):
         mask = self.pupil.get_array(npix=N, soft=True)
         wavefront.field = wavefront.field * mask
 
-        wavefront._last_focal_length_m = float(self.pupil.focal_length_m)
+        wavefront._last_focal_length_m = float(self.pupil.focal_length.to(u.m).value)
 
         return wavefront
     

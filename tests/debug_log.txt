@@ -90,3 +90,21 @@ Scene objects: 1
   - Star
 Object: Star, Position: 1.0 arcsec, 0.0 arcsec
   Unit: arcsec, Equiv rad: True
+Context layers: 3
+  - Scene (<class 'helios.components.scene.Scene'>)
+  - TelescopeArray (<class 'helios.components.collector.TelescopeArray'>)
+  - Camera (<class 'helios.components.detectors.Camera'>)
+Scene found. Coherent: True
+Scene objects: 1
+  - Star
+Object: Star, Position: 0.0 AU, 0.0 AU
+  Unit: AU, Equiv rad: False
+Context layers: 3
+  - Scene (<class 'helios.components.scene.Scene'>)
+  - TelescopeArray (<class 'helios.components.collector.TelescopeArray'>)
+  - Camera (<class 'helios.components.detectors.Camera'>)
+Scene found. Coherent: True
+Scene objects: 1
+  - Star
+Object: Star, Position: 0.0 AU, 0.0 AU
+  Unit: AU, Equiv rad: False

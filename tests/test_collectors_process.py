@@ -14,7 +14,7 @@ def test_telescope_array_applies_pupil_mask():
     # small pupil and wavefront for fast test
     p = Pupil(1 * u.m)
     # filled disk that should zero-out outer region
-    p.add_disk(radius=0.5)
+    p.add_disk(radius=0.5*u.m)
 
     array = TelescopeArray()
     array.add_collector(pupil=p, position=(0, 0), size=1 * u.m)
