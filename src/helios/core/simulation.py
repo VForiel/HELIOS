@@ -179,21 +179,12 @@ class Wavefront:
     --------
     Layer : Components that transform wavefronts
     """
-    def __init__(self, wavelength: u.Quantity = 550*u.nm, size: Union[u.Quantity, float, int] = 1*u.m,
-                 npix: Optional[int] = None, nsource: Optional[int] = 1,
+    def __init__(self, wavelength: u.Quantity = 550*u.nm, size: u.Quantity = 1*u.m,
+                 npix: int = 256, nsource: Optional[int] = 1,
                  value: Optional[np.ndarray] = None):
 
         self.wavelength = wavelength
-        # Backward-compat: if size is int, treat as npix and set default physical size
-        if isinstance(size, int):
-            if npix is None:
-                npix = size
-            self.size = 1.0 * u.m
-        else:
-            self.size = size
-            # Set default npix if not provided
-            if npix is None:
-                npix = 256
+        self.size = size
         
         if value is not None:
             if not isinstance(value, np.ndarray):
@@ -211,18 +202,11 @@ class Wavefront:
                 
         else:
             # If value is None, we need npix and nsource
-            if npix is not None:
-                if nsource is None:
-                    nsource = 1 # Default to 1 source
-                self.npix = int(npix)
-                self.nsource = int(nsource)
-                # If single source, use 2D field for backward compatibility
-                if self.nsource == 1:
-                    self.field = np.ones((self.npix, self.npix), dtype=np.complex128)
-                else:
-                    self.field = np.ones((self.nsource, self.npix, self.npix), dtype=np.complex128)
-            else:
-                raise ValueError("Must provide either 'value' OR ('npix' and 'nsource').")
+            if nsource is None:
+                nsource = 1
+            self.npix = int(npix)
+            self.nsource = int(nsource)
+            self.field = np.ones((self.nsource, self.npix, self.npix), dtype=np.complex128)
 
         # Calculate pixel scale (ensure Quantity)
         size_q = self.size if isinstance(self.size, u.Quantity) else (self.size * u.m)
