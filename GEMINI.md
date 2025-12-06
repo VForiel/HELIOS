@@ -1,1 +1,0 @@
-Alway read .github/copilot-instructions.md before doing anything.
