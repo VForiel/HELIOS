@@ -1,6 +1,7 @@
 import sys
 import os
 import numpy as np
+from astropy import units as u
 
 # ensure local `src` is first on path so tests import the workspace code
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
@@ -55,9 +56,9 @@ def test_jwst_segments_and_spiders():
         r1 = max(-Nrings, -q - Nrings)
         r2 = min(Nrings, -q + Nrings)
         for r in range(r1, r2 + 1):
-            x = a * 3.0 / 2.0 * q
-            y = a * np.sqrt(3.0) * (r + q / 2.0)
-            if np.hypot(x, y) <= primR + 1e-12:
+            x = a * 3.0 / 2.0 * q * u.m
+            y = a * np.sqrt(3.0) * (r + q / 2.0) * u.m
+            if np.hypot(x, y) <= primR + 1e-12*u.m:
                 centers.append((x, y))
 
     # count centers that correspond to lit pixels in the rasterized pupil

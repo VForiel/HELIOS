@@ -62,7 +62,7 @@ def test_interferometer_phase_generation():
     
     # B. Verify Phase for Collector 1 (Left, x = -50)
     wf1 = wf_array[0]
-    field1 = wf1.field[0] # Source 0
+    field1 = wf1[0] # Source 0
     phase1 = np.angle(field1)
     
     # Expected Piston 1: k * (cx * tx)
@@ -79,14 +79,14 @@ def test_interferometer_phase_generation():
     print(f"  Expected Piston Phase: {expected_piston1:.4f} rad")
     print(f"  Measured Center Phase: {measured_phase1:.4f} rad")
     
-    if not np.isclose(measured_phase1, expected_piston1, atol=1e-3):
+    if not np.isclose(measured_phase1.to(u.rad).value, expected_piston1, atol=1e-3):
         print("  FAILURE: Piston mismatch for C1")
     else:
         print("  SUCCESS: Piston matches for C1")
 
     # C. Verify Phase for Collector 2 (Right, x = +50)
     wf2 = wf_array[1]
-    field2 = wf2.field[0]
+    field2 = wf2[0]
     phase2 = np.angle(field2)
     
     # Expected Piston 2: k * (cx * tx)
@@ -101,7 +101,7 @@ def test_interferometer_phase_generation():
     print(f"  Expected Piston Phase: {expected_piston2:.4f} rad")
     print(f"  Measured Center Phase: {measured_phase2:.4f} rad")
     
-    if not np.isclose(measured_phase2, expected_piston2, atol=1e-3):
+    if not np.isclose(measured_phase2.to(u.rad).value, expected_piston2, atol=1e-3):
         print("  FAILURE: Piston mismatch for C2")
     else:
         print("  SUCCESS: Piston matches for C2")
@@ -113,16 +113,16 @@ def test_interferometer_phase_generation():
     expected_dphi_wrapped = (expected_dphi + np.pi) % (2 * np.pi) - np.pi
     
     measured_dphi = measured_phase2 - measured_phase1
-    measured_dphi_wrapped = (measured_dphi + np.pi) % (2 * np.pi) - np.pi
+    measured_dphi_wrapped = (measured_dphi + np.pi*u.rad) % (2 * np.pi*u.rad) - np.pi*u.rad
     
     print(f"\nDifferential Phase (C2 - C1):")
     print(f"  Expected Delta Phi: {expected_dphi_wrapped:.4f} rad")
-    print(f"  Measured Delta Phi: {measured_dphi_wrapped:.4f} rad")
+    print(f"  Measured Delta Phi: {measured_dphi_wrapped:.4f}")
     
-    if not np.isclose(measured_dphi_wrapped, expected_dphi_wrapped, atol=1e-3):
-        print("  FAILURE: Differential piston mismatch")
+    if not np.isclose(measured_dphi_wrapped.to(u.rad).value, expected_dphi_wrapped, atol=1e-3):
+        print("  FAILURE: Differential phase mismatch")
     else:
-        print("  SUCCESS: Differential piston matches")
+        print("  SUCCESS: Differential phase matches")
 
     # E. Verify Tilt (Gradient across aperture)
     # For both collectors, the tilt should be the same (same source angle)
@@ -151,13 +151,13 @@ def test_interferometer_phase_generation():
     p1 = phase1[center_idx, x1_idx]
     p2 = phase1[center_idx, x2_idx]
     measured_tilt_diff = p2 - p1
-    measured_tilt_diff = (measured_tilt_diff + np.pi) % (2 * np.pi) - np.pi
+    measured_tilt_diff = (measured_tilt_diff + np.pi*u.rad) % (2 * np.pi*u.rad) - np.pi*u.rad
     
     print(f"\nTilt Verification (across {du:.2f}m aperture):")
     print(f"  Expected Phase Diff: {expected_tilt_diff:.4f} rad")
-    print(f"  Measured Phase Diff: {measured_tilt_diff:.4f} rad")
+    print(f"  Measured Phase Diff: {measured_tilt_diff:.4f}")
     
-    if not np.isclose(measured_tilt_diff, expected_tilt_diff, atol=1e-2):
+    if not np.isclose(measured_tilt_diff.to(u.rad).value, expected_tilt_diff, atol=1e-2):
         print("  FAILURE: Tilt mismatch")
     else:
         print("  SUCCESS: Tilt matches")

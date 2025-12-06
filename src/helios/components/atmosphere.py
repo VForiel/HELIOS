@@ -300,10 +300,10 @@ class Atmosphere(Element):
 
         # Standard processing (single wavefront)
         try:
-            if wavefront.field.ndim == 3:
-                N = wavefront.field.shape[-1]
+            if wavefront.ndim == 3:
+                N = wavefront.shape[-1]
             else:
-                N = wavefront.field.shape[0]
+                N = wavefront.shape[0]
         except Exception:
             return wavefront
 
@@ -328,15 +328,15 @@ class Atmosphere(Element):
         phase = 2.0 * np.pi * opd_screen / wavelength_m
         
         # Apply phase screen (pure phase modulation)
-        wavefront.field = wavefront.field * np.exp(1j * phase).astype(wavefront.field.dtype)
+        wavefront[:] = wavefront * np.exp(1j * phase).astype(wavefront.dtype)
         return wavefront
 
     def _process_optimized(self, wavefront: Wavefront, collectors: List['Collector'], context: Context) -> WavefrontArray:
         """Optimized processing for telescope arrays."""
-        if wavefront.field.ndim == 3:
-            N_in = wavefront.field.shape[-1]
+        if wavefront.ndim == 3:
+            N_in = wavefront.shape[-1]
         else:
-            N_in = wavefront.field.shape[0]
+            N_in = wavefront.shape[0]
         
         # Get time
         if context is not None and hasattr(context, 'time'):
@@ -492,7 +492,7 @@ class Atmosphere(Element):
             phase = 2.0 * np.pi * patch / wavelength_m
             
             # Apply phase
-            new_wf.field = new_wf.field * np.exp(1j * phase).astype(new_wf.field.dtype)
+            new_wf[:] = new_wf * np.exp(1j * phase).astype(new_wf.dtype)
             output_wfs.append(new_wf)
             
         return WavefrontArray(output_wfs)
@@ -635,10 +635,10 @@ class Atmosphere(Element):
         
         # Generate initial phase screen
         wf_init = Wavefront(wavelength=wavelength, size=npix)
-        wf_init.field = np.ones((npix, npix), dtype=np.complex128)
+        wf_init[:] = np.ones((npix, npix), dtype=np.complex128)
         ctx_init = TimeContext(times[0])
         wf_atm_init = self.process(wf_init, ctx_init)
-        phase_init = np.angle(wf_atm_init.field)
+        phase_init = np.angle(wf_atm_init)
         
         # Display initial phase screen
         im = ax.imshow(phase_init, origin='lower', cmap='twilight',
@@ -689,10 +689,10 @@ class Atmosphere(Element):
             
             # Generate phase screen at time t
             wf = Wavefront(wavelength=wavelength, size=npix)
-            wf.field = np.ones((npix, npix), dtype=np.complex128)
+            wf[:] = np.ones((npix, npix), dtype=np.complex128)
             ctx = TimeContext(t)
             wf_atm = self.process(wf, ctx)
-            phase = np.angle(wf_atm.field)
+            phase = np.angle(wf_atm)
             
             # Update phase screen
             im.set_data(phase)
@@ -866,10 +866,13 @@ class Atmosphere(Element):
         
         # Initialize with first frame
         wf_init = Wavefront(wavelength=wavelength, npix=npix)
-        wf_init.field = np.ones((npix, npix), dtype=np.complex128)
+        wf_init[:] = np.ones((npix, npix), dtype=np.complex128)
         ctx_init = TimeContext(times[0])
         wf_atm_init = self.process(wf_init, ctx_init)
-        phase_init = np.angle(wf_atm_init.field)
+        phase_init = np.angle(wf_atm_init)
+        # Squeeze to 2D if needed (wavefront has shape (samples, h, w))
+        if phase_init.ndim == 3:
+            phase_init = phase_init[0]
         
         # Plot initial phase screen
         im = ax.imshow(phase_init, origin='lower', cmap='twilight', 
@@ -893,10 +896,10 @@ class Atmosphere(Element):
             overlay[..., :3] = 1.0  # white
             overlay[..., 3] = pupil_arr * 0.7  # alpha channel (increased for better visibility)
             
-            # Physical extent of pupil
-            diam = pupil.diameter
-            extent_pupil = [pos[0] - diam/2, pos[0] + diam/2, 
-                           pos[1] - diam/2, pos[1] + diam/2]
+            # Physical extent of pupil (convert diameter to float if Quantity)
+            diam_m = pupil.diameter.to(u.m).value if isinstance(pupil.diameter, u.Quantity) else float(pupil.diameter)
+            extent_pupil = [pos[0] - diam_m/2, pos[0] + diam_m/2, 
+                           pos[1] - diam_m/2, pos[1] + diam_m/2]
             
             overlay_im = ax.imshow(overlay, origin='lower', extent=extent_pupil, 
                                   zorder=10, interpolation='bilinear')
@@ -923,10 +926,13 @@ class Atmosphere(Element):
             
             # Generate phase screen at time t
             wf = Wavefront(wavelength=wavelength, npix=npix)
-            wf.field = np.ones((npix, npix), dtype=np.complex128)
+            wf[:] = np.ones((npix, npix), dtype=np.complex128)
             ctx = TimeContext(t)
             wf_atm = self.process(wf, ctx)
-            phase = np.angle(wf_atm.field)
+            phase = np.angle(wf_atm)
+            # Squeeze to 2D if needed
+            if phase.ndim == 3:
+                phase = phase[0]
             
             # Update image data
             im.set_data(phase)
@@ -1021,9 +1027,10 @@ class AdaptiveOptics(Element):
 
     def process(self, wavefront: Wavefront, context: Context) -> Wavefront:
         try:
-            N = wavefront.field.shape[0]
+            N = wavefront.npix
         except Exception:
-            return wavefront
+            # Fallback if npix not available
+            N = wavefront.shape[-1]
 
         # coordinates normalized to unit disk
         ys = np.linspace(-1.0, 1.0, N)
@@ -1052,6 +1059,6 @@ class AdaptiveOptics(Element):
         # apply only inside pupil (unit disk)
         phase = phase * mask
         # AO subtracts estimated phase (apply negative phase)
-        wavefront.field = wavefront.field * np.exp(-1j * phase).astype(wavefront.field.dtype)
+        wavefront[:] = wavefront * np.exp(-1j * phase).astype(wavefront.dtype)
         return wavefront
 

@@ -115,11 +115,11 @@ class Camera(Element):
         scale = wf0.pixel_scale.to(u.m).value
         
         # Use the size of the input wavefronts as the base canvas size
-        if wf0.field.ndim == 3:
-            samples, h, w = wf0.field.shape
+        if wf0.ndim == 3:
+            samples, h, w = wf0.shape
             canvas = np.zeros((samples, h, w), dtype=np.complex128)
         else:
-            h, w = wf0.field.shape
+            h, w = wf0.shape
             canvas = np.zeros((h, w), dtype=np.complex128)
         
         # Check if locations are available
@@ -134,10 +134,10 @@ class Camera(Element):
             shift_y = int(ly / scale)
             
             # Shift the field using roll (valid for small shifts relative to array size)
-            if wf.field.ndim == 3:
-                field_shifted = np.roll(wf.field, (shift_y, shift_x), axis=(1, 2))
+            if wf.ndim == 3:
+                field_shifted = np.roll(wf, (shift_y, shift_x), axis=(1, 2))
             else:
-                field_shifted = np.roll(wf.field, (shift_y, shift_x), axis=(0, 1))
+                field_shifted = np.roll(wf, (shift_y, shift_x), axis=(0, 1))
             
             # Add to canvas (coherent combination)
             canvas += field_shifted
@@ -181,7 +181,7 @@ class Camera(Element):
         Notes
         -----
         The raw image contains:
-        - Signal: |wavefront.field|² × QE × integration_time
+        - Signal: |wavefront|² × QE × integration_time
         - Dark: dark_current × integration_time (per pixel)
         - Shot noise: Poisson(signal + dark)
         - Read noise: Gaussian(0, read_noise)
@@ -197,13 +197,13 @@ class Camera(Element):
             if isinstance(wavefront, WavefrontArray):
                 # Combine wavefronts for interferometry
                 intensity = self._combine_wavefronts(wavefront)
-            elif hasattr(wavefront, 'field'):
+            elif isinstance(wavefront, Wavefront):
                 # Single wavefront
-                if wavefront.field.ndim == 3:
+                if wavefront.ndim == 3:
                     # Sum intensities of samples (incoherent sum)
-                    intensity = np.sum(np.abs(wavefront.field) ** 2, axis=0)
+                    intensity = np.sum(np.abs(wavefront) ** 2, axis=0)
                 else:
-                    intensity = np.abs(wavefront.field) ** 2
+                    intensity = np.abs(wavefront) ** 2
             else:
                 intensity = np.zeros(self.pixels)
             

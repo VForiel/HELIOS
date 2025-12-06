@@ -64,8 +64,8 @@ class YSplitter(Element):
         
         # Apply splitting loss/factor
         # 1/sqrt(2) for amplitude
-        out1.field *= 1/np.sqrt(2)
-        out2.field *= 1/np.sqrt(2)
+        out1 *= 1/np.sqrt(2)
+        out2 *= 1/np.sqrt(2)
         
         return [out1, out2]
 
@@ -88,7 +88,7 @@ class ThermoOpticPhaseShifter(Element):
     def process(self, wavefront: Wavefront, context: Context) -> Wavefront:
         # Apply phase shift
         wf_out = copy.deepcopy(wavefront)
-        wf_out.field *= np.exp(1j * self.phase)
+        wf_out *= np.exp(1j * self.phase)
         return wf_out
 
 # Alias for convenience
@@ -123,7 +123,7 @@ class MultiModeInterferometer(Element):
                     raise ValueError("MMI received no inputs to infer grid for padding")
                 padded = [copy.deepcopy(template) for _ in range(self.num_inputs - len(inputs))]
                 for wf in padded:
-                    wf.field = np.zeros_like(template.field)
+                    wf[:] = 0
                 inputs = inputs + padded
             else:
                 # Truncate extra inputs to expected number
@@ -132,15 +132,15 @@ class MultiModeInterferometer(Element):
         # We assume all inputs have same wavelength/grid
         # We perform matrix multiplication on the fields
         
-        # Stack input fields: (N_inputs, Size, Size)
-        input_fields = np.stack([wf.field for wf in inputs])
+        # Stack input fields: (N_inputs, nsource, Size, Size)
+        input_fields = np.stack([wf for wf in inputs])
         
         # Matrix multiplication
         # Matrix: (M_out, N_in)
-        # Input: (N_in, Size, Size)
-        # Output: (M_out, Size, Size)
-        # We can use einsum: 'mn,nij->mij'
-        output_fields = np.einsum('mn,nij->mij', self.matrix, input_fields)
+        # Input: (N_in, nsource, Size, Size)
+        # Output: (M_out, nsource, Size, Size)
+        # We can use einsum: 'mn,nsij->msij'
+        output_fields = np.einsum('mn,nsij->msij', self.matrix, input_fields)
         
         # Create output wavefronts
         outputs = []
@@ -148,7 +148,7 @@ class MultiModeInterferometer(Element):
         
         for i in range(self.num_outputs):
             new_wf = copy.deepcopy(base_wf)
-            new_wf.field = output_fields[i]
+            new_wf[:] = output_fields[i]
             outputs.append(new_wf)
             
         return outputs
@@ -213,12 +213,12 @@ def test_photonics():
     wf = Wavefront(wavelength=1.55*u.um, size=10)
     outs = ys.process(wf, None)
     assert len(outs) == 2
-    assert np.allclose(np.abs(outs[0].field)**2 + np.abs(outs[1].field)**2, np.abs(wf.field)**2)
+    assert np.allclose(np.abs(outs[0])**2 + np.abs(outs[1])**2, np.abs(wf)**2)
     
     # Test TOPS
     tops = TOPS(phase=np.pi)
     out_tops = tops.process(wf, None)
-    assert np.allclose(out_tops.field, -wf.field)
+    assert np.allclose(out_tops, -wf)
     
     # Test MMI 2x2 (Hadamard-like)
     mat = np.array([[1, 1], [1, -1]]) / np.sqrt(2)
@@ -231,8 +231,8 @@ def test_photonics():
     # Port 0: (1+1)/sqrt(2) = sqrt(2) -> Intensity 2
     # Port 1: (1-1)/sqrt(2) = 0 -> Intensity 0
     # Input intensity sum: 1+1 = 2
-    assert np.allclose(np.abs(mmi_outs[0].field)**2, 2)
-    assert np.allclose(np.abs(mmi_outs[1].field)**2, 0)
+    assert np.allclose(np.abs(mmi_outs[0])**2, 2)
+    assert np.allclose(np.abs(mmi_outs[1])**2, 0)
 
 if __name__ == "__main__":
     test_photonics()

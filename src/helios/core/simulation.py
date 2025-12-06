@@ -115,7 +115,7 @@ def _format_coord(coord: Union[u.Quantity, Tuple, List]) -> str:
 
     return str(coord)
 
-class Wavefront:
+class Wavefront(u.Quantity):
     """
     Represents the electromagnetic field (complex amplitude).
     
@@ -140,11 +140,10 @@ class Wavefront:
     ----------
     wavelength : Quantity
         Wavelength of the electromagnetic radiation
-    field : ndarray of complex128
-        Complex amplitude array representing the electric field.
-        Shape is (nsource, npix, npix).
     pixel_scale : Quantity
         Physical size per pixel.
+    pixel_angle : Quantity, optional
+        Angular size per pixel (if applicable).
     source_directions : Quantity, optional
         (M, 2) array of source directions (theta_x, theta_y) in radians.
     
@@ -158,10 +157,10 @@ class Wavefront:
     >>> wf = Wavefront(wavelength=550*u.nm, size=1*u.m, npix=256, nsource=1)
     >>> # Apply pupil amplitude
     >>> pupil = helios.Pupil.like('JWST')
-    >>> wf.field = pupil.get_array(256).astype(np.complex128)
+    >>> wf[:] = pupil.get_array(256).astype(np.complex128)
     >>> # Add phase aberration
     >>> phase = np.random.randn(256, 256) * 0.5  # radians
-    >>> wf.field *= np.exp(1j * phase)
+    >>> wf *= np.exp(1j * phase)
     >>> # Visualize
     >>> wf.plot(title="Aberrated Wavefront")
     
@@ -179,47 +178,84 @@ class Wavefront:
     --------
     Layer : Components that transform wavefronts
     """
-    def __init__(self, wavelength: u.Quantity = 550*u.nm, size: u.Quantity = 1*u.m,
-                 npix: int = 256, nsource: Optional[int] = 1,
-                 value: Optional[np.ndarray] = None):
-
-        self.wavelength = wavelength
-        self.size = size
+    def __new__(cls, wavelength: u.Quantity = 550*u.nm, size: u.Quantity = 1*u.m,
+                 npix: int = 256, nsource: Optional[int] = 1, samples: Optional[int] = None,
+                 value: Optional[np.ndarray] = None,
+                 unit: u.Unit = u.dimensionless_unscaled,
+                 dtype=np.complex128, copy=True, **kwargs):
         
-        if value is not None:
-            if not isinstance(value, np.ndarray):
-                value = np.array(value)
+        if samples is not None and nsource == 1:
+            nsource = samples
+
+        if value is None:
+            if nsource is None: nsource = 1
+            shape = (int(nsource), int(npix), int(npix))
+            value = np.ones(shape, dtype=dtype)
+        else:
+            if isinstance(value, u.Quantity):
+                unit = value.unit
+                value = value.value
+            
+            value = np.asanyarray(value)
             if value.ndim == 2:
                 value = value[np.newaxis, :, :]
             
-            self.field = value.astype(np.complex128)
-            self.nsource, self.npix, _ = self.field.shape
-            
-            if npix is not None and npix != self.npix:
-                warnings.warn(f"Provided npix={npix} does not match value shape {self.field.shape}. Using value shape.")
-            if nsource is not None and nsource != self.nsource:
-                warnings.warn(f"Provided nsource={nsource} does not match value shape {self.field.shape}. Using value shape.")
-                
-        else:
-            # If value is None, we need npix and nsource
-            if nsource is None:
-                nsource = 1
-            self.npix = int(npix)
-            self.nsource = int(nsource)
-            self.field = np.ones((self.nsource, self.npix, self.npix), dtype=np.complex128)
+            if npix is not None and npix != value.shape[-1]:
+                 warnings.warn(f"Provided npix={npix} does not match value shape {value.shape}. Using value shape.")
+            if nsource is not None and nsource != value.shape[0]:
+                 warnings.warn(f"Provided nsource={nsource} does not match value shape {value.shape}. Using value shape.")
 
-        # Calculate pixel scale (ensure Quantity)
-        size_q = self.size if isinstance(self.size, u.Quantity) else (self.size * u.m)
+        obj = super().__new__(cls, value, unit=unit, dtype=dtype, copy=copy)
+        return obj
+
+    def __init__(self, wavelength: u.Quantity = 550*u.nm, size: u.Quantity = 1*u.m,
+                 npix: int = 256, nsource: Optional[int] = 1, samples: Optional[int] = None,
+                 value: Optional[np.ndarray] = None,
+                 unit: u.Unit = u.dimensionless_unscaled,
+                 dtype=np.complex128, copy=True, **kwargs):
+        
+        self.wavelength = wavelength
+        self.width = size
+        
+        self.npix = self.shape[-1]
+        self.nsource = self.shape[0]
+        
+        size_q = self.width if isinstance(self.width, u.Quantity) else (self.width * u.m)
         self.pixel_scale = (size_q / self.npix).to(u.m)
         
-        self.max_modes: Optional[int] = None
-        self._last_focal_length_m: Optional[float] = None
-        self.source_directions: Optional[u.Quantity] = None
-        self.sources = None
+        self.pixel_angle = None
+        self.max_modes = None
+        self._last_focal_length_m = None
+        self.source_directions = None
+        self.sources = kwargs.get('sources', None)
 
-    def crop(self, new_size: u.Quantity, center: Tuple[float, float] = (0, 0)):
+    def __array_finalize__(self, obj):
+        if obj is None: return
+        # Always call parent __array_finalize__ to ensure Quantity attributes (unit) are handled
+        super().__array_finalize__(obj)
+        
+        self.wavelength = getattr(obj, 'wavelength', 550*u.nm)
+        self.width = getattr(obj, 'width', 1*u.m)
+        self.pixel_scale = getattr(obj, 'pixel_scale', None)
+        self.pixel_angle = getattr(obj, 'pixel_angle', None)
+        self.max_modes = getattr(obj, 'max_modes', None)
+        self._last_focal_length_m = getattr(obj, '_last_focal_length_m', None)
+        self.source_directions = getattr(obj, 'source_directions', None)
+        self.sources = getattr(obj, 'sources', None)
+        if self.sources is not None and isinstance(self.sources, list):
+            self.sources = list(self.sources)
+        
+        if self.ndim >= 2:
+            self.npix = self.shape[-1]
+            self.nsource = self.shape[0]
+            
+        if self.pixel_scale is not None and self.ndim >= 1:
+             self.width = self.npix * self.pixel_scale
+
+    def crop(self, new_size: u.Quantity, center: Tuple[float, float] = (0, 0)) -> 'Wavefront':
         """
         Crop the wavefront to a new physical size.
+        Returns a new Wavefront object.
         
         Parameters
         ----------
@@ -228,44 +264,33 @@ class Wavefront:
         center : tuple
             (x, y) center offset in physical units (same as new_size).
         """
-        # Ensure units match
         if not isinstance(new_size, u.Quantity):
              new_size = new_size * u.m 
              
-        current_size_m = self.size.to(u.m).value
+        current_size_m = self.width.to(u.m).value
         new_size_m = new_size.to(u.m).value
         
         if new_size_m > current_size_m:
             warnings.warn("Cropping to a larger size than current wavefront. Padding with zeros.")
             
         pixel_scale_m = self.pixel_scale.to(u.m).value
-        
-        # Calculate new number of pixels
         new_npix = int(np.round(new_size_m / pixel_scale_m))
         
-        # Calculate center offset in pixels
-        # Development mode: enforce astropy.Quantity for physical inputs
-        # Expect center coordinates as quantities; convert explicitly
         center_x_m = u.Quantity(center[0], u.m).to(u.m).value
         center_y_m = u.Quantity(center[1], u.m).to(u.m).value
         
         offset_x_pix = int(np.round(center_x_m / pixel_scale_m))
         offset_y_pix = int(np.round(center_y_m / pixel_scale_m))
         
-        # Center of current array
         cx = self.npix // 2
         cy = self.npix // 2
-        
-        # Half width of new array
         hw = new_npix // 2
         
         start_x = cx - hw + offset_x_pix
         start_y = cy - hw + offset_y_pix
-        
         end_x = start_x + new_npix
         end_y = start_y + new_npix
         
-        # Handle boundary checks
         if start_x < 0 or start_y < 0 or end_x > self.npix or end_y > self.npix:
              warnings.warn("Crop region is out of bounds. Result may be smaller or empty.")
              start_x = max(0, start_x)
@@ -273,14 +298,13 @@ class Wavefront:
              end_x = min(self.npix, end_x)
              end_y = min(self.npix, end_y)
         
-        # Support both 2D (single-source) and 3D (multi-source) fields
-        if self.field.ndim == 3:
-            self.field = self.field[:, start_y:end_y, start_x:end_x]
-            self.npix = self.field.shape[1]
+        if self.ndim == 3:
+            new_wf = self[:, start_y:end_y, start_x:end_x]
         else:
-            self.field = self.field[start_y:end_y, start_x:end_x]
-            self.npix = self.field.shape[0]
-        self.size = new_size
+            new_wf = self[start_y:end_y, start_x:end_x]
+            
+        new_wf.width = new_size
+        return new_wf
 
     def adapt(self, size: u.Quantity, magnify: Optional[bool] = None, npix: Optional[int] = None) -> 'Wavefront':
         """
@@ -329,49 +353,45 @@ class Wavefront:
         """
         from scipy.ndimage import zoom
         
-        # Create a copy to avoid modifying the original
         wf = self.copy()
         
-        # Auto-magnify logic
-        sizes_match = np.isclose(size.to(u.m).value, wf.size.to(u.m).value, rtol=1e-5)
+        sizes_match = np.isclose(size.to(u.m).value, wf.width.to(u.m).value, rtol=1e-5)
         
         if magnify is None:
             if not sizes_match:
-                warnings.warn(f"Wavefront size ({wf.size}) does not match target size ({size}). "
+                warnings.warn(f"Wavefront size ({wf.width}) does not match target size ({size}). "
                               f"Resizing wavefront metadata to match (magnify=True).")
                 magnify = True
             else:
                 magnify = False
         
-        # Apply size adaptation
         if magnify:
-            wf.size = size
+            wf.width = size
             wf.pixel_scale = (size / wf.npix).to(u.m)
         else:
-            wf.crop(new_size=size, center=(0*u.m, 0*u.m))
+            wf = wf.crop(new_size=size, center=(0*u.m, 0*u.m))
         
-        # Apply resampling if npix is specified
         if npix is not None and npix != wf.npix:
             zoom_factor = npix / wf.npix
             
-            # Resample the field array
-            if wf.field.ndim == 3:
-                # Multi-source: zoom each source independently
+            if wf.ndim == 3:
                 new_field = np.zeros((wf.nsource, npix, npix), dtype=np.complex128)
                 for i in range(wf.nsource):
-                    # Zoom real and imaginary parts separately
-                    real_part = zoom(wf.field[i].real, zoom_factor, order=3)
-                    imag_part = zoom(wf.field[i].imag, zoom_factor, order=3)
+                    real_part = zoom(wf[i].real, zoom_factor, order=3)
+                    imag_part = zoom(wf[i].imag, zoom_factor, order=3)
                     new_field[i] = real_part + 1j * imag_part
             else:
-                # Single source 2D field
-                real_part = zoom(wf.field.real, zoom_factor, order=3)
-                imag_part = zoom(wf.field.imag, zoom_factor, order=3)
+                real_part = zoom(wf.real, zoom_factor, order=3)
+                imag_part = zoom(wf.imag, zoom_factor, order=3)
                 new_field = real_part + 1j * imag_part
             
-            wf.field = new_field
-            wf.npix = npix
-            wf.pixel_scale = (wf.size / npix).to(u.m)
+            # Create new Wavefront from new_field
+            new_wf = Wavefront(value=new_field, wavelength=wf.wavelength, size=wf.width)
+            new_wf.pixel_scale = (wf.width / npix).to(u.m)
+            new_wf.sources = wf.sources
+            new_wf.source_directions = wf.source_directions
+            new_wf._last_focal_length_m = wf._last_focal_length_m
+            return new_wf
         
         return wf
 
@@ -384,15 +404,11 @@ class Wavefront:
         Wavefront
             A new Wavefront instance with independent field array.
         """
-        new_wf = copy.copy(self)
-        new_wf.field = self.field.copy()
-        if self.sources is not None:
-            new_wf.sources = copy.deepcopy(self.sources)
-        return new_wf
+        return super().copy()
 
     def plot(self, title: Optional[str] = None, figsize: Optional[tuple] = None, 
              show: bool = True, log_scale: bool = True, stack_method: Optional[Callable] = None,
-             max_plots: int = 5, fov: Optional[u.Quantity] = None):
+             max_plots: int = 5, fov: Optional[u.Quantity] = None, angular_coordinates: bool = False):
         """
         Plot the wavefront amplitude and phase side by side.
         
@@ -412,6 +428,8 @@ class Wavefront:
             Maximum number of wavefronts to plot if stack_method is None. Default 5.
         fov : astropy.Quantity, optional
             Field of view to display (e.g., 2*u.arcsec). If None, shows the full array.
+        angular_coordinates : bool, optional
+            If True and pixel_angle is available, use angular coordinates for axes. Default False.
             
         Returns
         -------
@@ -422,36 +440,29 @@ class Wavefront:
         """
         # Handle stacking
         if stack_method is not None:
-            # Apply stack method to amplitude and phase separately
-            # Note: stacking complex field directly might lead to cancellation (interference)
-            # User requested "moyenne des amplitudes et phases"
-            amp_to_plot = stack_method(np.abs(self.field), axis=0)
-            intensity_to_plot = stack_method(np.abs(self.field)**2, axis=0)
-            phase_to_plot = stack_method(np.angle(self.field), axis=0)
+            amp_to_plot = stack_method(np.abs(self), axis=0)
+            intensity_to_plot = stack_method(np.abs(self)**2, axis=0)
+            phase_to_plot = stack_method(np.angle(self), axis=0)
             
-            # For log amplitude, compute log of stacked amplitude
             log_amp_to_plot = np.log10(amp_to_plot + 1e-12)
             log_intensity_to_plot = np.log10(intensity_to_plot + 1e-12)
             
-            # Treat as single plot
             fields_to_plot = [(intensity_to_plot, log_intensity_to_plot, amp_to_plot, log_amp_to_plot, phase_to_plot, "Stacked")]
         else:
-            # Plot each sample independently with progress display
             fields_to_plot = []
-            n_samples = self.field.shape[0]
+            n_samples = self.shape[0]
             
             n_to_plot = min(n_samples, max_plots)
             if n_samples > max_plots:
                 print(f"Warning: Displaying only first {max_plots} of {n_samples} wavefronts.")
                 
             for i in tqdm(range(n_to_plot), desc="Stacking samples for plot", unit="sample", total=n_to_plot):
-                amp = np.abs(self.field[i])
+                amp = np.abs(self[i])
                 intensity = amp**2
-                phase = np.angle(self.field[i])
+                phase = np.angle(self[i])
                 log_amp = np.log10(amp + 1e-12)
                 log_intensity = np.log10(intensity + 1e-12)
                 
-                # Determine label
                 label = f"Sample {i+1}"
                 if self.sources is not None and i < len(self.sources):
                     src = self.sources[i]
@@ -462,7 +473,6 @@ class Wavefront:
                 
                 fields_to_plot.append((intensity, log_intensity, amp, log_amp, phase, label))
         
-        # Determine layout
         n_plots = len(fields_to_plot)
         ncols = 5 if log_scale else 3
         nrows = n_plots
@@ -472,8 +482,11 @@ class Wavefront:
             
         fig, axes = plt.subplots(nrows, ncols, figsize=figsize, squeeze=False)
         
-        # Build extent from pixel scale if available
-        extent, x_label, y_label = _get_smart_extent(self.field.shape, self.pixel_scale)
+        # Determine extent
+        if angular_coordinates and self.pixel_angle is not None:
+             extent, x_label, y_label = _get_smart_extent(self.shape, self.pixel_angle)
+        else:
+             extent, x_label, y_label = _get_smart_extent(self.shape, self.pixel_scale)
 
         for i, (intensity, log_intensity, amp, log_amp, phase, label_suffix) in enumerate(fields_to_plot):
             # Intensity
@@ -529,17 +542,8 @@ class Wavefront:
             
             # Apply FOV if requested
             if fov is not None:
-                # Convert FOV to same unit as extent
-                # extent is [xmin, xmax, ymin, ymax] in unit 'unit' (from _get_smart_extent)
-                # We need to know 'unit'. _get_smart_extent returns xlabel "x [unit]"
-                # Let's parse it or re-derive it?
-                # Easier: _get_smart_extent logic is simple.
-                # Let's just use the fact that extent is centered.
-                
-                # Determine unit from xlabel
                 unit_str = x_label.split('[')[-1].split(']')[0]
                 try:
-                    # Simple mapping for common units
                     unit_map = {'m': u.m, 'mm': u.mm, 'um': u.um, 'nm': u.nm, 
                                 'rad': u.rad, 'deg': u.deg, 'arcmin': u.arcmin, 'arcsec': u.arcsec, 'mas': u.mas, 'uas': u.uas}
                     plot_unit = unit_map.get(unit_str, None)
@@ -590,7 +594,6 @@ class Wavefront:
         """
         import warnings
 
-        # Resolve propagation distance
         if distance is None:
             if self._last_focal_length_m is None:
                 warnings.warn(
@@ -599,56 +602,46 @@ class Wavefront:
                 )
                 return self
             else:
-                # Use stored focal length
                 d_m = float(self._last_focal_length_m)
         else:
             d_m = float(distance.to(u.m).value)
 
-        # Apply padding if requested
+        wf = self
         if padding > 1:
-            # field shape is (samples, size, size)
-            samples, h, w = self.field.shape
+            samples, h, w = self.shape
             new_h, new_w = h * padding, w * padding
             
-            # Create new array with zeros
             new_field = np.zeros((samples, new_h, new_w), dtype=np.complex128)
-            
-            # Insert old field in the center
             start_h = (new_h - h) // 2
             start_w = (new_w - w) // 2
-            new_field[:, start_h:start_h+h, start_w:start_w+w] = self.field
+            new_field[:, start_h:start_h+h, start_w:start_w+w] = self
             
-            self.field = new_field
+            # Create new Wavefront
+            wf = Wavefront(value=new_field, wavelength=self.wavelength, size=self.width * padding)
+            wf.sources = self.sources
+            wf.source_directions = self.source_directions
+            wf._last_focal_length_m = self._last_focal_length_m
 
         # Basic FFT-based Fraunhofer propagation to focal plane
-        # Center -> FFT -> center
-        # Apply along last two axes (spatial)
-        self.field = np.fft.fftshift(np.fft.fft2(np.fft.fftshift(self.field, axes=(-2, -1)), axes=(-2, -1)), axes=(-2, -1))
+        field = np.fft.fftshift(np.fft.fft2(np.fft.fftshift(wf, axes=(-2, -1)), axes=(-2, -1)), axes=(-2, -1))
         
-        # Update pixel scale
-        # dx' = (lambda * f) / (N * dx)
-        # N is the size of the array used for FFT (now potentially padded)
-        N = self.field.shape[-1]
+        new_wf = Wavefront(value=field, wavelength=wf.wavelength, size=wf.width)
+        new_wf.sources = wf.sources
+        new_wf.source_directions = wf.source_directions
+        new_wf._last_focal_length_m = wf._last_focal_length_m
         
-        # Ensure units are handled correctly
-        # self.pixel_scale is Quantity [length]
-        # self.wavelength is Quantity [length]
-        # d_m is float [meters]
+        N = field.shape[-1]
         
-        # We need to be careful with units.
-        # If pixel_scale is angular (e.g. rad), this formula is different.
-        # But propagate usually goes from Pupil (m) to Image (m or rad).
-        # Here we calculate the physical size in the focal plane (m).
-        
-        if self.pixel_scale.unit.is_equivalent(u.m):
-            new_scale = (self.wavelength * (d_m * u.m)) / (N * self.pixel_scale)
-            self.pixel_scale = new_scale.to(u.m)
+        if wf.pixel_scale.unit.is_equivalent(u.m):
+            new_scale = (wf.wavelength * (d_m * u.m)) / (N * wf.pixel_scale)
+            new_wf.pixel_scale = new_scale.to(u.m)
+            
+            # Calculate pixel_angle
+            new_wf.pixel_angle = (new_wf.pixel_scale / (d_m * u.m)) * u.rad
         else:
-            # If input is already angular? That's unusual for Fraunhofer from pupil.
-            # Assume input is pupil plane in meters.
             pass
             
-        return self
+        return new_wf
 
 class Simulation:
     """
@@ -722,7 +715,8 @@ class WavefrontArray:
         return WavefrontArray([wf.copy() for wf in self.wavefronts], locations=new_locs)
         
     def plot(self, title: Optional[str] = None, show: bool = True, log_scale: bool = True, 
-             stack_method: Optional[Callable] = None, fov: Optional[u.Quantity] = None):
+             stack_method: Optional[Callable] = None, fov: Optional[u.Quantity] = None,
+             angular_coordinates: bool = False):
         """
         Plot all wavefronts in the array (Amplitude and Phase).
         
@@ -739,6 +733,10 @@ class WavefrontArray:
             If True, adds a row with log10(Amplitude). Default False.
         stack_method : callable, optional
             Function to aggregate samples (e.g., np.mean). If None, plots each sample independently.
+        fov : astropy.Quantity, optional
+            Field of view to display (e.g., 2*u.arcsec). If None, shows the full array.
+        angular_coordinates : bool, optional
+            If True and pixel_angle is available, use angular coordinates for axes. Default False.
             
         Returns
         -------
@@ -752,7 +750,7 @@ class WavefrontArray:
             return None, None
             
         # Determine number of samples per channel (assume all same)
-        n_samples = self.wavefronts[0].field.shape[0]
+        n_samples = self.wavefronts[0].shape[0]
         
         if stack_method is not None:
             # Stacked mode: 1 set of plots per channel (stacked over samples)
@@ -766,13 +764,16 @@ class WavefrontArray:
             fig, axes = plt.subplots(total_rows, 5 if log_scale else 3, figsize=(fig_width, fig_height), squeeze=False)
             
             for i, wf in enumerate(tqdm(self.wavefronts, desc="Plotting channels (stacked)", unit="ch")):
-                amp = stack_method(np.abs(wf.field), axis=0)
-                intensity = stack_method(np.abs(wf.field)**2, axis=0)
-                phase = stack_method(np.angle(wf.field), axis=0)
+                amp = stack_method(np.abs(wf), axis=0)
+                intensity = stack_method(np.abs(wf)**2, axis=0)
+                phase = stack_method(np.angle(wf), axis=0)
                 log_amp = np.log10(amp + 1e-12)
                 log_intensity = np.log10(intensity + 1e-12)
                 
-                extent, xlabel, ylabel = _get_smart_extent(wf.field.shape, wf.pixel_scale)
+                if angular_coordinates and wf.pixel_angle is not None:
+                     extent, xlabel, ylabel = _get_smart_extent(wf.shape, wf.pixel_angle)
+                else:
+                     extent, xlabel, ylabel = _get_smart_extent(wf.shape, wf.pixel_scale)
                 
                 row_base = i * n_rows_per_item
                 
@@ -864,8 +865,8 @@ class WavefrontArray:
             for s in tqdm(range(n_samples), desc="Plotting sources", unit="src"):
                 for c, wf in enumerate(self.wavefronts):
                     # Get data
-                    amp = np.abs(wf.field[s])
-                    phase = np.angle(wf.field[s])
+                    amp = np.abs(wf[s])
+                    phase = np.angle(wf[s])
                     log_amp = np.log10(amp + 1e-12)
                     
                     # Determine label
@@ -878,7 +879,10 @@ class WavefrontArray:
                             src_name = _format_coord(src)
                         label = f"{src_name} - Ch {c+1}"
                     
-                    extent, xlabel, ylabel = _get_smart_extent(wf.field.shape, wf.pixel_scale)
+                    if angular_coordinates and wf.pixel_angle is not None:
+                         extent, xlabel, ylabel = _get_smart_extent(wf.shape, wf.pixel_angle)
+                    else:
+                         extent, xlabel, ylabel = _get_smart_extent(wf.shape, wf.pixel_scale)
                     
                     # Amplitude (col 0)
                     ax_amp = axes[row_idx, 0]
@@ -959,7 +963,7 @@ class WavefrontArray:
 
 def test_wavefront_init():
     wf = Wavefront(wavelength=600*u.nm, size=128)
-    assert wf.field.shape == (128, 128)
+    assert wf.shape == (1, 128, 128)
     assert wf.wavelength == 600 * u.nm
 
 if __name__ == "__main__":

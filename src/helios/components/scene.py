@@ -514,7 +514,7 @@ class Scene(Layer):
         
         # Apply flux scaling to wavefront field (amplitude scales as sqrt(flux))
         if flux_scaling > 0:
-            wavefront.field = wavefront.field * np.sqrt(flux_scaling)
+            wavefront[:] = wavefront * np.sqrt(flux_scaling)
         
         return wavefront
     def render(self, npix: int = 256, fov: u.Quantity = 1.0 * u.arcsec, return_coords: bool = False):

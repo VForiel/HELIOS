@@ -121,7 +121,7 @@ class Collector(Element):
             if not isinstance(collector_size, u.Quantity):
                 collector_size = collector_size * u.m
                 
-            wf_size = wavefront.size
+            wf_size = wavefront.width
             if not isinstance(wf_size, u.Quantity):
                 wf_size = wf_size * u.m
             
@@ -139,15 +139,15 @@ class Collector(Element):
             
             if auto_magnify:
                 # Modify wavefront size metadata
-                wavefront.size = collector_size
+                wavefront.width = collector_size
                 wavefront.pixel_scale = (collector_size / wavefront.npix).to(u.m)
             else:
                 # Crop wavefront
-                wavefront.crop(new_size=collector_size, center=(0*u.m, 0*u.m))
+                wavefront = wavefront.crop(new_size=collector_size, center=(0*u.m, 0*u.m))
         
         # Use the last dimension for spatial size (assuming square)
         # field shape is typically (samples, height, width) or just (height, width)
-        N = wavefront.field.shape[-1]
+        N = wavefront.shape[-1]
         
         # Update pixel scale based on collector size
         # The wavefront now represents the field at the pupil plane of this collector
@@ -157,7 +157,11 @@ class Collector(Element):
             wavefront.pixel_scale = (size_m / N) * u.m
 
         mask = self.pupil.get_array(npix=N, soft=True)
-        wavefront.field = wavefront.field * mask
+        wavefront[:] = wavefront * mask
+
+        wavefront._last_focal_length_m = float(self.pupil.focal_length.to(u.m).value)
+
+        return wavefront
 
         wavefront._last_focal_length_m = float(self.pupil.focal_length.to(u.m).value)
 
@@ -533,8 +537,10 @@ class TelescopeArray(Layer):
                 x_pos, y_pos = collector.position
                 
                 # Render pupil at appropriate resolution
-                diam = pupil.diameter * pupil_scale
-                npix_pupil = int(diam / pixel_scale)
+                # pupil.diameter is a Quantity, need to convert to float
+                diam_m = pupil.diameter.to(u.m).value if isinstance(pupil.diameter, u.Quantity) else float(pupil.diameter)
+                diam = diam_m * pupil_scale  # Now both are floats
+                npix_pupil = int(diam / pixel_scale)  # Both are floats
                 npix_pupil = max(32, min(npix_pupil, 256))  # Clamp to reasonable range
                 pupil_arr = pupil.get_array(npix=npix_pupil, soft=True)
                 
@@ -638,8 +644,8 @@ class TelescopeArray(Layer):
             if i < len(wf_list):
                 wf = wf_list[i]
                 # Ensure 3D field shape for downstream components even with single sample
-                if hasattr(wf, 'field') and wf.field.ndim == 2:
-                    wf.field = wf.field[np.newaxis, ...]
+                if wf.ndim == 2:
+                    wf = wf[np.newaxis, ...]
 
                 # Apply geometric phase (piston + tilt) for off-axis sources when input provided
                 try:
@@ -647,24 +653,26 @@ class TelescopeArray(Layer):
                 except Exception:
                     wavelength = None
                 if wavelength is not None and hasattr(wf, 'source_directions') and wf.source_directions is not None:
+                    cx, cy = getattr(collector, 'position', (0.0, 0.0))
+                    print(f"DEBUG: Applying phase shift. cx={cx}, cy={cy}, dirs={wf.source_directions}")
                     k = 2 * np.pi / wavelength.to(u.m).value
                     # Build local coordinate grid from wavefront size
                     try:
-                        size_m = wf.size.to(u.m).value
+                        size_m = wf.width.to(u.m).value
                     except Exception:
-                        size_m = float(wf.size)
+                        size_m = float(wf.width)
                     npix = wf.npix
                     u_vec = np.linspace(-size_m/2, size_m/2, npix)
                     v_vec = np.linspace(-size_m/2, size_m/2, npix)
                     U, V = np.meshgrid(u_vec, v_vec)
-                    cx, cy = getattr(collector, 'position', (0.0, 0.0))
                     dirs = wf.source_directions
-                    for s in range(wf.field.shape[0]):
+                    for s in range(wf.shape[0]):
                         tx = u.Quantity(dirs[s][0], u.rad).to(u.rad).value
                         ty = u.Quantity(dirs[s][1], u.rad).to(u.rad).value
                         piston = k * (cx * tx + cy * ty)
                         tilt = k * (U * tx + V * ty)
-                        wf.field[s] *= np.exp(1j * (piston + tilt))
+                        phasor = np.exp(1j * (piston + tilt))
+                        wf[s] *= phasor
                 
                 # Phase shift is now handled in Context.get_input_wavefront if collectors were passed.
                 # If a generic wavefront was passed, we assume it's already correct or we might need

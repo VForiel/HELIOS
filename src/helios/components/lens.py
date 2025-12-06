@@ -47,10 +47,10 @@ class Lens(Element):
         # Determine pixel scale (meters per pixel)
         scale_m = float(wf.pixel_scale.to(u.m).value) if hasattr(wf, 'pixel_scale') and hasattr(wf.pixel_scale, 'to') else 1.0
 
-        if wf.field.ndim == 3:
-            h, w = wf.field.shape[1], wf.field.shape[2]
+        if wf.ndim == 3:
+            h, w = wf.shape[1], wf.shape[2]
         else:
-            h, w = wf.field.shape
+            h, w = wf.shape
             
         # Coordinate grids centered at zero
         y = (np.arange(h) - (h - 1) / 2.0) * scale_m
@@ -69,7 +69,7 @@ class Lens(Element):
         quad = X * X + Y * Y
         phi = -(k / (2.0 * self.focal_length_m)) * quad
 
-        wf.field = wf.field * np.exp(1j * phi).astype(wf.field.dtype)
+        wf[:] = wf * np.exp(1j * phi).astype(wf.dtype)
         # Record focal length for downstream propagation
         wf._last_focal_length_m = self.focal_length_m
         return wf
@@ -114,9 +114,9 @@ def test_lens_basic():
     lens = Lens(focal_length=10 * u.m)
     wf_out = lens.process(wf, None)
 
-    assert wf_out.field.shape == (128, 128)
+    assert wf_out.shape == (128, 128)
     # Phase should not be uniformly zero
-    phase = np.angle(wf_out.field)
+    phase = np.angle(wf_out)
     assert np.std(phase) > 0.0
 
     print("✓ Lens basic phase application")

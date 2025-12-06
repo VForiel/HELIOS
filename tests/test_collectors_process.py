@@ -19,9 +19,9 @@ def test_telescope_array_applies_pupil_mask():
     array = TelescopeArray()
     array.add_collector(pupil=p, position=(0, 0), size=1 * u.m)
 
-    wf = Wavefront(wavelength=600 * u.nm, size=128)
+    wf = Wavefront(wavelength=600 * u.nm, size=1*u.m, npix=128)
     # start with uniform amplitude ones
-    wf.field = np.ones_like(wf.field, dtype=complex)
+    wf[:] = np.ones_like(wf, dtype=complex)
 
     wf2 = array.process(wf, None)
 
@@ -29,7 +29,7 @@ def test_telescope_array_applies_pupil_mask():
     mask = p.get_array(npix=128, soft=True)
 
     expected_zero = (mask == 0.0)
-    actual_zero = (np.abs(wf2.field) < 1e-12)
+    actual_zero = (np.abs(wf2) < 1e-12)
 
     # number of zeroed pixels should match
     assert actual_zero.sum() == expected_zero.sum()

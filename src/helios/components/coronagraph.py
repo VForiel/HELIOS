@@ -73,13 +73,13 @@ class Coronagraph(Element):
         Notes
         -----
         Uses Fraunhofer approximation (monochromatic):
-        1. FFT(wavefront.field) → focal plane field
+        1. FFT(wavefront) → focal plane field
         2. Multiply by focal-plane mask (phase and/or amplitude)
         3. Inverse FFT → back to pupil/image plane
         """
         # Auto-magnify/crop behavior if physical diameter is provided
         if self.diameter is not None:
-            wf_size = wavefront.size if isinstance(wavefront.size, u.Quantity) else wavefront.size * u.m
+            wf_size = wavefront.width if isinstance(wavefront.width, u.Quantity) else wavefront.width * u.m
             sizes_match = abs(self.diameter.to(u.m).value - wf_size.to(u.m).value) <= (wf_size.to(u.m).value * 1e-5)
             if auto_magnify is None:
                 if not sizes_match:
@@ -90,13 +90,13 @@ class Coronagraph(Element):
                 else:
                     auto_magnify = False
             if auto_magnify:
-                wavefront.size = self.diameter
+                wavefront.width = self.diameter
                 wavefront.pixel_scale = (self.diameter / wavefront.npix).to(u.m)
             else:
-                wavefront.crop(new_size=self.diameter, center=(0*u.m, 0*u.m))
+                wavefront = wavefront.crop(new_size=self.diameter, center=(0*u.m, 0*u.m))
 
         try:
-            field = wavefront.field
+            field = wavefront.value
             if field.ndim == 3:
                 N = field.shape[-1]
                 axes = (-2, -1)
@@ -117,7 +117,7 @@ class Coronagraph(Element):
 
         # Back to pupil/image plane
         field_after = np.fft.fftshift(np.fft.ifft2(np.fft.ifftshift(ffield_masked, axes=axes), axes=axes), axes=axes)
-        wavefront.field = field_after.astype(wavefront.field.dtype)
+        wavefront[:] = field_after.astype(wavefront.dtype)
         return wavefront
 
     def mask_array(self, npix: int = 512, kind: Optional[str] = None, charge: int = 2,

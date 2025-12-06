@@ -13,8 +13,8 @@ from helios.components.atmosphere import Atmosphere
 
 def test_wavefront_structure():
     print("Testing Wavefront structure...")
-    wf = Wavefront(wavelength=550*u.nm, size=128, samples=5)
-    assert wf.field.shape == (5, 128, 128)
+    wf = Wavefront(wavelength=550*u.nm, npix=128, samples=5)
+    assert wf.shape == (5, 128, 128)
     assert wf.source_directions is None
     wf.source_directions = np.zeros((5, 2))
     assert wf.source_directions.shape == (5, 2)
@@ -29,8 +29,8 @@ def test_context_coherent_sources():
     ctx.add_layer(scene)
     
     wf = ctx.get_input_wavefront(wavelength=550*u.nm, size=128, coherent_sources=True)
-    assert wf.field.shape[0] == 2
-    print(f"✓ Created {wf.field.shape[0]} samples for 2 sources")
+    assert wf.shape[0] == 2
+    print(f"✓ Created {wf.shape[0]} samples for 2 sources")
     
     # Check directions
     # Star at 0,0
@@ -48,27 +48,27 @@ def test_context_grid_sampling():
     samples_1d = 3
     wf = ctx.get_input_wavefront(wavelength=550*u.nm, size=128, 
                                  angular_samples=samples_1d, coherent_sources=False)
-    assert wf.field.shape[0] == samples_1d**2
-    print(f"✓ Created {wf.field.shape[0]} samples for {samples_1d}x{samples_1d} grid")
+    assert wf.shape[0] == samples_1d**2
+    print(f"✓ Created {wf.shape[0]} samples for {samples_1d}x{samples_1d} grid")
 
 def test_atmosphere_process():
     print("Testing Atmosphere process...")
     atm = Atmosphere(rms=100*u.nm)
-    wf = Wavefront(wavelength=550*u.nm, size=128, samples=4)
-    wf.field[:] = 1.0
+    wf = Wavefront(wavelength=550*u.nm, npix=128, samples=4)
+    wf[:] = 1.0
     
     wf_out = atm.process(wf)
-    assert wf_out.field.shape == (4, 128, 128)
+    assert wf_out.shape == (4, 128, 128)
     # Check if phase is applied
-    phase = np.angle(wf_out.field)
+    phase = np.angle(wf_out)
     assert np.std(phase) > 0
     print("✓ Atmosphere applied phase to 3D wavefront")
 
 def test_plotting():
     print("Testing Plotting...")
-    wf = Wavefront(wavelength=550*u.nm, size=64, samples=4)
+    wf = Wavefront(wavelength=550*u.nm, npix=64, samples=4)
     # Add some phase
-    wf.field = wf.field * np.exp(1j * np.random.rand(4, 64, 64))
+    wf[:] = wf * np.exp(1j * np.random.rand(4, 64, 64))
     
     try:
         fig, ax = wf.plot(stack_method=np.mean)

@@ -34,11 +34,11 @@ class Pupil:
         # pixel_scale is guaranteed to exist in Wavefront.__init__
         if wavefront.pixel_scale.unit.is_equivalent(u.m):
             grid_size_m = wavefront.npix * wavefront.pixel_scale.to(u.m).value
-            wavefront.field *= self.get_array(npix=wavefront.npix, soft=True, size_m=grid_size_m)
+            wavefront *= self.get_array(npix=wavefront.npix, soft=True, size_m=grid_size_m)
         else:
             # Fallback if pixel scale is not in meters (e.g. angular?)
             # For pupil plane, it should be meters.
-            wavefront.field *= self.get_array(npix=wavefront.npix, soft=True)
+            wavefront *= self.get_array(npix=wavefront.npix, soft=True)
             
         return wavefront
 
@@ -374,8 +374,8 @@ class Pupil:
         n_sides = 12
         angle_step = 2.0 * np.pi / n_sides
         max_center_radius = max(np.hypot(cx, cy) for cx, cy in lattice)
-        lower_ap = (4 + 1) * 1.5 * a * 0.5
-        upper_ap = max_center_radius + a_draw
+        lower_ap = (4 + 1) * 1.5 * a * 0.5 * u.m
+        upper_ap = max_center_radius * u.m + a_draw
 
         best_sel = None
         best_ap = None
@@ -388,7 +388,13 @@ class Pupil:
             return [(circum * np.cos(rot + k * angle_step), circum * np.sin(rot + k * angle_step)) for k in range(n_sides)]
 
         def center_inside_tol(cx, cy, verts, tol=1e-9):
-            vp = np.asarray(verts, dtype=float)
+            # Ensure verts are floats (meters)
+            verts_float = []
+            for v in verts:
+                x = v[0].to(u.m).value if isinstance(v[0], u.Quantity) else v[0]
+                y = v[1].to(u.m).value if isinstance(v[1], u.Quantity) else v[1]
+                verts_float.append((x, y))
+            vp = np.asarray(verts_float, dtype=float)
             edges = list(zip(vp, np.roll(vp, -1, axis=0)))
             dmins = []
             for (p1, p2) in edges:

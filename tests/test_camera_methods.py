@@ -98,8 +98,8 @@ def test_raw_image_with_signal():
     )
     
     # Create a wavefront with uniform intensity
-    wf = helios.Wavefront(wavelength=550e-9 * u.m, size=128)
-    wf.field = np.ones((128, 128), dtype=np.complex128) * 10  # Amplitude = 10
+    wf = helios.Wavefront(wavelength=550e-9 * u.m, npix=128)
+    wf[:] = np.ones((128, 128), dtype=np.complex128) * 10  # Amplitude = 10
     
     raw = cam.get_raw_image(wf)
     
@@ -128,8 +128,8 @@ def test_image_reduction():
     )
     
     # Create wavefront with signal
-    wf = helios.Wavefront(wavelength=550e-9 * u.m, size=128)
-    wf.field = np.ones((128, 128), dtype=np.complex128) * 10  # |field|² = 100
+    wf = helios.Wavefront(wavelength=550e-9 * u.m, npix=128)
+    wf[:] = np.ones((128, 128), dtype=np.complex128) * 10  # |field|² = 100
     
     # Get reduced image (with dark subtraction)
     reduced = cam.get_image(wf, subtract_dark=True)
@@ -153,8 +153,8 @@ def test_process_method():
     """Test that process() returns reduced image."""
     cam = helios.Camera(pixels=(64, 64))
     
-    wf = helios.Wavefront(wavelength=550e-9 * u.m, size=64)
-    wf.field = np.ones((64, 64), dtype=np.complex128)
+    wf = helios.Wavefront(wavelength=550e-9 * u.m, npix=64)
+    wf[:] = np.ones((64, 64), dtype=np.complex128)
     
     # process() should return reduced image by default
     result = cam.process(wf, None)
@@ -182,9 +182,9 @@ def test_noise_statistics():
     )
     
     # Create wavefront with known signal
-    wf = helios.Wavefront(wavelength=550e-9 * u.m, size=512)
+    wf = helios.Wavefront(wavelength=550e-9 * u.m, npix=512)
     signal_level = 1000  # photons
-    wf.field = np.ones((512, 512), dtype=np.complex128) * np.sqrt(signal_level)
+    wf[:] = np.ones((512, 512), dtype=np.complex128) * np.sqrt(signal_level)
     
     # Get raw image
     raw = cam.get_raw_image(wf)

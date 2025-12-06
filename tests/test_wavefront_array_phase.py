@@ -65,7 +65,7 @@ def test_telescope_array_phase_shift():
     # Create input wavefront with off-axis source
     # Source at theta_x = 1e-6 rad (approx 0.2 arcsec)
     theta_x = 1e-6
-    wf = Wavefront(wavelength=1*u.um, size=32, samples=1)
+    wf = Wavefront(wavelength=1*u.um, size=1*u.m, npix=32, samples=1)
     wf.source_directions = np.array([[theta_x, 0.0]]) * u.rad
     
     # Process
@@ -85,31 +85,31 @@ def test_telescope_array_phase_shift():
     # theta_x = lambda / 400 = 1e-6 / 400 = 2.5e-9 rad
     
     theta_x_test = 2.5e-9
-    wf_test = Wavefront(wavelength=1*u.um, size=32, samples=1)
+    wf_test = Wavefront(wavelength=1*u.um, size=1*u.m, npix=32, samples=1)
     wf_test.source_directions = np.array([[theta_x_test, 0.0]]) * u.rad
     
     wa_test = ta.process(wf_test, ctx)
     
     # Get central phase (field is ones initially)
     # Collector 1
-    field1 = wa_test.wavefronts[0].field[0, 16, 16]
+    field1 = wa_test.wavefronts[0][0, 16, 16]
     phase1 = np.angle(field1)
     print(f"  Collector 1 phase: {phase1:.4f} rad")
     
     # Collector 2
-    field2 = wa_test.wavefronts[1].field[0, 16, 16]
+    field2 = wa_test.wavefronts[1][0, 16, 16]
     phase2 = np.angle(field2)
     print(f"  Collector 2 phase: {phase2:.4f} rad")
-    
+
     # Expected phase difference
     # k * 100 * theta_x_test = 2pi/1e-6 * 100 * 2.5e-9 = 2pi * 100 * 0.0025 = 2pi * 0.25 = pi/2
-    expected_diff = np.pi/2
-    diff = (phase2 - phase1) % (2*np.pi)
-    if diff > np.pi: diff -= 2*np.pi
+    expected_diff = np.pi/2 * u.rad
+    diff = (phase2 - phase1) % (2*np.pi*u.rad)
+    if diff > np.pi*u.rad: diff -= 2*np.pi*u.rad
     
-    print(f"  Phase diff: {diff:.4f} rad, Expected: {expected_diff:.4f} rad")
+    print(f"  Phase diff: {diff:.4f}, Expected: {expected_diff:.4f}")
     
-    assert np.isclose(diff, expected_diff, atol=1e-3)
+    assert np.isclose(diff.to(u.rad).value, expected_diff.to(u.rad).value, atol=1e-3)
     print("  Phase shift correct.")
 
 if __name__ == "__main__":

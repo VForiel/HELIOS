@@ -774,8 +774,8 @@ class Context:
                 # Create wavefront for this collector
                 wf = Wavefront(wavelength=wavelength, size=diameter, npix=npix, nsource=samples)
                 # Ensure 3D field shape even for single sample to satisfy downstream expectations
-                if samples == 1 and wf.field.ndim == 2:
-                    wf.field = wf.field[np.newaxis, ...]
+                if samples == 1 and wf.ndim == 2:
+                    wf = wf[np.newaxis, ...]
                 wf.sources = sources_list
                 wf.source_directions = np.array(directions) * u.rad
                 
@@ -815,14 +815,14 @@ class Context:
 
                         phase_factor = np.exp(1j * total_phase)
                         # Support 2D fields when samples == 1
-                        if wf.field.ndim == 3:
-                            wf.field[s] *= phase_factor
+                        if wf.ndim == 3:
+                            wf[s] *= phase_factor
                         else:
-                            wf.field *= phase_factor
+                            wf *= phase_factor
                 # Set amplitudes
                 for i in range(samples):
                     if i < len(amplitudes):
-                        wf.field[i] *= amplitudes[i]
+                        wf[i] *= amplitudes[i]
                 
                 wf_list.append(wf)
                 locations.append((cx, cy))
@@ -835,8 +835,8 @@ class Context:
         
         # Create wavefront with samples
         wf = Wavefront(wavelength=wavelength, size=size, npix=npix, nsource=samples)
-        if samples == 1 and wf.field.ndim == 2:
-            wf.field = wf.field[np.newaxis, ...]
+        if samples == 1 and wf.ndim == 2:
+            wf = wf[np.newaxis, ...]
         wf.sources = sources_list
         
         # Set directions
@@ -859,17 +859,17 @@ class Context:
 
                 tilt = k * (U * tx + V * ty)
                 phase_factor = np.exp(1j * tilt)
-                if wf.field.ndim == 3:
-                    wf.field[s] *= phase_factor
+                if wf.ndim == 3:
+                    wf[s] *= phase_factor
                 else:
-                    wf.field *= phase_factor
+                    wf *= phase_factor
 
         # Set amplitudes
-        # wf.field is (samples, size, size)
+        # wf is (samples, size, size)
         # We broadcast amplitude to (size, size)
         for i in range(samples):
             if i < len(amplitudes):
-                wf.field[i] *= amplitudes[i]
+                wf[i] *= amplitudes[i]
         
         # Find Atmosphere and apply phase
         atmosphere = None

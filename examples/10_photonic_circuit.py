@@ -47,11 +47,16 @@ def run_demo():
 
     # Visualize
     fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-    axes[0].imshow(np.abs(wf_in.field)**2, cmap='inferno')
+    # Squeeze to 2D if needed (wavefront has shape (samples, h, w))
+    wf_in_2d = wf_in.value[0] if wf_in.value.ndim == 3 else wf_in.value
+    out1_2d = output_1.value[0] if output_1.value.ndim == 3 else output_1.value
+    out2_2d = output_2.value[0] if output_2.value.ndim == 3 else output_2.value
+    
+    axes[0].imshow(np.abs(wf_in_2d)**2, cmap='inferno')
     axes[0].set_title("Input Field Intensity")
-    axes[1].imshow(np.abs(output_1.field)**2, cmap='inferno')
+    axes[1].imshow(np.abs(out1_2d)**2, cmap='inferno')
     axes[1].set_title("Output Port 1")
-    axes[2].imshow(np.abs(output_2.field)**2, cmap='inferno')
+    axes[2].imshow(np.abs(out2_2d)**2, cmap='inferno')
     axes[2].set_title("Output Port 2")
     
     if os.environ.get("HELIOS_SAVE_PLOTS") == "true":
