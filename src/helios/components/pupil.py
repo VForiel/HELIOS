@@ -8,6 +8,7 @@ from astropy import units as u
 from typing import Tuple, List, Optional
 from matplotlib.path import Path
 import matplotlib.pyplot as _plt
+from copy import deepcopy as copy
 
 
 class Pupil:
@@ -24,6 +25,25 @@ class Pupil:
         # default focal length used for simple propagation when no lens provided
         self.focal_length_m = float(focal_length.to(u.m).value)
         self.elements: List[dict] = []
+
+    def process(self, wavefront: 'Wavefront') -> 'Wavefront':
+        """Process wavefront through pupil."""
+        wavefront = copy(wavefront)
+        
+        # Calculate physical size of the grid
+        # If pixel_scale is available (it should be for Wavefront)
+        if hasattr(wavefront, 'pixel_scale') and hasattr(wavefront.pixel_scale, 'unit'):
+             if wavefront.pixel_scale.unit.is_equivalent(u.m):
+                 grid_size_m = wavefront.field.shape[-1] * wavefront.pixel_scale.to(u.m).value
+                 wavefront.field *= self.get_array(npix=wavefront.field.shape[0], soft=True, size_m=grid_size_m)
+             else:
+                 # Fallback if pixel scale is not in meters (e.g. angular?)
+                 # For pupil plane, it should be meters.
+                 wavefront.field *= self.get_array(npix=wavefront.field.shape[0], soft=True)
+        else:
+            wavefront.field *= self.get_array(npix=wavefront.field.shape[0], soft=True)
+            
+        return wavefront
 
     # --- element adders -------------------------------------------------
     def add_disk(self, radius: float, center: Tuple[float, float] = (0.0, 0.0), value: float = 1.0):
@@ -85,8 +105,9 @@ class Pupil:
         self.elements.append({"type": "segments", "seg_flat": float(sf), "rings": int(rings), "rotation": float(rotation), "gap": float(g), "value": 1.0})
 
     # --- helpers rasterisation -----------------------------------------
-    def _make_grid(self, npix: int, oversample: int = 1) -> Tuple[np.ndarray, np.ndarray, float]:
-        size_m = self.diameter
+    def _make_grid(self, npix: int, oversample: int = 1, size_m: Optional[float] = None) -> Tuple[np.ndarray, np.ndarray, float]:
+        if size_m is None:
+            size_m = self.diameter
         N = npix * oversample
         half = size_m / 2.0
         xs = np.linspace(-half, half, N, endpoint=False) + (size_m / N) / 2.0
@@ -103,10 +124,10 @@ class Pupil:
         mask = path.contains_points(pts)
         return mask.reshape(xg.shape)
 
-    def get_array(self, npix: int = 256, soft: bool = False, oversample: int = 4) -> np.ndarray:
+    def get_array(self, npix: int = 256, soft: bool = False, oversample: int = 4, size_m: Optional[float] = None) -> np.ndarray:
         """Retourne la pupille en tableau 2D (valeurs dans [0,1])."""
         ov = oversample if soft and oversample >= 2 else 1
-        xg, yg, dx = self._make_grid(npix, oversample=ov)
+        xg, yg, dx = self._make_grid(npix, oversample=ov, size_m=size_m)
         im = np.zeros_like(xg, dtype=float)
         for el in self.elements:
             t = el.get("type")

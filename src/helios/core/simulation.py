@@ -204,7 +204,7 @@ class Wavefront:
 
     def plot(self, title: Optional[str] = None, figsize: Optional[tuple] = None, 
              show: bool = True, log_scale: bool = True, stack_method: Optional[Callable] = None,
-             max_plots: int = 5):
+             max_plots: int = 5, fov: Optional[u.Quantity] = None):
         """
         Plot the wavefront amplitude and phase side by side.
         
@@ -222,6 +222,8 @@ class Wavefront:
             Function to aggregate samples (e.g., np.mean). If None, plots each sample independently.
         max_plots : int, optional
             Maximum number of wavefronts to plot if stack_method is None. Default 5.
+        fov : astropy.Quantity, optional
+            Field of view to display (e.g., 2*u.arcsec). If None, shows the full array.
             
         Returns
         -------
@@ -336,6 +338,31 @@ class Wavefront:
             ax2.set_ylabel(y_label)
             cbar2 = plt.colorbar(im2, ax=ax2, fraction=0.046, pad=0.04)
             cbar2.set_label("Phase (rad)")
+            
+            # Apply FOV if requested
+            if fov is not None:
+                # Convert FOV to same unit as extent
+                # extent is [xmin, xmax, ymin, ymax] in unit 'unit' (from _get_smart_extent)
+                # We need to know 'unit'. _get_smart_extent returns xlabel "x [unit]"
+                # Let's parse it or re-derive it?
+                # Easier: _get_smart_extent logic is simple.
+                # Let's just use the fact that extent is centered.
+                
+                # Determine unit from xlabel
+                unit_str = x_label.split('[')[-1].split(']')[0]
+                try:
+                    # Simple mapping for common units
+                    unit_map = {'m': u.m, 'mm': u.mm, 'um': u.um, 'nm': u.nm, 
+                                'rad': u.rad, 'deg': u.deg, 'arcmin': u.arcmin, 'arcsec': u.arcsec, 'mas': u.mas, 'uas': u.uas}
+                    plot_unit = unit_map.get(unit_str, None)
+                    
+                    if plot_unit is not None:
+                        limit = (fov / 2).to(plot_unit).value
+                        for ax in axes[i, :]:
+                            ax.set_xlim(-limit, limit)
+                            ax.set_ylim(-limit, limit)
+                except Exception as e:
+                    print(f"Warning: Could not apply FOV: {e}")
         
         if title:
             fig.suptitle(title)
@@ -506,7 +533,8 @@ class WavefrontArray:
         new_locs = list(self.locations) if self.locations is not None else None
         return WavefrontArray([wf.copy() for wf in self.wavefronts], locations=new_locs)
         
-    def plot(self, title: Optional[str] = None, show: bool = True, log_scale: bool = True, stack_method: Optional[Callable] = None):
+    def plot(self, title: Optional[str] = None, show: bool = True, log_scale: bool = True, 
+             stack_method: Optional[Callable] = None, fov: Optional[u.Quantity] = None):
         """
         Plot all wavefronts in the array (Amplitude and Phase).
         
@@ -610,6 +638,22 @@ class WavefrontArray:
                 ax_phase.set_ylabel(ylabel)
                 cb_phase = plt.colorbar(im_phase, ax=ax_phase, fraction=0.046, pad=0.04)
                 cb_phase.set_label('Phase (rad)')
+                
+                # Apply FOV if requested
+                if fov is not None:
+                    unit_str = xlabel.split('[')[-1].split(']')[0]
+                    try:
+                        unit_map = {'m': u.m, 'mm': u.mm, 'um': u.um, 'nm': u.nm, 
+                                    'rad': u.rad, 'deg': u.deg, 'arcmin': u.arcmin, 'arcsec': u.arcsec, 'mas': u.mas, 'uas': u.uas}
+                        plot_unit = unit_map.get(unit_str, None)
+                        
+                        if plot_unit is not None:
+                            limit = (fov / 2).to(plot_unit).value
+                            for ax in axes[row_base, :]:
+                                ax.set_xlim(-limit, limit)
+                                ax.set_ylim(-limit, limit)
+                    except Exception as e:
+                        print(f"Warning: Could not apply FOV: {e}")
                     
         else:
             # Individual samples mode
@@ -699,6 +743,22 @@ class WavefrontArray:
                     ax_phase.set_ylabel(ylabel)
                     cb_phase = plt.colorbar(im_phase, ax=ax_phase, fraction=0.046, pad=0.04)
                     cb_phase.set_label('Phase (rad)')
+                    
+                    # Apply FOV if requested
+                    if fov is not None:
+                        unit_str = xlabel.split('[')[-1].split(']')[0]
+                        try:
+                            unit_map = {'m': u.m, 'mm': u.mm, 'um': u.um, 'nm': u.nm, 
+                                        'rad': u.rad, 'deg': u.deg, 'arcmin': u.arcmin, 'arcsec': u.arcsec, 'mas': u.mas, 'uas': u.uas}
+                            plot_unit = unit_map.get(unit_str, None)
+                            
+                            if plot_unit is not None:
+                                limit = (fov / 2).to(plot_unit).value
+                                for ax in axes[row_idx, :]:
+                                    ax.set_xlim(-limit, limit)
+                                    ax.set_ylim(-limit, limit)
+                        except Exception as e:
+                            print(f"Warning: Could not apply FOV: {e}")
                     
                     row_idx += 1
 
