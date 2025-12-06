@@ -38,7 +38,7 @@ def run_demo():
     axes = axes.flatten()
 
     for i, t in enumerate(times):
-        wf_t = helios.Wavefront(wavelength=wavelength, size=N)
+        wf_t = helios.Wavefront(wavelength=wavelength, npix=N)
         wf_t.field = p_amp.astype(np.complex128)
         
         ctx = ObservationContext(t*u.s)
@@ -58,7 +58,16 @@ def run_demo():
     cbar_ax = fig.add_axes([0.15, 0.02, 0.7, 0.02])
     cbar = fig.colorbar(im, cax=cbar_ax, orientation='horizontal')
     cbar.set_label('Phase (radians)', fontsize=11)
-    plt.show()
+    
+    if os.environ.get("HELIOS_SAVE_PLOTS") == "true":
+        output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../generated/examples'))
+        os.makedirs(output_dir, exist_ok=True)
+        filename = os.path.basename(__file__).replace('.py', '.png')
+        save_path = os.path.join(output_dir, filename)
+        plt.savefig(save_path)
+        print(f"Saved plot to {save_path}")
+    else:
+        plt.show()
 
     # 2. Animation (VLTI Array)
     print("Generating animation (VLTI Array)...")

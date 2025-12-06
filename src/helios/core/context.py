@@ -578,7 +578,8 @@ class Context:
         return "\n".join(lines)
 
     def get_input_wavefront(self, wavelength: Optional[u.Quantity] = None, 
-                            size: Optional[int] = None,
+                            size: Optional[Union[int, u.Quantity]] = None,
+                            npix: Optional[int] = None,
                             angular_samples: int = 1,
                             coherent_sources: bool = True,
                             collectors: Optional[List[Any]] = None) -> Union[Wavefront, WavefrontArray]:
@@ -592,8 +593,11 @@ class Context:
         ----------
         wavelength : astropy.Quantity, optional
             Wavelength of the wavefront. If None, uses context.kwargs['wavelength'] or default 550nm.
-        size : int, optional
-            Size of the wavefront (pixels). If None, uses context.kwargs['npix'] or default 512.
+        size : astropy.Quantity or int, optional
+            Physical size of the wavefront (e.g. 10*u.m). 
+            If int is provided, it is treated as npix (pixels) for backward compatibility.
+        npix : int, optional
+            Number of pixels. If None, uses context.kwargs['npix'] or default 512.
         angular_samples : int, optional
             Number of angular samples along one dimension for extended sources (default: 1).
             Total samples = angular_samples^2 if coherent_sources=False.
@@ -605,11 +609,21 @@ class Context:
             If provided, generates a WavefrontArray with one wavefront per collector,
             including geometric phase shifts (piston + tilt) corresponding to each collector's position.
         """
+        # Handle backward compatibility for size (int -> npix)
+        if isinstance(size, int):
+            if npix is None:
+                npix = size
+            size = None # Reset size so we use default physical size later
+            
         # Determine simulation parameters
         if wavelength is None:
             wavelength = self.kwargs.get('wavelength', 550 * u.nm)
+        if npix is None:
+            npix = self.kwargs.get('npix', 512)
+            
+        # Physical size default
         if size is None:
-            size = self.kwargs.get('npix', 512)
+             size = self.kwargs.get('diameter', 10.0 * u.m)
             
         # Find Scene
         scene = None
@@ -681,8 +695,8 @@ class Context:
                         
                         if hasattr(px, 'unit'):
                             if px.unit.is_equivalent(u.m) and dist is not None:
-                                tx = (px / dist).to(u.rad).value
-                                ty = (py / dist).to(u.rad).value
+                                tx = (px / dist).to(u.rad, equivalencies=u.dimensionless_angles()).value
+                                ty = (py / dist).to(u.rad, equivalencies=u.dimensionless_angles()).value
                             elif px.unit.is_equivalent(u.rad):
                                 tx = px.to(u.rad).value
                                 ty = py.to(u.rad).value
@@ -751,20 +765,24 @@ class Context:
             k = 2 * np.pi / wavelength.to(u.m).value
             
             for collector in collectors:
-                # Create wavefront for this collector
-                wf = Wavefront(wavelength=wavelength, size=size, samples=samples, sources=sources_list)
-                wf.source_directions = np.array(directions) * u.rad
-                
                 # Determine collector size for local grid
                 if hasattr(collector, 'size') and collector.size is not None:
                     diameter = collector.size
                 else:
                     diameter = 1.0 * u.m # Default
+
+                # Create wavefront for this collector
+                wf = Wavefront(wavelength=wavelength, size=diameter, npix=npix, nsource=samples)
+                # Ensure 3D field shape even for single sample to satisfy downstream expectations
+                if samples == 1 and wf.field.ndim == 2:
+                    wf.field = wf.field[np.newaxis, ...]
+                wf.sources = sources_list
+                wf.source_directions = np.array(directions) * u.rad
                 
                 # DEBUG
                 # print(f"Collector: {collector.name}, Size: {diameter}, Type: {type(diameter)}")
                 
-                wf.pixel_scale = (diameter / size)
+                # wf.pixel_scale is already set by Wavefront constructor
                 try:
                     size_m = diameter.to(u.m).value
                 except AttributeError:
@@ -772,11 +790,12 @@ class Context:
                     # Fallback if it's a float (assume meters)
                     size_m = float(diameter)
                     diameter = size_m * u.m
-                    wf.pixel_scale = (diameter / size)
+                    # Update pixel scale if diameter changed type
+                    wf.pixel_scale = (diameter / npix)
                 
                 # Create local grid (u, v)
-                u_vec = np.linspace(-size_m/2, size_m/2, size)
-                v_vec = np.linspace(-size_m/2, size_m/2, size)
+                u_vec = np.linspace(-size_m/2, size_m/2, npix)
+                v_vec = np.linspace(-size_m/2, size_m/2, npix)
                 U, V = np.meshgrid(u_vec, v_vec)
                 
                 # Collector position for piston
@@ -789,22 +808,17 @@ class Context:
                 for s in range(samples):
                     if s < len(directions):
                         tx, ty = directions[s] # radians
-                        
-                        # Piston: k * (cx * tx + cy * ty)
+
                         piston = k * (cx * tx + cy * ty)
-                        
-                        # Tilt: k * (u * tx + v * ty)
                         tilt = k * (U * tx + V * ty)
-                        
-                        # Total phase
                         total_phase = piston + tilt
-                        
-                        total_phase = piston + tilt
-                        
-                        total_phase = piston + tilt
-                        
-                        # Apply to field
-                        wf.field[s] *= np.exp(1j * total_phase)
+
+                        phase_factor = np.exp(1j * total_phase)
+                        # Support 2D fields when samples == 1
+                        if wf.field.ndim == 3:
+                            wf.field[s] *= phase_factor
+                        else:
+                            wf.field *= phase_factor
                 # Set amplitudes
                 for i in range(samples):
                     if i < len(amplitudes):
@@ -816,13 +830,14 @@ class Context:
             return WavefrontArray(wf_list, locations=locations)
 
         # Default single wavefront behavior (if no collectors provided)
-        # Create wavefront with samples
-        wf = Wavefront(wavelength=wavelength, size=size, samples=samples, sources=sources_list)
-        
-        # Set pixel scale
         # Default diameter 10m if not specified
-        diameter = self.kwargs.get('diameter', 10.0 * u.m)
-        wf.pixel_scale = (diameter / size)
+        # size variable already holds the physical size (defaulted to 10m if not provided)
+        
+        # Create wavefront with samples
+        wf = Wavefront(wavelength=wavelength, size=size, npix=npix, nsource=samples)
+        if samples == 1 and wf.field.ndim == 2:
+            wf.field = wf.field[np.newaxis, ...]
+        wf.sources = sources_list
         
         # Set directions
         wf.source_directions = np.array(directions) * u.rad
@@ -833,20 +848,21 @@ class Context:
         
         # Create grid (u, v) in meters
         # centered on 0
-        size_m = diameter.to(u.m).value
-        u_vec = np.linspace(-size_m/2, size_m/2, size)
-        v_vec = np.linspace(-size_m/2, size_m/2, size)
+        size_m = size.to(u.m).value
+        u_vec = np.linspace(-size_m/2, size_m/2, npix)
+        v_vec = np.linspace(-size_m/2, size_m/2, npix)
         U, V = np.meshgrid(u_vec, v_vec)
         
         for s in range(samples):
             if s < len(directions):
                 tx, ty = directions[s] # radians
-                
-                # Tilt phase: k * (u * tx + v * ty)
+
                 tilt = k * (U * tx + V * ty)
-                
-                # Apply to field (which is ones initially)
-                wf.field[s] *= np.exp(1j * tilt)
+                phase_factor = np.exp(1j * tilt)
+                if wf.field.ndim == 3:
+                    wf.field[s] *= phase_factor
+                else:
+                    wf.field *= phase_factor
 
         # Set amplitudes
         # wf.field is (samples, size, size)

@@ -6,6 +6,7 @@ from ..core.simulation import Wavefront
 import copy
 
 class PhotonicChip(Layer):
+    __slots__ = ("inputs", "lambda0", "num_inputs", "name")
     """
     Container for photonic elements.
     
@@ -42,6 +43,7 @@ class PhotonicChip(Layer):
         return current_signal
 
 class YSplitter(Element):
+    __slots__ = ("num_inputs", "num_outputs", "name")
     """
     Y-Junction Beam Splitter.
     
@@ -68,6 +70,7 @@ class YSplitter(Element):
         return [out1, out2]
 
 class ThermoOpticPhaseShifter(Element):
+    __slots__ = ("phase", "num_inputs", "name")
     """
     Thermo-Optic Phase Shifter (TOPS).
     
@@ -92,6 +95,7 @@ class ThermoOpticPhaseShifter(Element):
 TOPS = ThermoOpticPhaseShifter
 
 class MultiModeInterferometer(Element):
+    __slots__ = ("matrix", "num_outputs", "num_inputs", "name")
     """
     Multi-Mode Interferometer (MMI).
     
@@ -111,11 +115,19 @@ class MultiModeInterferometer(Element):
             inputs = wavefronts
             
         if len(inputs) != self.num_inputs:
-            # If mismatch, we might need to handle it. 
-            # For now, assume correct number of inputs or pad/truncate?
-            # Strict check for now
+            # Gracefully handle fewer inputs by zero-padding missing ports
             if len(inputs) < self.num_inputs:
-                 raise ValueError(f"MMI expects {self.num_inputs} inputs, got {len(inputs)}")
+                # Create zero-field copies to pad up to required inputs
+                template = inputs[0] if len(inputs) > 0 else None
+                if template is None:
+                    raise ValueError("MMI received no inputs to infer grid for padding")
+                padded = [copy.deepcopy(template) for _ in range(self.num_inputs - len(inputs))]
+                for wf in padded:
+                    wf.field = np.zeros_like(template.field)
+                inputs = inputs + padded
+            else:
+                # Truncate extra inputs to expected number
+                inputs = inputs[:self.num_inputs]
         
         # We assume all inputs have same wavelength/grid
         # We perform matrix multiplication on the fields

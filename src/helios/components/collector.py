@@ -19,6 +19,7 @@ from .pupil import Pupil
 
 
 class Collector(Element):
+    __slots__ = ("pupil", "position", "size", "name")
     """Represents a single telescope/collector with pupil geometry and position.
     
     A Collector is an Element that encapsulates the properties of an individual
@@ -89,7 +90,7 @@ class Collector(Element):
         
         self.metadata = metadata
     
-    def process(self, wavefront: Wavefront, context: Context) -> Any:
+    def process(self, wavefront: Wavefront, context: Context, auto_magnify: Optional[bool] = None) -> Any:
         """
         Process the wavefront through this collector's pupil.
         
@@ -102,12 +103,47 @@ class Collector(Element):
             Input wavefront to process.
         context : Context
             Simulation context.
+        auto_magnify : bool, optional
+            If True, resize wavefront to match collector size.
+            If False, crop wavefront to collector size.
+            If None, check sizes and warn if mismatch.
         
         Returns
         -------
         wavefront : Wavefront
             Wavefront with pupil mask applied and pixel scale updated.
         """
+        
+        # Handle auto_magnify logic
+        if self.size is not None:
+            # Ensure size is in meters
+            collector_size = self.size
+            if not isinstance(collector_size, u.Quantity):
+                collector_size = collector_size * u.m
+                
+            wf_size = wavefront.size
+            if not isinstance(wf_size, u.Quantity):
+                wf_size = wf_size * u.m
+            
+            # Check if sizes match (with some tolerance)
+            sizes_match = np.isclose(collector_size.to(u.m).value, wf_size.to(u.m).value, rtol=1e-5)
+            
+            if auto_magnify is None:
+                if not sizes_match:
+                    import warnings
+                    warnings.warn(f"Wavefront size ({wf_size}) does not match Collector size ({collector_size}). "
+                                  f"Resizing wavefront metadata to match collector (auto_magnify=True).")
+                    auto_magnify = True
+                else:
+                    auto_magnify = False
+            
+            if auto_magnify:
+                # Modify wavefront size metadata
+                wavefront.size = collector_size
+                wavefront.pixel_scale = (collector_size / wavefront.npix).to(u.m)
+            else:
+                # Crop wavefront
+                wavefront.crop(new_size=collector_size, center=(0*u.m, 0*u.m))
         
         # Use the last dimension for spatial size (assuming square)
         # field shape is typically (samples, height, width) or just (height, width)
@@ -582,9 +618,14 @@ class TelescopeArray(Layer):
         is_list_input = isinstance(wavefront, list) or (hasattr(wavefront, '__iter__') and not hasattr(wavefront, 'field'))
         
         if not is_list_input:
-            # Broadcast single wavefront to all collectors
-            # Create deep copies to ensure independence
-            wf_list = [wavefront.copy() for _ in range(len(self.elements))]
+            # If no input provided, generate input wavefronts from context
+            if wavefront is None:
+                wf_generated = context.get_input_wavefront(collectors=self.elements)
+                # wf_generated is WavefrontArray; convert to list
+                wf_list = [wf_generated[i] for i in range(len(self.elements))]
+            else:
+                # Broadcast single wavefront to all collectors
+                wf_list = [wavefront.copy() for _ in range(len(self.elements))]
         else:
             wf_list = list(wavefront)
             # Handle mismatch length if needed (broadcast if len=1)
@@ -596,6 +637,34 @@ class TelescopeArray(Layer):
         for i, collector in enumerate(self.elements):
             if i < len(wf_list):
                 wf = wf_list[i]
+                # Ensure 3D field shape for downstream components even with single sample
+                if hasattr(wf, 'field') and wf.field.ndim == 2:
+                    wf.field = wf.field[np.newaxis, ...]
+
+                # Apply geometric phase (piston + tilt) for off-axis sources when input provided
+                try:
+                    wavelength = wf.wavelength if hasattr(wf, 'wavelength') else None
+                except Exception:
+                    wavelength = None
+                if wavelength is not None and hasattr(wf, 'source_directions') and wf.source_directions is not None:
+                    k = 2 * np.pi / wavelength.to(u.m).value
+                    # Build local coordinate grid from wavefront size
+                    try:
+                        size_m = wf.size.to(u.m).value
+                    except Exception:
+                        size_m = float(wf.size)
+                    npix = wf.npix
+                    u_vec = np.linspace(-size_m/2, size_m/2, npix)
+                    v_vec = np.linspace(-size_m/2, size_m/2, npix)
+                    U, V = np.meshgrid(u_vec, v_vec)
+                    cx, cy = getattr(collector, 'position', (0.0, 0.0))
+                    dirs = wf.source_directions
+                    for s in range(wf.field.shape[0]):
+                        tx = u.Quantity(dirs[s][0], u.rad).to(u.rad).value
+                        ty = u.Quantity(dirs[s][1], u.rad).to(u.rad).value
+                        piston = k * (cx * tx + cy * ty)
+                        tilt = k * (U * tx + V * ty)
+                        wf.field[s] *= np.exp(1j * (piston + tilt))
                 
                 # Phase shift is now handled in Context.get_input_wavefront if collectors were passed.
                 # If a generic wavefront was passed, we assume it's already correct or we might need
@@ -607,6 +676,9 @@ class TelescopeArray(Layer):
                 output_list.append(wf_processed)
                 locations.append(collector.position)
         
+        # If single collector, return single Wavefront for backward compatibility
+        if len(output_list) == 1:
+            return output_list[0]
         return WavefrontArray(output_list, locations=locations)
 
 

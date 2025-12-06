@@ -33,14 +33,14 @@ def run_demo():
         wavelength = wl_nm * 1e-9 * u.m
         
         # Ideal PSF
-        wf_ideal = helios.Wavefront(wavelength=wavelength, size=N)
+        wf_ideal = helios.Wavefront(wavelength=wavelength, npix=N)
         wf_ideal.field = p_amp.astype(np.complex128)
         field_ideal = np.fft.fftshift(np.fft.fft2(np.fft.ifftshift(wf_ideal.field)))
         psf_ideal = np.abs(field_ideal) ** 2
         peak_ideal = psf_ideal.max()
         
         # Degraded PSF
-        wf = helios.Wavefront(wavelength=wavelength, size=N)
+        wf = helios.Wavefront(wavelength=wavelength, npix=N)
         wf.field = p_amp.astype(np.complex128)
         
         atm = helios.Atmosphere(rms=opd_nm * u.nm, seed=42)
@@ -68,7 +68,16 @@ def run_demo():
         axes[i+4].axis('off')
 
     plt.tight_layout()
-    plt.show()
+    
+    if os.environ.get("HELIOS_SAVE_PLOTS") == "true":
+        output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../generated/examples'))
+        os.makedirs(output_dir, exist_ok=True)
+        filename = os.path.basename(__file__).replace('.py', '.png')
+        save_path = os.path.join(output_dir, filename)
+        plt.savefig(save_path)
+        print(f"Saved plot to {save_path}")
+    else:
+        plt.show()
 
 if __name__ == "__main__":
     run_demo()

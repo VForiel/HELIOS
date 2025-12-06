@@ -5,18 +5,18 @@ HELIOS (Hierarchical End-to-end Lightpath & Instrumental response Simulation) is
 
 ## Python Environment (CRITICAL)
 
-**ALWAYS activate the virtual environment first** before running any Python commands:
+**ALWAYS activate the virtual environment first** before running any Python commands, and avoid chaining multiple commands on a single line.
 
 ```powershell
-# Activate venv (PowerShell) - DO THIS FIRST
-& .venv\Scripts\Activate.ps1
+# 1) Activer la venv (PowerShell) — À faire UNE fois au début
+.\.venv\Scripts\Activate.ps1
 
-# Navigate normally after activation
+# 2) Exécuter vos commandes normalement, une par ligne
 cd tests
 pytest
 
-# For documentation
-cd docs
+# Pour la documentation
+cd ..\docs
 .\make.bat html
 ```
 
@@ -27,15 +27,28 @@ cd docs
 - Documentation builds will **fail** without venv activation
 
 **Proper workflow**:
-1. **Activate venv ONCE** at the start: `& .venv\Scripts\Activate.ps1`
+1. **Activate venv ONCE** at the start: `.\.venv\Scripts\Activate.ps1`
 2. **Navigate normally** with `cd` commands
-3. **Use make.bat** for documentation: `cd docs; .\make.bat html`
-4. **Never** combine activation + command in single line (e.g. don't do `& .venv\Scripts\python.exe -m sphinx ...`)
+3. **Use make.bat** for documentation: `cd docs` puis `.\make.bat html` (sur deux lignes)
+4. **Do not** chain commands on one line with `&` or `;`. Exécutez chaque commande sur sa propre ligne.
 
 **Build commands**:
-- **Documentation**: `cd docs; .\make.bat html` (make.bat auto-detects venv)
-- **Tests**: `pytest` or `python -m pytest`
-- **Install package**: `pip install -e .`
+- **Documentation**:
+    ```powershell
+    cd docs
+    .\make.bat html
+    ```
+    (make.bat détecte automatiquement la venv)
+- **Tests**:
+    ```powershell
+    pytest
+    # ou
+    python -m pytest
+    ```
+- **Install package**:
+    ```powershell
+    pip install -e .
+    ```
 
 ## Architecture Fundamentals
 
@@ -72,8 +85,17 @@ fig, axes = plt.subplots(1, 3, figsize=(15, 5))
 
 ## Critical Conventions
 
+### Current Development Mode (CRITICAL)
+We are in active feature development. Backward compatibility is not required at this stage. When a refactor is introduced, you must propagate the change across the entire codebase (src, tests, examples, tools, docs) immediately.
+
+Guidelines for development mode:
+- Prefer correctness, clarity, and unit safety over performance.
+- Use `astropy.units.Quantity` broadly (both API and internal) to reduce ambiguity; we will optimize later.
+- Avoid dynamic attribute checks (`hasattr`, `getattr`) by defining complete attribute sets in constructors and locking them via `__slots__` when appropriate.
+- Keep implementations simple and explicit; remove legacy/obsolete code paths rather than maintaining shims.
+
 ### Units: astropy.Quantity at API Boundaries
-**MANDATORY PATTERN**: All user-facing parameters use `astropy.units.Quantity`. Internal storage converts to native Python types for performance.
+**DEVELOPMENT PHASE RULE**: All user-facing parameters use `astropy.units.Quantity`. During current development, prefer keeping `Quantity` internally as well for clarity and unit safety. Performance conversions to native types can be reintroduced later when features stabilize.
 
 ```python
 # ✅ Correct - API accepts Quantity
@@ -87,34 +109,17 @@ def __init__(self, temperature: float, mass: float):
 
 **When adding new components**: Always use `u.Quantity` for distances (u.m, u.AU, u.arcsec), masses (u.M_sun, u.M_jup), temperatures (u.K), wavelengths (u.nm, u.um).
 
-### Performance Architecture
-**High-level interface with low-level performance**: The API is designed with two layers:
+### Simplicity First (Development)
+For now, prioritize simplicity and unit safety:
+- Keep `Quantity` internally to reduce mistakes and ease reasoning.
+- Avoid premature optimization. No numba/C++ unless required for feature correctness.
+- Use straightforward numpy operations; refactor later if profiling indicates hot spots.
 
-1. **User-facing API**: Accepts `astropy.Quantity` objects for all physical quantities (distances, masses, temperatures, wavelengths, etc.)
-2. **Internal storage**: Converts to native Python types (float, numpy arrays) with fixed or dimensionless units for performance
-
-**Conversion pattern**:
-```python
-# At API boundary (constructor, setters)
-def __init__(self, rms: u.Quantity = 100*u.nm):
-    self.rms = rms  # High-level API
-
-@property
-def rms(self):
-    return self._rms_internal * u.m  # Return as Quantity
-
-@rms.setter
-def rms(self, value: u.Quantity):
-    self._rms_internal = value.to(u.m).value  # Convert on set
-```
-
-**Performance optimization priorities**:
-- Use **numba JIT compilation** for computationally intensive loops
-- Implement performance-critical code in **C++** via pybind11 bindings (`src/helios/cpp/`)
-- Prefer numpy vectorized operations over Python loops
-- Cache expensive computations when possible (e.g., frozen turbulence screens)
-
-The goal is to provide a user-friendly, physically intuitive API while achieving the best possible computational performance for scientific simulations.
+### Attributes and __slots__
+Define all attributes explicitly and lock them when beneficial:
+- Declare attributes in `__init__` with defaults if optional (e.g., `None`).
+- Use `__slots__` to prevent accidental attribute addition and reduce dynamic lookups.
+- Remove avoidable `hasattr()`/`getattr()` checks by designing objects with complete data models.
 
 ### Pupil Geometry System
 `Pupil` class builds aperture masks via primitives (disk, hexagon, spiders, segments):
@@ -423,4 +428,5 @@ Scope:
 - ❌ Don't ignore units when reading existing code - maintain consistency
 - ❌ Don't commit code without docstrings and unit tests
 - ❌ Don't skip the agent modification log
-- ❌ Don't modify notebook cells without validating the changes execute correctly
+-- ❌ Don't modify notebook cells without validating the changes execute correctly
+- ❌ Don't preserve legacy compatibility during development — refactor globally and update all call sites

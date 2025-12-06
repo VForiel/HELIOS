@@ -1,0 +1,17 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "pytest-collectors",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-Command",
+				"& d:\\HELIOS\\.venv\\Scripts\\Activate.ps1; cd tests; pytest -k \"collector or telescopearray\" -q"
+			],
+			"group": "build"
+		}
+	]
+}

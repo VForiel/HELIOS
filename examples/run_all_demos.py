@@ -23,8 +23,20 @@ def run_all_demos():
         print("No numbered demo scripts found in examples directory.")
         return
 
+    # Check for --save argument
+    save_plots = "--save" in sys.argv
+    if save_plots:
+        print("Running in SAVE mode. Plots will be saved to 'generated/examples/' instead of shown.")
+        os.environ["HELIOS_SAVE_PLOTS"] = "true"
+        # Create output directory
+        output_dir = os.path.join(examples_dir, "../generated/examples")
+        os.makedirs(output_dir, exist_ok=True)
+    else:
+        print("Running in INTERACTIVE mode. Plots will be shown.")
+        print("NOTE: Close the plot windows to proceed to the next demo.")
+        print("Tip: Run with '--save' to save plots instead of showing them.")
+    
     print(f"Found {len(scripts)} demo scripts to execute.")
-    print("NOTE: Close the plot windows to proceed to the next demo.")
     
     for i, script in enumerate(scripts):
         script_name = os.path.basename(script)

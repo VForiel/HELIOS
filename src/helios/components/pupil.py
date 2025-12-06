@@ -26,9 +26,32 @@ class Pupil:
         self.focal_length_m = float(focal_length.to(u.m).value)
         self.elements: List[dict] = []
 
-    def process(self, wavefront: 'Wavefront') -> 'Wavefront':
+    def process(self, wavefront: 'Wavefront', auto_magnify: Optional[bool] = None) -> 'Wavefront':
         """Process wavefront through pupil."""
         wavefront = copy(wavefront)
+        
+        # Auto-magnify logic
+        pupil_diameter = self.diameter * u.m
+        wf_size = wavefront.size
+        if not isinstance(wf_size, u.Quantity):
+            wf_size = wf_size * u.m
+            
+        sizes_match = np.isclose(pupil_diameter.to(u.m).value, wf_size.to(u.m).value, rtol=1e-5)
+        
+        if auto_magnify is None:
+            if not sizes_match:
+                import warnings
+                warnings.warn(f"Wavefront size ({wf_size}) does not match Pupil diameter ({pupil_diameter}). "
+                              f"Resizing wavefront metadata to match pupil (auto_magnify=True).")
+                auto_magnify = True
+            else:
+                auto_magnify = False
+        
+        if auto_magnify:
+            wavefront.size = pupil_diameter
+            wavefront.pixel_scale = (pupil_diameter / wavefront.npix).to(u.m)
+        else:
+            wavefront.crop(new_size=pupil_diameter, center=(0*u.m, 0*u.m))
         
         # Calculate physical size of the grid
         # If pixel_scale is available (it should be for Wavefront)

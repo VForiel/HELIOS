@@ -84,22 +84,18 @@ class Atmosphere(Element):
                  name: Optional[str] = None):
         super().__init__(name=name or "Atmosphere")
         
-        # Store OPD RMS in meters
-        if hasattr(rms, 'to'):
-            self.rms = float(rms.to(u.m).value)
-        else:
-            # If no unit, assume meters
-            self.rms = float(rms)
+        # Store OPD RMS in meters (enforce Quantity)
+        self.rms = float(u.Quantity(rms, u.m).to(u.m).value)
         
-        # Parse wind velocity
+        # Parse wind velocity (enforce Quantity)
         if isinstance(wind_speed, tuple):
             # (vx, vy) components provided
-            vx = wind_speed[0].to(u.m/u.s).value if hasattr(wind_speed[0], 'to') else float(wind_speed[0])
-            vy = wind_speed[1].to(u.m/u.s).value if hasattr(wind_speed[1], 'to') else float(wind_speed[1])
+            vx = u.Quantity(wind_speed[0], u.m/u.s).to(u.m/u.s).value
+            vy = u.Quantity(wind_speed[1], u.m/u.s).to(u.m/u.s).value
             self.wind_velocity = np.array([vx, vy], dtype=float)
         else:
             # Scalar speed + direction
-            speed = wind_speed.to(u.m/u.s).value if hasattr(wind_speed, 'to') else float(wind_speed)
+            speed = u.Quantity(wind_speed, u.m/u.s).to(u.m/u.s).value
             angle_rad = np.deg2rad(wind_direction)
             self.wind_velocity = np.array([speed * np.cos(angle_rad), 
                                           speed * np.sin(angle_rad)], dtype=float)
@@ -111,15 +107,9 @@ class Atmosphere(Element):
         self.inner_scale = None
         self.outer_scale = None
         if inner_scale is not None:
-            if hasattr(inner_scale, 'to'):
-                self.inner_scale = float(inner_scale.to(u.m).value)
-            else:
-                self.inner_scale = float(inner_scale)
+            self.inner_scale = float(u.Quantity(inner_scale, u.m).to(u.m).value)
         if outer_scale is not None:
-            if hasattr(outer_scale, 'to'):
-                self.outer_scale = float(outer_scale.to(u.m).value)
-            else:
-                self.outer_scale = float(outer_scale)
+            self.outer_scale = float(u.Quantity(outer_scale, u.m).to(u.m).value)
         
         # Cache for frozen turbulent screen
         self._frozen_screen = None
@@ -228,7 +218,7 @@ class Atmosphere(Element):
         if hasattr(time, 'to'):
             time_s = time.to(u.s).value
         else:
-            time_s = float(time)
+            time_s = u.Quantity(time, u.s).to(u.s).value
         
         # Compute shift in meters: displacement = velocity * time
         # Assume screen pixel size ~ diameter / N (approximate)
@@ -329,10 +319,7 @@ class Atmosphere(Element):
         # Convert OPD to phase: φ = 2π * OPD / λ
         # wavefront.wavelength should be in meters
         if hasattr(wavefront, 'wavelength') and wavefront.wavelength is not None:
-            if hasattr(wavefront.wavelength, 'to'):
-                wavelength_m = wavefront.wavelength.to(u.m).value
-            else:
-                wavelength_m = float(wavefront.wavelength)
+            wavelength_m = u.Quantity(wavefront.wavelength, u.m).to(u.m).value
         else:
             # Default wavelength if not specified (550 nm, visible)
             wavelength_m = 550e-9
@@ -878,7 +865,7 @@ class Atmosphere(Element):
                 self.time = t * u.s
         
         # Initialize with first frame
-        wf_init = Wavefront(wavelength=wavelength, size=npix)
+        wf_init = Wavefront(wavelength=wavelength, npix=npix)
         wf_init.field = np.ones((npix, npix), dtype=np.complex128)
         ctx_init = TimeContext(times[0])
         wf_atm_init = self.process(wf_init, ctx_init)
@@ -935,7 +922,7 @@ class Atmosphere(Element):
             t = times[frame_idx]
             
             # Generate phase screen at time t
-            wf = Wavefront(wavelength=wavelength, size=npix)
+            wf = Wavefront(wavelength=wavelength, npix=npix)
             wf.field = np.ones((npix, npix), dtype=np.complex128)
             ctx = TimeContext(t)
             wf_atm = self.process(wf, ctx)
@@ -1058,10 +1045,7 @@ class AdaptiveOptics(Element):
             items.append((nm, coeff))
 
         for (n, m), coeff in items:
-            if hasattr(coeff, 'to'):
-                c = float(coeff.to(u.rad).value)
-            else:
-                c = float(coeff)
+            c = float(u.Quantity(coeff, u.rad).to(u.rad).value)
             Z = self._zernike_nm(n, m, rho, theta)
             phase += c * Z
 

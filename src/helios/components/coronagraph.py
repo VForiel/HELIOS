@@ -49,11 +49,13 @@ class Coronagraph(Element):
     >>> # Plot mask
     >>> coro.plot_mask(npix=512, charge=2)
     """
-    def __init__(self, phase_mask: str = '4quadrants', name: Optional[str] = None):
+    def __init__(self, phase_mask: str = '4quadrants', diameter: Optional[u.Quantity] = None, name: Optional[str] = None):
         super().__init__(name=name or "Coronagraph")
         self.phase_mask = phase_mask
+        # Optional physical diameter (focal-plane mask scale reference)
+        self.diameter = diameter if diameter is None else diameter.to(u.m)
 
-    def process(self, wavefront: Wavefront, context: Context) -> Wavefront:
+    def process(self, wavefront: Wavefront, context: Context, auto_magnify: Optional[bool] = None) -> Wavefront:
         """Apply coronagraph mask to wavefront.
         
         Parameters
@@ -75,6 +77,24 @@ class Coronagraph(Element):
         2. Multiply by focal-plane mask (phase and/or amplitude)
         3. Inverse FFT → back to pupil/image plane
         """
+        # Auto-magnify/crop behavior if physical diameter is provided
+        if self.diameter is not None:
+            wf_size = wavefront.size if isinstance(wavefront.size, u.Quantity) else wavefront.size * u.m
+            sizes_match = abs(self.diameter.to(u.m).value - wf_size.to(u.m).value) <= (wf_size.to(u.m).value * 1e-5)
+            if auto_magnify is None:
+                if not sizes_match:
+                    import warnings
+                    warnings.warn(f"Wavefront size ({wf_size}) does not match Coronagraph diameter ({self.diameter}). "
+                                  f"Resizing wavefront metadata to match coronagraph (auto_magnify=True).")
+                    auto_magnify = True
+                else:
+                    auto_magnify = False
+            if auto_magnify:
+                wavefront.size = self.diameter
+                wavefront.pixel_scale = (self.diameter / wavefront.npix).to(u.m)
+            else:
+                wavefront.crop(new_size=self.diameter, center=(0*u.m, 0*u.m))
+
         try:
             field = wavefront.field
             if field.ndim == 3:

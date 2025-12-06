@@ -1,5 +1,6 @@
 import numpy as np
 from astropy import units as u
+import warnings
 from typing import Optional, List, Tuple, Callable, Union
 import matplotlib.pyplot as plt
 import copy
@@ -124,13 +125,16 @@ class Wavefront:
     
     Parameters
     ----------
-    wavelength : Quantity
-        Wavelength of the light (e.g., 550*u.nm, 1.6*u.um)
-    size : int
-        Number of pixels in the field array (creates size × size array)
-    samples : int, optional
-        Number of spatial samples (wavefronts) to simulate. Default: 1.
-        If > 1, field shape is (samples, size, size).
+    wavelength : Quantity, optional
+        Wavelength of the light (e.g., 550*u.nm). Default: 550 nm.
+    size : Quantity, optional
+        Physical width of the wavefront (e.g., 1*u.m). Default: 1 m.
+    npix : int, optional
+        Number of pixels along one dimension. Required if value is None.
+    nsource : int, optional
+        Number of incoherent wavefronts (sources). Required if value is None.
+    value : ndarray, optional
+        Complex field array of shape (nsource, npix, npix). If provided, overrides npix/nsource.
     
     Attributes
     ----------
@@ -138,10 +142,9 @@ class Wavefront:
         Wavelength of the electromagnetic radiation
     field : ndarray of complex128
         Complex amplitude array representing the electric field.
-        Shape is (samples, size, size). Amplitude = abs(field), phase = angle(field)
+        Shape is (nsource, npix, npix).
     pixel_scale : Quantity
-        Physical size per pixel in meters (for pupil plane) or angular
-        size per pixel (for image plane)
+        Physical size per pixel.
     source_directions : Quantity, optional
         (M, 2) array of source directions (theta_x, theta_y) in radians.
     
@@ -152,7 +155,7 @@ class Wavefront:
     >>> import numpy as np
     >>> from astropy import units as u
     >>> 
-    >>> wf = Wavefront(wavelength=550*u.nm, size=256)
+    >>> wf = Wavefront(wavelength=550*u.nm, size=1*u.m, npix=256, nsource=1)
     >>> # Apply pupil amplitude
     >>> pupil = helios.Pupil.like('JWST')
     >>> wf.field = pupil.get_array(256).astype(np.complex128)
@@ -176,16 +179,124 @@ class Wavefront:
     --------
     Layer : Components that transform wavefronts
     """
-    def __init__(self, wavelength: u.Quantity, size: int, samples: int = 1, 
-                 sources: Optional[List[Union[Tuple[float, float], str]]] = None):
+    def __init__(self, wavelength: u.Quantity = 550*u.nm, size: Union[u.Quantity, float, int] = 1*u.m,
+                 npix: Optional[int] = None, nsource: Optional[int] = 1,
+                 value: Optional[np.ndarray] = None):
+
         self.wavelength = wavelength
-        self.field = np.ones((samples, size, size), dtype=np.complex128)
-        self.pixel_scale = 1.0 * u.m # Placeholder
-        self.max_modes: Optional[int] = None  # None for free-space, int for guided modes
-        # Last optical focal length encountered (meters), set by lens-like elements
+        # Backward-compat: if size is int, treat as npix and set default physical size
+        if isinstance(size, int):
+            if npix is None:
+                npix = size
+            self.size = 1.0 * u.m
+        else:
+            self.size = size
+            # Set default npix if not provided
+            if npix is None:
+                npix = 256
+        
+        if value is not None:
+            if not isinstance(value, np.ndarray):
+                value = np.array(value)
+            if value.ndim == 2:
+                value = value[np.newaxis, :, :]
+            
+            self.field = value.astype(np.complex128)
+            self.nsource, self.npix, _ = self.field.shape
+            
+            if npix is not None and npix != self.npix:
+                warnings.warn(f"Provided npix={npix} does not match value shape {self.field.shape}. Using value shape.")
+            if nsource is not None and nsource != self.nsource:
+                warnings.warn(f"Provided nsource={nsource} does not match value shape {self.field.shape}. Using value shape.")
+                
+        else:
+            # If value is None, we need npix and nsource
+            if npix is not None:
+                if nsource is None:
+                    nsource = 1 # Default to 1 source
+                self.npix = int(npix)
+                self.nsource = int(nsource)
+                # If single source, use 2D field for backward compatibility
+                if self.nsource == 1:
+                    self.field = np.ones((self.npix, self.npix), dtype=np.complex128)
+                else:
+                    self.field = np.ones((self.nsource, self.npix, self.npix), dtype=np.complex128)
+            else:
+                raise ValueError("Must provide either 'value' OR ('npix' and 'nsource').")
+
+        # Calculate pixel scale (ensure Quantity)
+        size_q = self.size if isinstance(self.size, u.Quantity) else (self.size * u.m)
+        self.pixel_scale = (size_q / self.npix).to(u.m)
+        
+        self.max_modes: Optional[int] = None
         self._last_focal_length_m: Optional[float] = None
-        self.source_directions: Optional[u.Quantity] = None # (M, 2) angles
-        self.sources = sources
+        self.source_directions: Optional[u.Quantity] = None
+        self.sources = None
+
+    def crop(self, new_size: u.Quantity, center: Tuple[float, float] = (0, 0)):
+        """
+        Crop the wavefront to a new physical size.
+        
+        Parameters
+        ----------
+        new_size : u.Quantity
+            New width of the field.
+        center : tuple
+            (x, y) center offset in physical units (same as new_size).
+        """
+        # Ensure units match
+        if not isinstance(new_size, u.Quantity):
+             new_size = new_size * u.m 
+             
+        current_size_m = self.size.to(u.m).value
+        new_size_m = new_size.to(u.m).value
+        
+        if new_size_m > current_size_m:
+            warnings.warn("Cropping to a larger size than current wavefront. Padding with zeros.")
+            
+        pixel_scale_m = self.pixel_scale.to(u.m).value
+        
+        # Calculate new number of pixels
+        new_npix = int(np.round(new_size_m / pixel_scale_m))
+        
+        # Calculate center offset in pixels
+        # Development mode: enforce astropy.Quantity for physical inputs
+        # Expect center coordinates as quantities; convert explicitly
+        center_x_m = u.Quantity(center[0], u.m).to(u.m).value
+        center_y_m = u.Quantity(center[1], u.m).to(u.m).value
+        
+        offset_x_pix = int(np.round(center_x_m / pixel_scale_m))
+        offset_y_pix = int(np.round(center_y_m / pixel_scale_m))
+        
+        # Center of current array
+        cx = self.npix // 2
+        cy = self.npix // 2
+        
+        # Half width of new array
+        hw = new_npix // 2
+        
+        start_x = cx - hw + offset_x_pix
+        start_y = cy - hw + offset_y_pix
+        
+        end_x = start_x + new_npix
+        end_y = start_y + new_npix
+        
+        # Handle boundary checks
+        if start_x < 0 or start_y < 0 or end_x > self.npix or end_y > self.npix:
+             warnings.warn("Crop region is out of bounds. Result may be smaller or empty.")
+             start_x = max(0, start_x)
+             start_y = max(0, start_y)
+             end_x = min(self.npix, end_x)
+             end_y = min(self.npix, end_y)
+        
+        # Support both 2D (single-source) and 3D (multi-source) fields
+        if self.field.ndim == 3:
+            self.field = self.field[:, start_y:end_y, start_x:end_x]
+            self.npix = self.field.shape[1]
+        else:
+            self.field = self.field[start_y:end_y, start_x:end_x]
+            self.npix = self.field.shape[0]
+        self.size = new_size
 
     def copy(self) -> 'Wavefront':
         """
@@ -664,7 +775,8 @@ class WavefrontArray:
             # So here, for each (Source, Channel) pair, we want 1 row.
             
             total_rows = n_samples * n_channels
-            ncols = 5 if log_scale else 3
+            # Columns: Amp, (LogAmp if enabled), Phase
+            ncols = 3 if log_scale else 2
             
             fig_width = max(8, min(14, 4 * ncols))
             fig_height = 4 * total_rows
@@ -676,10 +788,8 @@ class WavefrontArray:
                 for c, wf in enumerate(self.wavefronts):
                     # Get data
                     amp = np.abs(wf.field[s])
-                    intensity = amp**2
                     phase = np.angle(wf.field[s])
                     log_amp = np.log10(amp + 1e-12)
-                    log_intensity = np.log10(intensity + 1e-12)
                     
                     # Determine label
                     label = f"Src {s+1} - Ch {c+1}"
@@ -693,50 +803,27 @@ class WavefrontArray:
                     
                     extent, xlabel, ylabel = _get_smart_extent(wf.field.shape, wf.pixel_scale)
                     
-                    # Intensity
-                    ax_int = axes[row_idx, 0]
-                    im_int = ax_int.imshow(intensity, origin='lower', cmap='inferno', extent=extent)
-                    ax_int.set_title(f"Int ({label})")
-                    ax_int.set_xlabel(xlabel)
-                    ax_int.set_ylabel(ylabel)
-                    cb_int = plt.colorbar(im_int, ax=ax_int, fraction=0.046, pad=0.04)
-                    cb_int.set_label('Intensity')
-                    
-                    current_col = 1
-                    # Log Intensity
-                    if log_scale:
-                        ax_log_int = axes[row_idx, current_col]
-                        im_log_int = ax_log_int.imshow(log_intensity, origin='lower', cmap='inferno', extent=extent)
-                        ax_log_int.set_title(f"Log Int ({label})")
-                        ax_log_int.set_xlabel(xlabel)
-                        ax_log_int.set_ylabel(ylabel)
-                        cb_log_int = plt.colorbar(im_log_int, ax=ax_log_int, fraction=0.046, pad=0.04)
-                        cb_log_int.set_label('Log Intensity')
-                        current_col += 1
-
-                    # Amplitude
-                    ax_amp = axes[row_idx, current_col]
+                    # Amplitude (col 0)
+                    ax_amp = axes[row_idx, 0]
                     im_amp = ax_amp.imshow(amp, origin='lower', cmap='inferno', extent=extent)
                     ax_amp.set_title(f"Amp ({label})")
                     ax_amp.set_xlabel(xlabel)
                     ax_amp.set_ylabel(ylabel)
                     cb_amp = plt.colorbar(im_amp, ax=ax_amp, fraction=0.046, pad=0.04)
                     cb_amp.set_label('Amplitude')
-                    current_col += 1
                     
                     # Log Amplitude
                     if log_scale:
-                        ax_log = axes[row_idx, current_col]
+                        ax_log = axes[row_idx, 1]
                         im_log = ax_log.imshow(log_amp, origin='lower', cmap='inferno', extent=extent)
                         ax_log.set_title(f"Log Amp ({label})")
                         ax_log.set_xlabel(xlabel)
                         ax_log.set_ylabel(ylabel)
                         cb_log = plt.colorbar(im_log, ax=ax_log, fraction=0.046, pad=0.04)
                         cb_log.set_label('Log Amplitude')
-                        current_col += 1
                         
                     # Phase
-                    ax_phase = axes[row_idx, current_col]
+                    ax_phase = axes[row_idx, (2 if log_scale else 1)]
                     im_phase = ax_phase.imshow(phase, origin='lower', cmap='twilight', vmin=-np.pi, vmax=np.pi, extent=extent)
                     ax_phase.set_title(f"Phase ({label})")
                     ax_phase.set_xlabel(xlabel)

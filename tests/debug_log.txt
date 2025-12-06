@@ -1,0 +1,92 @@
+Context layers: 0
+Context layers: 1
+  - TelescopeArray (<class 'helios.components.collector.TelescopeArray'>)
+Context layers: 1
+  - Scene (<class 'helios.components.scene.Scene'>)
+Scene found. Coherent: True
+Scene objects: 0
+Context layers: 3
+  - Scene (<class 'helios.components.scene.Scene'>)
+  - TelescopeArray (<class 'helios.components.collector.TelescopeArray'>)
+  - Camera (<class 'helios.components.detectors.Camera'>)
+Scene found. Coherent: True
+Scene objects: 1
+  - Star
+Object: Star, Position: 0.0 AU, 0.0 AU
+  Unit: AU, Equiv rad: False
+Context layers: 1
+  - Scene (<class 'helios.components.scene.Scene'>)
+Scene found. Coherent: True
+Scene objects: 1
+  - Star
+Object: Star, Position: 1.0 arcsec, 0.0 arcsec
+  Unit: arcsec, Equiv rad: True
+Context layers: 3
+  - Scene (<class 'helios.components.scene.Scene'>)
+  - TelescopeArray (<class 'helios.components.collector.TelescopeArray'>)
+  - Camera (<class 'helios.components.detectors.Camera'>)
+Scene found. Coherent: True
+Scene objects: 1
+  - Star
+Object: Star, Position: 0.0 AU, 0.0 AU
+  Unit: AU, Equiv rad: False
+Context layers: 1
+  - Scene (<class 'helios.components.scene.Scene'>)
+Scene found. Coherent: True
+Scene objects: 2
+  - Star
+  - Planet
+Object: Star, Position: 0.0 arcsec, 0.0 arcsec
+  Unit: arcsec, Equiv rad: True
+Object: Planet, Position: 1.0 arcsec, 0.0 arcsec
+  Unit: arcsec, Equiv rad: True
+Context layers: 1
+  - Scene (<class 'helios.components.scene.Scene'>)
+Scene found. Coherent: False
+Scene objects: 1
+  - Star
+Context layers: 1
+  - Scene (<class 'helios.components.scene.Scene'>)
+Scene found. Coherent: True
+Scene objects: 2
+  - Star
+  - Star
+Object: Star, Position: 0.0 arcsec, 0.0 arcsec
+  Unit: arcsec, Equiv rad: True
+Object: Star, Position: 1.0 arcsec, 1.0 arcsec
+  Unit: arcsec, Equiv rad: True
+Context layers: 0
+Context layers: 1
+  - TelescopeArray (<class 'helios.components.collector.TelescopeArray'>)
+Context layers: 1
+  - Scene (<class 'helios.components.scene.Scene'>)
+Scene found. Coherent: True
+Scene objects: 0
+Context layers: 1
+  - Scene (<class 'helios.components.scene.Scene'>)
+Scene found. Coherent: True
+Scene objects: 1
+  - Star
+Object: Star, Position: 1.0 arcsec, 0.0 arcsec
+  Unit: arcsec, Equiv rad: True
+Context layers: 0
+Context layers: 1
+  - TelescopeArray (<class 'helios.components.collector.TelescopeArray'>)
+Context layers: 1
+  - Scene (<class 'helios.components.scene.Scene'>)
+Scene found. Coherent: True
+Scene objects: 0
+Context layers: 1
+  - Scene (<class 'helios.components.scene.Scene'>)
+Scene found. Coherent: True
+Scene objects: 1
+  - Star
+Object: Star, Position: 1.0 arcsec, 0.0 arcsec
+  Unit: arcsec, Equiv rad: True
+Context layers: 1
+  - Scene (<class 'helios.components.scene.Scene'>)
+Scene found. Coherent: True
+Scene objects: 1
+  - Star
+Object: Star, Position: 1.0 arcsec, 0.0 arcsec
+  Unit: arcsec, Equiv rad: True

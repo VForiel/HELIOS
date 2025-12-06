@@ -29,7 +29,7 @@ def run_demo():
     fiber_out_2 = fibers.FiberOut()
 
     # Input Wavefront
-    wf_in = Wavefront(wavelength=1.55*u.um, size=128)
+    wf_in = Wavefront(wavelength=1.55*u.um, npix=128)
     x = np.linspace(-5, 5, 128)
     X, Y = np.meshgrid(x, x)
     R = np.sqrt(X**2 + Y**2)
@@ -53,7 +53,16 @@ def run_demo():
     axes[1].set_title("Output Port 1")
     axes[2].imshow(np.abs(output_2.field)**2, cmap='inferno')
     axes[2].set_title("Output Port 2")
-    plt.show()
+    
+    if os.environ.get("HELIOS_SAVE_PLOTS") == "true":
+        output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../generated/examples'))
+        os.makedirs(output_dir, exist_ok=True)
+        filename = os.path.basename(__file__).replace('.py', '.png')
+        save_path = os.path.join(output_dir, filename)
+        plt.savefig(save_path)
+        print(f"Saved plot to {save_path}")
+    else:
+        plt.show()
 
 if __name__ == "__main__":
     run_demo()

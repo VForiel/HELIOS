@@ -25,7 +25,16 @@ def run_demo():
     print(f"Baselines (m):\n{vlti.get_baseline_array()}")
 
     vlti.plot_array(show_pupils=True, pupil_scale=0.5)
-    plt.show()
+    
+    if os.environ.get("HELIOS_SAVE_PLOTS") == "true":
+        output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../generated/examples'))
+        os.makedirs(output_dir, exist_ok=True)
+        filename = os.path.basename(__file__).replace('.py', '.png')
+        save_path = os.path.join(output_dir, filename)
+        plt.savefig(save_path)
+        print(f"Saved plot to {save_path}")
+    else:
+        plt.show()
 
 if __name__ == "__main__":
     run_demo()

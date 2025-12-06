@@ -53,7 +53,16 @@ def run_demo():
     plt.axis('off')
     plt.title('1. Complete Exoplanet Detection System', fontsize=14, fontweight='bold', pad=15)
     plt.tight_layout()
-    plt.show()
+    
+    if os.environ.get("HELIOS_SAVE_PLOTS") == "true":
+        output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../generated/examples'))
+        os.makedirs(output_dir, exist_ok=True)
+        filename = os.path.basename(__file__).replace('.py', '_1.png')
+        save_path = os.path.join(output_dir, filename)
+        plt.savefig(save_path)
+        print(f"Saved plot to {save_path}")
+    else:
+        plt.show()
 
     # --- Example 2: Interferometric Beam Combiner ---
     print("2. Generating Interferometric Beam Combiner UML...")
@@ -133,9 +142,22 @@ def run_demo():
     plt.title("2. Interferometric Beam Combiner - UML Diagram", fontsize=16, fontweight='bold', pad=20)
     
     output_file = 'uml_complex_test.png'
-    plt.savefig(output_file)
-    print(f"Complex diagram saved to {output_file}")
-    plt.show()
+    
+    if os.environ.get("HELIOS_SAVE_PLOTS") == "true":
+        output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../generated/examples'))
+        os.makedirs(output_dir, exist_ok=True)
+        filename = os.path.basename(__file__).replace('.py', '_2.png')
+        save_path = os.path.join(output_dir, filename)
+        plt.savefig(save_path)
+        print(f"Saved plot to {save_path}")
+        
+        # Also save to local file as originally intended
+        plt.savefig(output_file)
+        print(f"Complex diagram saved to {output_file}")
+    else:
+        plt.savefig(output_file)
+        print(f"Complex diagram saved to {output_file}")
+        plt.show()
 
 if __name__ == "__main__":
     run_demo()
