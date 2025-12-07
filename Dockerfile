@@ -26,12 +26,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy backend requirements/project
-COPY pyproject.toml .
+COPY pyproject.toml requirements.txt ./
 COPY src/ ./src/
 COPY web/backend/ ./web/backend/
 
 # Install Python dependencies
-# We assume pyproject.toml defines dependencies. If not, generated requirements.txt usage:
+RUN pip install --no-cache-dir -r requirements.txt
 RUN pip install --no-cache-dir .
 RUN pip install --no-cache-dir fastapi uvicorn matplotlib "uvicorn[standard]"
 
