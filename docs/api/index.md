@@ -9,6 +9,7 @@ Complete API documentation for the HELIOS package.
 
 core
 components/index
+uml_diagrams
 ```
 
 ## Quick Links

@@ -596,16 +596,17 @@ class TelescopeArray(Layer):
         combination logic for telescope collectors.
         
         It supports two modes of operation:
+
         1. **Single Wavefront Input**:
-           - The input wavefront is broadcasted to all collectors (copied).
-           - Each collector applies its pupil mask to its copy.
-           - Returns a WavefrontArray containing one wavefront per collector.
-             
+            - The input wavefront is broadcasted to all collectors (copied).
+            - Each collector applies its pupil mask to its copy.
+            - Returns a WavefrontArray containing one wavefront per collector.
+
         2. **WavefrontArray/List Input** (Optimization Mode):
-           - If input is a list of wavefronts (one per collector), each collector's
-             pupil is applied to the corresponding wavefront.
-           - This allows simulating large arrays without huge wavefront arrays,
-             by processing each pupil in its own local coordinate system.
+            - If input is a list of wavefronts (one per collector), each collector's
+              pupil is applied to the corresponding wavefront.
+            - This allows simulating large arrays without huge wavefront arrays,
+              by processing each pupil in its own local coordinate system.
         
         Parameters
         ----------

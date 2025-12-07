@@ -239,6 +239,7 @@ Scene and optical components implement `.plot()` methods:
 - **Docs**: Sphinx with MyST (markdown), built via `.github/workflows/docs.yml`
 - **Publishing**: Automated PyPI via `.github/workflows/publish.yml`
 - **Docstrings**: All public APIs must have numpy-style docstrings for Sphinx autodoc
+- **Contribution Guidelines**: Always read the "Contribute" section in the documentation (`docs/contribute.md`) before making significant changes.
 
 ## Code Quality Requirements (CRITICAL)
 

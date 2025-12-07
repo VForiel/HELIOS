@@ -1,4 +1,4 @@
-# HELIOS - Architecture Détaillée (Diagramme UML de Classes)
+# Architecture
 
 Ce document présente l'architecture détaillée du package HELIOS sous forme de diagramme UML de classes, montrant toutes les classes, leurs attributs, méthodes et interactions.
 
@@ -8,7 +8,7 @@ HELIOS est organisé en deux modules principaux :
 - **`core`** : Classes de base définissant la structure de simulation
 - **`components`** : Composants optiques et astronomiques spécifiques
 
-```mermaid
+```{mermaid}
 classDiagram
     %% ============================================
     %% CORE CLASSES - Base Architecture

@@ -181,7 +181,7 @@ class Camera(Element):
         Notes
         -----
         The raw image contains:
-        - Signal: |wavefront|² × QE × integration_time
+        - Signal: ``|wavefront|²`` × QE × integration_time
         - Dark: dark_current × integration_time (per pixel)
         - Shot noise: Poisson(signal + dark)
         - Read noise: Gaussian(0, read_noise)

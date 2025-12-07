@@ -347,6 +347,5 @@ Planned improvements include:
 
 ## See Also
 
-- [Context API Documentation](api/core.md#context)
-- [Component Gallery](components/index.md)
-- [Demo Notebooks](../demo.ipynb)
+- [Context API Documentation](api/core.md)
+- [Component Gallery](api/components/index.md)
