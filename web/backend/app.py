@@ -348,7 +348,7 @@ def preview_layer(layer_conf: LayerConfig):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/")
+@app.get("/health")
 def read_root():
     return {"message": "Helios Web API (Pipeline Mode) is running"}
 
