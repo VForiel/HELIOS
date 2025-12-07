@@ -2,6 +2,7 @@ import React, { useState, useCallback, useRef, useMemo } from 'react';
 import ReactFlow, {
     ReactFlowProvider,
     addEdge,
+    updateEdge,
     useNodesState,
     useEdgesState,
     Controls,
@@ -90,17 +91,66 @@ export default function PipelineEditor({
     }, [stars, planets, zodiacal, atmosphere, telescope, camera, setNodes]);
 
 
-    // Enforce 1-to-1 connections per handle
+    // Enforce 1-to-1 connections per handle and prevent self-loops
     const isValidConnection = useCallback((connection) => {
-        // Check if target handle already has a connection
-        const targetHasEdge = edges.some(e => e.target === connection.target && e.targetHandle === connection.targetHandle);
-        // Check if source handle already has a connection
-        const sourceHasEdge = edges.some(e => e.source === connection.source && e.sourceHandle === connection.sourceHandle);
+        // Prevent self-loops
+        return connection.source !== connection.target;
+    }, []);
 
-        return !targetHasEdge && !sourceHasEdge;
-    }, [edges]);
+    const onConnect = useCallback((params) => {
+        if (!reactFlowInstance) return;
 
-    const onConnect = useCallback((params) => setEdges((eds) => addEdge({ ...params, animated: true }, eds)), [setEdges]);
+        // Find source node to check if it supports multiple outputs (only Telescope does)
+        const sourceNode = reactFlowInstance.getNode(params.source);
+        const isMultiOutput = sourceNode?.type === 'telescope';
+
+        setEdges((eds) => {
+            // Enforce 1-to-1 strict rules
+            // 1. Every Target input can have only ONE connection (universally true for our nodes)
+            // 2. Non-Telescope Sources can have only ONE connection (Scene, Atmosphere)
+            // 3. Telescope Sources can have one connection per HANDLE
+
+            const filtered = eds.filter(e => {
+                // Check Target Collision
+                if (e.target === params.target) {
+                    return false; // Remove existing input link to this node, regardless of handle
+                }
+
+                // Check Source Collision
+                if (e.source === params.source) {
+                    if (isMultiOutput) {
+                        // For Telescope: Collision only if handles match
+                        // (Use loose match for robustness against null/undefined)
+                        const h1 = e.sourceHandle || null;
+                        const h2 = params.sourceHandle || null;
+                        if (h1 === h2) return false;
+                    } else {
+                        // For others (Scene, etc.): Collision if source node matches (Single Output)
+                        return false;
+                    }
+                }
+
+                return true;
+            });
+            return addEdge({ ...params, animated: true }, filtered);
+        });
+    }, [setEdges, reactFlowInstance]);
+
+    const edgeUpdateSuccessful = useRef(true);
+
+    const onEdgeUpdateStart = useCallback(() => {
+        edgeUpdateSuccessful.current = false;
+    }, []);
+
+    const onEdgeUpdate = useCallback((oldEdge, newConnection) => {
+        edgeUpdateSuccessful.current = true;
+        setEdges((els) => updateEdge(oldEdge, newConnection, els));
+    }, [setEdges]);
+    const onEdgeUpdateEnd = useCallback((_, edge) => {
+        // If the update was not successful (e.g. dropped on background), 
+        // we DO NOT delete the edge anymore. It just snaps back.
+        edgeUpdateSuccessful.current = true;
+    }, []);
 
     const onDragOver = useCallback((event) => {
         event.preventDefault();
@@ -221,11 +271,16 @@ export default function PipelineEditor({
                     onNodesChange={onNodesChange}
                     onEdgesChange={onEdgesChange}
                     onConnect={onConnect}
+                    onEdgeUpdate={onEdgeUpdate}
+                    onEdgeUpdateStart={onEdgeUpdateStart}
+                    onEdgeUpdateEnd={onEdgeUpdateEnd}
+                    deleteKeyCode={['Backspace', 'Delete']}
                     isValidConnection={isValidConnection}
                     onInit={setReactFlowInstance}
                     onDrop={onDrop}
                     onDragOver={onDragOver}
                     nodeTypes={nodeTypes}
+                    connectionLineType="smoothstep"
                     fitView
                 >
                     <Controls />

@@ -22,7 +22,10 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition"]
 )
+
+# ... (skip to preview_layer)
 
 # --- Pydantic Models for Component Payloads ---
 # These match the structures used in the previous Config models but are reused dynamically.
@@ -50,6 +53,7 @@ class ScenePayload(BaseModel):
     stars: List[StarData] = []
     planets: List[PlanetData] = []
     zodiacal: ZodiacalData = ZodiacalData()
+    view_mode: str = 'geometry'
 
 class AtmospherePayload(BaseModel):
     enabled: bool = True
@@ -57,6 +61,7 @@ class AtmospherePayload(BaseModel):
     wind_speed: float = 5.0
 
 class CollectorData(BaseModel):
+    id: Optional[str] = None
     x: float = 0
     y: float = 0
     diameter: float = 8.0
@@ -174,7 +179,7 @@ def create_telescope(config: TelescopePayload):
         # Custom
         telescope = helios.TelescopeArray(name="Custom Array")
         for i, col in enumerate(config.collectors):
-            d = col.diameter ** u.m
+            d = col.diameter * u.m
             # Simplified pupil creation logic for brevity
             # (Matches previous implementation logic)
             if col.pupil_type == "VLT":
@@ -313,24 +318,71 @@ def run_pipeline(request: PipelineRequest):
 def preview_layer(layer_conf: LayerConfig):
     try:
         buf = io.BytesIO()
+        filename = f"{layer_conf.type}_preview.png"
         
+        # Determine figsize
+        # Default to 6x6
+        figsize = (6, 6)
+        
+        # Check config for figsize override
+        config_dict = None
+        if isinstance(layer_conf.config, dict):
+            config_dict = layer_conf.config
+        elif hasattr(layer_conf.config, 'dict'):
+            config_dict = layer_conf.config.dict()
+            
+        if config_dict:
+             sz = config_dict.get('figsize', None)
+             if sz:
+                 try:
+                     if isinstance(sz, (list, tuple)):
+                         figsize = tuple(map(float, sz))
+                     else:
+                         val = float(sz)
+                         figsize = (val, val)
+                 except:
+                     pass # Fallback to default
+
         if layer_conf.type == 'scene':
             if isinstance(layer_conf.config, dict):
                 data = ScenePayload(**layer_conf.config)
             else:
                 data = layer_conf.config
+
+            view_mode = data.view_mode
             scene = create_scene(data)
-            fig, ax = scene.plot()
+            
+            # Create figure with determined figsize
+            fig, ax = plt.subplots(figsize=figsize)
+            
+            if view_mode == 'sed':
+                scene.plot_sed(ax=ax)
+                filename = "scene_sed.png"
+            else:
+                # scene.plot currently creates its own figure if we don't handle it.
+                # We need to update scene.py to accept ax. 
+                # For now, let's assume we'll update Scene.plot to take ax.
+                if hasattr(scene, 'plot') and 'ax' in scene.plot.__code__.co_varnames:
+                     scene.plot(ax=ax)
+                else: 
+                     # Fallback if I haven't updated scene.py yet (I will in next step)
+                     plt.close(fig) 
+                     fig, ax = scene.plot() # Uses default inside scene.py
+                     fig.set_size_inches(figsize) # Force resize
+                     
+                filename = "scene_geometry.png"
+                
             fig.savefig(buf, format='png', bbox_inches='tight')
             plt.close(fig)
             
         elif layer_conf.type == 'atmosphere':
-            # ... (atmosphere logic unchanged, assuming it doesn't unpack config yet, but good to be safe if we expand)
-            plt.figure(figsize=(5,5))
+            # ... (atmosphere logic unchanged)
+            fig = plt.figure(figsize=figsize)
             plt.text(0.5, 0.5, "Atmosphere Preview\n(Phase Screen - TODO)", ha='center')
             plt.xlim(0, 1); plt.ylim(0, 1); plt.axis('off')
             plt.savefig(buf, format='png')
             plt.close()
+            filename = "atmosphere_preview.png"
             
         elif layer_conf.type == 'telescope':
             if isinstance(layer_conf.config, dict):
@@ -338,23 +390,114 @@ def preview_layer(layer_conf: LayerConfig):
             else:
                 data = layer_conf.config
             telescope = create_telescope(data)
-            fig = plt.figure(figsize=(5,5))
+            fig, ax = plt.subplots(figsize=figsize)
             if hasattr(telescope, 'plot_array'):
-               telescope.plot_array() 
+               telescope.plot_array(ax=ax) 
             else:
-               plt.text(0.5, 0.5, "No plot method", ha='center')
-            plt.savefig(buf, format='png', bbox_inches='tight')
+               ax.text(0.5, 0.5, "No plot method", ha='center')
+            fig.savefig(buf, format='png', bbox_inches='tight')
             plt.close(fig)
+            filename = "telescope_preview.png"
             
         elif layer_conf.type == 'camera':
-            plt.figure(figsize=(5,5))
-            plt.text(0.5, 0.5, "Camera Detector", ha='center')
-            plt.axis('off')
-            plt.savefig(buf, format='png')
-            plt.close()
+            # Visualize Camera (Dark Frame / Noise)
+            try:
+                if isinstance(layer_conf.config, dict):
+                    config = CameraPayload(**layer_conf.config)
+                else:
+                    config = layer_conf.config
+                    
+                camera = helios.Camera(
+                    pixels=(256, 256), 
+                    integration_time=float(config.exposure) * u.s,
+                    wavelength=float(config.wavelength) * u.um
+                )
+                
+                # plot creates its own figure, let's try to control it if possible
+                # Camera.plot returns ax
+                # We can resize the figure controls
+                ax = camera.plot(wavefront=None, show=False, title="Detector Dark Frame Preview")
+                fig = ax.figure
+                fig.set_size_inches(figsize)
+                
+                fig.savefig(buf, format='png', bbox_inches='tight', dpi=100)
+                plt.close(fig)
+                filename = "camera_preview.png"
+                
+            except Exception as e:
+                print(f"Error previewing camera: {e}")
+                fig, ax = plt.subplots(figsize=(4, 1))
+                ax.text(0.5, 0.5, f"Error: {str(e)}", ha='center', va='center')
+                ax.axis('off')
+                fig.savefig(buf, format='png')
+                plt.close(fig)
 
         buf.seek(0)
-        return Response(content=buf.getvalue(), media_type="image/png")
+        return Response(
+            content=buf.getvalue(), 
+            media_type="image/png",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/presets/{preset_name}")
+def get_preset(preset_name: str):
+    """Get configuration for a standard telescope preset."""
+    try:
+        telescope = None
+        if preset_name == "VLTI-UT":
+            telescope = helios.TelescopeArray.vlti(uts=True)
+        elif preset_name == "VLTI-AT":
+            telescope = helios.TelescopeArray.vlti(uts=False)
+        elif preset_name == "LIFE":
+            telescope = helios.TelescopeArray.life()
+        else:
+            raise HTTPException(status_code=404, detail="Preset not found")
+            
+        collectors_data = []
+        for col in telescope.collectors:
+            # Extract data. Position is (x, y) in meters.
+            x, y = col.position
+            # Size
+            if hasattr(col.size, 'to'):
+                diameter = col.size.to(u.m).value
+            else:
+                diameter = float(col.size)
+            
+            # Pupil inference (simplified)
+            # We need to map back to our simple frontend types if possible, or just default to Custom/Circular
+            # VLT and LIFE have specific pupil classes.
+            # We can try to guess based on name or diameter, or just send "Circular"/generic params.
+            
+            # Default
+            pupil_type = "Circular"
+            central_obstruction = 0.0
+            spiders = 0
+            
+            # Heuristics
+            if "UT" in str(col.name) or "VLT" in str(col.name):
+                pupil_type = "VLT"
+            elif "LIFE" in str(col.name):
+                # LIFE pupil is obstructed
+                pupil_type = "Obstructed"
+                central_obstruction = 0.5 # Default life obs
+                # Actually checking the pupil object would be better if we exposed attributes
+                # But for now, hardcoded mapping is safer than introspection of complex objects
+    
+            collectors_data.append({
+                "x": float(x),
+                "y": float(y),
+                "diameter": float(diameter),
+                "pupil_type": pupil_type,
+                "central_obstruction": central_obstruction,
+                "spiders": spiders
+            })
+            
+        return collectors_data
 
     except Exception as e:
         import traceback

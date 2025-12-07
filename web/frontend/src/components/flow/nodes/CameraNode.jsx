@@ -2,23 +2,28 @@ import React from 'react';
 import { Handle, Position, useReactFlow } from 'reactflow';
 import { Camera, Trash2 } from 'lucide-react';
 
+import LayerVisualizer from './LayerVisualizer';
+
 export default function CameraNode({ id, data }) {
     const { deleteElements } = useReactFlow();
 
     return (
         <div className="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 shadow-xl min-w-[250px] relative">
-            <Handle type="target" position={Position.Left} className="!bg-purple-500 !-left-3 !w-3 !h-3" />
+            <Handle type="target" id="target" position={Position.Left} className="!bg-purple-500 !-left-4 !w-4 !h-4" />
             <div className="bg-slate-50 dark:bg-slate-900 px-4 py-2 border-b border-slate-200 dark:border-slate-800 rounded-t-lg font-semibold text-pink-600 dark:text-pink-400 flex items-center justify-between">
                 <div className="flex items-center">
                     <Camera className="w-4 h-4 mr-2" /> Camera / Detector
                 </div>
-                <button
-                    onClick={() => deleteElements({ nodes: [{ id }] })}
-                    className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 hover:text-red-500 dark:hover:text-red-400 transition-colors"
-                    title="Delete Node"
-                >
-                    <Trash2 className="w-4 h-4" />
-                </button>
+                <div className="flex gap-2">
+                    <LayerVisualizer type="camera" config={data.config} />
+                    <button
+                        onClick={() => deleteElements({ nodes: [{ id }] })}
+                        className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 hover:text-red-500 dark:hover:text-red-400 transition-colors"
+                        title="Delete Node"
+                    >
+                        <Trash2 className="w-4 h-4" />
+                    </button>
+                </div>
             </div>
             <div className="p-4 space-y-3 nodrag text-sm">
                 <div>

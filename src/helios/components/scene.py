@@ -599,6 +599,98 @@ class Scene(Layer):
             return img, xq, yq
         return img
 
+    def plot_sed(self, wavelengths: Optional[u.Quantity] = None, ax=None, **kwargs):
+        """
+        Plot the SED of the entire scene (and individual components).
+
+        Parameters
+        ----------
+        wavelengths : astropy.Quantity, optional
+            Wavelength grid.
+        ax : matplotlib.axes.Axes, optional
+            Axes to plot on.
+        kwargs : dict
+            Passed to plot functions.
+        """
+        import matplotlib.pyplot as plt
+        
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(8, 6))
+        else:
+            fig = ax.figure
+
+        # Plot individual components
+        total_sed = None
+        wl_grid = None
+        
+        # Use a consistent wavelength grid for summation
+        if wavelengths is None:
+             wavelengths = np.logspace(np.log10(0.1), np.log10(100), 200) * u.um
+
+        for obj in self.objects:
+            # Plot individual objects
+            try:
+                # We use the object's plot_sed but capture the return to sum it up manually if needed
+                # However, plot_sed plots directly. For summation we need the data.
+                # So we calculate SED first.
+                wl, sed = obj.sed(wavelengths=wavelengths)
+                
+                # Convert to plot units (assume um and W/m2/um/sr for consistency)
+                wl_plot = wl.to(u.um).value
+                sed_plot = sed.to(u.W / (u.m**2 * u.um * u.sr)).value
+                
+                # DEBUG: Print ranges
+                if len(sed_plot) > 0:
+                    print(f"DEBUG SED for {type(obj).__name__}: min={np.min(sed_plot):.2e}, max={np.max(sed_plot):.2e}")
+                else:
+                    print(f"DEBUG SED for {type(obj).__name__}: EMPTY")
+                
+                # Plot
+                label = getattr(obj, 'name', None) or type(obj).__name__
+                if isinstance(obj, Star):
+                    ls = '-'
+                    colors = ['orange', 'gold', 'yellow']
+                    c = colors[0] # simplified
+                    lw = 1.5
+                    alpha = 0.7
+                    zorder = 5
+                elif isinstance(obj, Planet):
+                    ls = '--'
+                    c = 'blue'
+                    lw = 2.0
+                    alpha = 1.0 # Make fully opaque
+                    zorder = 10 # Bring to front
+                else:
+                    ls = ':'
+                    c = 'gray'
+                    lw = 1.0
+                    alpha = 0.5
+                    zorder = 1
+                    
+                ax.loglog(wl_plot, sed_plot, label=label, linestyle=ls, color=c, alpha=alpha, linewidth=lw, zorder=zorder)
+                
+                # Accumulate total
+                if total_sed is None:
+                    total_sed = sed_plot
+                    wl_grid = wl_plot
+                else:
+                    total_sed += sed_plot
+                    
+            except Exception as e:
+                print(f"Failed to plot SED for {obj}: {e}")
+
+        # Plot Total
+        if total_sed is not None and len(self.objects) > 1:
+            ax.loglog(wl_grid, total_sed, label='Total Scene', color='black', linewidth=2, alpha=0.8, linestyle='-', zorder=20)
+
+        ax.set_xlabel('Wavelength [um]')
+        ax.set_ylabel('Spectral Radiance [W m^-2 um^-1 sr^-1]')
+        ax.grid(True, which='both', linestyle='--', alpha=0.4)
+        ax.legend()
+        ax.set_title(f"Scene SED: {self.name}")
+        
+        return fig, ax
+
 
 
 
@@ -641,11 +733,21 @@ def modified_blackbody(wavelengths: Optional[u.Quantity], temperature: u.Quantit
 
     return wavelengths, sed
 
-    def plot(self):
+    def plot(self, ax=None):
         """
         Plot the scene.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes, optional
+            Axes to plot on. If None, creates a new figure.
         """
-        fig, ax = plt.subplots(figsize=(8, 8))
+        import matplotlib.pyplot as plt
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(8, 8))
+        else:
+            fig = ax.figure
+
         ax.set_aspect('equal')
         ax.set_xlabel('RA offset [arcsec]')
         ax.set_ylabel('Dec offset [arcsec]')
@@ -757,102 +859,7 @@ def modified_blackbody(wavelengths: Optional[u.Quantity], temperature: u.Quantit
 
 
 # Attach a module-level implementation of plot to ensure the method exists
-def _scene_plot(self):
-    fig, ax = plt.subplots(figsize=(8, 8))
-    ax.set_aspect('equal')
-    ax.set_xlabel('RA offset [arcsec]')
-    ax.set_ylabel('Dec offset [arcsec]')
-    ax.invert_xaxis()
-    ax.set_axisbelow(True)
-    xs = []
-    ys = []
-    disks = []
 
-    for obj in self.objects:
-        if isinstance(obj, (Zodiacal, ExoZodiacal)):
-            disks.append(obj)
-            continue
-
-        if isinstance(obj, Star):
-            marker = '*'
-            color = 'gold'
-            size = 200 * np.log10(obj.mass.to(u.M_sun).value + 1) + 50
-            label = f'Star ({obj.magnitude} mag)'
-        elif isinstance(obj, Planet):
-            marker = 'o'
-            color = 'blue'
-            size = 100 * np.log10(obj.mass.to(u.M_jup).value + 1) + 20
-            label = f'Planet ({obj.mass})'
-        else:
-            marker = '.'
-            color = 'gray'
-            size = 10
-            label = 'Object'
-
-        px, py = obj.position
-        if isinstance(obj, Star):
-            px, py = (0*u.arcsec, 0*u.arcsec)
-        if px.unit.is_equivalent(u.m) and self.distance is not None:
-            x = (px / self.distance).to(u.arcsec, equivalencies=u.dimensionless_angles())
-            y = (py / self.distance).to(u.arcsec, equivalencies=u.dimensionless_angles())
-        elif px.unit.is_equivalent(u.deg):
-            x = px.to(u.arcsec)
-            y = py.to(u.arcsec)
-        else:
-            x = px.to(u.arcsec)
-            y = py.to(u.arcsec)
-
-        ax.scatter(x.value, y.value, s=size, marker=marker, c=color, label=label)
-
-        try:
-            xs.append(float(x.to(u.arcsec).value))
-            ys.append(float(y.to(u.arcsec).value))
-        except Exception:
-            xs.append(float(x.value))
-            ys.append(float(y.value))
-
-    if len(xs) == 0 or len(ys) == 0:
-        lim = 1.0
-    else:
-        max_abs = max(max(np.abs(xs)), max(np.abs(ys)))
-        lim = float(max_abs) * 1.1
-        if lim == 0:
-            lim = 1.0
-
-    ax.set_xlim(-lim, lim)
-    ax.set_ylim(-lim, lim)
-
-    for disk in disks:
-        if disk.radius is not None:
-            try:
-                r_arcsec = float(disk.radius.to(u.arcsec).value)
-            except Exception:
-                r_arcsec = float(disk.radius)
-        else:
-            r_arcsec = lim
-
-        if isinstance(disk, Zodiacal):
-            color = 'sandybrown'
-            label = 'Zodiacal'
-        else:
-            color = 'lightsteelblue'
-            label = 'ExoZodiacal'
-
-        alpha = float(np.clip(disk.brightness * 0.2, 0.03, 0.8))
-        circ = Circle((0.0, 0.0), r_arcsec, color=color, alpha=alpha, zorder=0, label=label)
-        ax.add_patch(circ)
-
-    handles, labels = ax.get_legend_handles_labels()
-    by_label = dict(zip(labels, handles))
-    ax.legend(by_label.values(), by_label.keys())
-
-    plt.grid(True, linestyle='--', alpha=0.5)
-    plt.title(f"Scene (Distance: {self.distance})")
-    return fig, ax
-
-
-# Bind to class
-Scene.plot = _scene_plot
 
 def test_scene_creation():
     scene = Scene(distance=10*u.pc)

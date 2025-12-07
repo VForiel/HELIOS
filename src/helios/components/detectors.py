@@ -3,6 +3,7 @@ from typing import Tuple, Optional, Any
 from astropy import units as u
 from ..core.context import Element, Context
 from ..core.simulation import Wavefront, WavefrontArray
+import matplotlib.pyplot as plt
 
 class Camera(Element):
     __slots__ = (
@@ -383,6 +384,79 @@ class Camera(Element):
             Reduced detector image in electrons
         """
         return self.get_image(wavefront, context, subtract_dark=True)
+        
+    def plot(self, wavefront: Optional[Wavefront] = None, 
+             context: Optional[Context] = None,
+             ax: Optional[plt.Axes] = None,
+             show: bool = True,
+             title: Optional[str] = None,
+             log_scale: bool = False) -> plt.Axes:
+        """
+        Visualize the camera detector output.
+        
+        Simulates the full detection process (acquisition, noise, dark subtraction)
+        and plots the resulting image.
+        
+        Parameters
+        ----------
+        wavefront : Wavefront, optional
+            Input wavefront. If None, plots a dark frame (or empty image).
+        context : Context, optional
+            Simulation context.
+        ax : matplotlib.axes.Axes, optional
+            Axes to plot on. If None, creates a new figure.
+        show : bool, optional
+            If True, calls plt.show(). Default: True
+        title : str, optional
+            Custom title for the plot.
+        log_scale : bool, optional
+            If True, plot intensity in log scale (log10). Default: False
+            
+        Returns
+        -------
+        ax : matplotlib.axes.Axes
+            The axes containing the plot.
+        """
+        # Get the simulated image
+        image = self.get_image(wavefront, context)
+        
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(8, 8))
+        
+        # Prepare data for plotting
+        plot_data = image
+        if log_scale:
+            # Avoid log(0) or log(negative)
+            plot_data = np.log10(np.maximum(image, 1e-10))
+            
+        # Plot
+        # Use origin='lower' to match astronomical convention (y increases upwards)
+        im = ax.imshow(plot_data, origin='lower', cmap='inferno')
+        
+        # Colorbar
+        cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+        cbar.set_label('Counts (e-)' if not log_scale else 'Log Counts (e-)')
+        
+        # Labels and Title
+        ax.set_xlabel('Pixel X')
+        ax.set_ylabel('Pixel Y')
+        
+        if title:
+            ax.set_title(title)
+        else:
+            base_title = f"Camera Output ({self.pixels[0]}x{self.pixels[1]})"
+            extra = []
+            if wavefront is None:
+                extra.append("Dark Frame")
+            else:
+                extra.append(f"Exp: {self.integration_time}")
+            
+            ax.set_title(f"{base_title} - {', '.join(extra)}")
+            
+        if show:
+            plt.show()
+            
+        return ax
     
     def _get_detailed_attributes(self) -> dict:
         """Return detailed attributes for Camera."""

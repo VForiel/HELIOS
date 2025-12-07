@@ -200,3 +200,27 @@ Object: Star, Position: 0.0 arcsec, 0.0 arcsec
   Unit: arcsec, Equiv rad: True
 Object: Planet, Position: 0.1 arcsec, 0.0 arcsec
   Unit: arcsec, Equiv rad: True
+Context layers: 3
+  - Scene (<class 'helios.components.scene.Scene'>)
+  - TelescopeArray (<class 'helios.components.collector.TelescopeArray'>)
+  - Camera (<class 'helios.components.detectors.Camera'>)
+Scene found. Coherent: True
+Scene objects: 2
+  - Star
+  - Planet
+Object: Star, Position: 0.0 arcsec, 0.0 arcsec
+  Unit: arcsec, Equiv rad: True
+Object: Planet, Position: 0.1 arcsec, 0.0 arcsec
+  Unit: arcsec, Equiv rad: True
+Context layers: 3
+  - Scene (<class 'helios.components.scene.Scene'>)
+  - TelescopeArray (<class 'helios.components.collector.TelescopeArray'>)
+  - Camera (<class 'helios.components.detectors.Camera'>)
+Scene found. Coherent: True
+Scene objects: 2
+  - Star
+  - Planet
+Object: Star, Position: 0.0 arcsec, 0.0 arcsec
+  Unit: arcsec, Equiv rad: True
+Object: Planet, Position: 0.1 arcsec, 0.0 arcsec
+  Unit: arcsec, Equiv rad: True

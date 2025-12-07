@@ -512,9 +512,17 @@ class TelescopeArray(Layer):
         if ax is None:
             fig, ax = _plt.subplots(figsize=(8, 8))
         
+        # Handle empty collector list gracefully
+        if len(self.collectors) == 0:
+            ax.text(0.5, 0.5, "No Collectors Defined", ha='center', va='center', fontsize=12)
+            ax.set_xticks([])
+            ax.set_yticks([])
+            ax.set_title(f'{self.name} - Empty Configuration')
+            return ax
+
         baselines = self.get_baseline_array()
         
-        if show_pupils and len(self.collectors) > 0:
+        if show_pupils:
             # Determine plot extent and resolution
             max_extent = 0
             for collector in self.collectors:
