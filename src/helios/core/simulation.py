@@ -5,6 +5,13 @@ from typing import Optional, List, Tuple, Callable, Union
 import matplotlib.pyplot as plt
 import copy
 from tqdm.auto import tqdm
+from enum import Enum
+
+class PlaneType(Enum):
+    PUPIL = 'pupil'
+    IMAGE = 'image'
+    DETECTOR = 'detector'
+    INTERMEDIATE = 'intermediate'
 
 def _get_smart_extent(shape: Tuple[int, ...], pixel_scale: u.Quantity):
     """
@@ -146,6 +153,10 @@ class Wavefront(u.Quantity):
         Angular size per pixel (if applicable).
     source_directions : Quantity, optional
         (M, 2) array of source directions (theta_x, theta_y) in radians.
+    planetype : PlaneType
+        Current plane type (PUPIL, IMAGE, etc.).
+    history : list
+        List of strings describing the history of operations.
     
     Examples
     --------
@@ -228,6 +239,12 @@ class Wavefront(u.Quantity):
         self._last_focal_length_m = None
         self.source_directions = None
         self.sources = kwargs.get('sources', None)
+        
+        # POPPY-inspired attributes
+        self.planetype = kwargs.get('planetype', PlaneType.PUPIL)
+        self.history = kwargs.get('history', [])
+        if not self.history:
+            self.history.append(f"Created Wavefront: wavelength={self.wavelength}, size={self.width}, npix={self.npix}")
 
     def __array_finalize__(self, obj):
         if obj is None: return
@@ -244,6 +261,12 @@ class Wavefront(u.Quantity):
         self.sources = getattr(obj, 'sources', None)
         if self.sources is not None and isinstance(self.sources, list):
             self.sources = list(self.sources)
+            
+        self.planetype = getattr(obj, 'planetype', PlaneType.PUPIL)
+        self.history = getattr(obj, 'history', [])
+        # We might want to copy history to avoid shared mutable state issues, 
+        # but for now let's keep it simple or copy if needed.
+        # self.history = list(getattr(obj, 'history', [])) 
         
         if self.ndim >= 2:
             self.npix = self.shape[-1]
@@ -391,6 +414,9 @@ class Wavefront(u.Quantity):
             new_wf.sources = wf.sources
             new_wf.source_directions = wf.source_directions
             new_wf._last_focal_length_m = wf._last_focal_length_m
+            new_wf.planetype = wf.planetype
+            new_wf.history = list(wf.history)
+            new_wf.history.append(f"Adapted to size={size}, npix={npix}")
             return new_wf
         
         return wf
@@ -404,7 +430,130 @@ class Wavefront(u.Quantity):
         Wavefront
             A new Wavefront instance with independent field array.
         """
-        return super().copy()
+        new_obj = super().copy()
+        # Ensure mutable attributes are copied
+        new_obj.history = list(self.history)
+        return new_obj
+
+    @property
+    def amplitude(self):
+        """Electric field amplitude of the wavefront."""
+        return np.abs(self)
+
+    @property
+    def intensity(self):
+        """Electric field intensity of the wavefront (amplitude squared)."""
+        return np.abs(self)**2
+
+    @property
+    def phase(self):
+        """Phase of the wavefront in radians."""
+        return np.angle(self)
+
+    @property
+    def total_intensity(self):
+        """Integrated intensity over the spatial extent."""
+        return np.sum(self.intensity)
+    
+    def coordinates(self) -> Tuple[u.Quantity, u.Quantity]:
+        """
+        Return (y, x) coordinate arrays for the wavefront grid.
+        
+        Returns
+        -------
+        y, x : astropy.Quantity
+            Coordinate arrays in physical units (meters) or angular units (radians/arcsec)
+            depending on the plane type.
+            Shape matches the wavefront spatial dimensions (H, W).
+        """
+        if self.ndim == 3:
+            h, w = self.shape[1], self.shape[2]
+        else:
+            h, w = self.shape
+            
+        if self.pixel_scale is None:
+            raise ValueError("Cannot compute coordinates: pixel_scale is None")
+            
+        scale = self.pixel_scale
+        
+        # Create 1D arrays centered at 0
+        y_idx = np.arange(h) - (h - 1) / 2.0
+        x_idx = np.arange(w) - (w - 1) / 2.0
+        
+        # Meshgrid
+        X_idx, Y_idx = np.meshgrid(x_idx, y_idx)
+        
+        # Multiply by scale (Quantity)
+        Y = Y_idx * scale
+        X = X_idx * scale
+        
+        return Y, X
+
+    def tilt(self, x_angle: u.Quantity = 0*u.rad, y_angle: u.Quantity = 0*u.rad):
+        """
+        Tilt the wavefront by applying a phase ramp.
+        
+        Parameters
+        ----------
+        x_angle : astropy.Quantity
+            Tilt angle around Y axis (tilts X).
+        y_angle : astropy.Quantity
+            Tilt angle around X axis (tilts Y).
+        """
+        if not isinstance(x_angle, u.Quantity): x_angle = x_angle * u.rad
+        if not isinstance(y_angle, u.Quantity): y_angle = y_angle * u.rad
+        
+        Y, X = self.coordinates() # Quantities
+        
+        # Optical Path Difference
+        # opd = x * tan(theta_x) + y * tan(theta_y)
+        opd = X * np.tan(x_angle) + Y * np.tan(y_angle)
+        
+        # Phasor = exp(i * k * opd) = exp(i * 2*pi/lambda * opd)
+        phasor = np.exp(1j * 2 * np.pi * opd / self.wavelength)
+        
+        # Apply in place
+        self[:] = self * phasor
+        self.history.append(f"Tilted by x={x_angle}, y={y_angle}")
+        return self
+
+    def rotate(self, angle: u.Quantity):
+        """
+        Rotate the wavefront array.
+        
+        Parameters
+        ----------
+        angle : astropy.Quantity
+            Rotation angle (counter-clockwise).
+        """
+        from scipy.ndimage import rotate
+        
+        if not isinstance(angle, u.Quantity): angle = angle * u.deg
+        angle_deg = angle.to(u.deg).value
+        
+        # Rotate real and imag parts
+        # We need to handle 3D (nsource, h, w) or 2D (h, w)
+        if self.ndim == 3:
+            new_val = np.zeros_like(self.value)
+            for i in range(self.shape[0]):
+                r = rotate(self[i].real, angle_deg, reshape=False, mode='constant', cval=0.0)
+                im = rotate(self[i].imag, angle_deg, reshape=False, mode='constant', cval=0.0)
+                new_val[i] = r + 1j * im
+        else:
+            r = rotate(self.real, angle_deg, reshape=False, mode='constant', cval=0.0)
+            im = rotate(self.imag, angle_deg, reshape=False, mode='constant', cval=0.0)
+            new_val = r + 1j * im
+            
+        # Update self
+        self[:] = new_val
+        self.history.append(f"Rotated by {angle}")
+        return self
+
+    def display(self, **kwargs):
+        """
+        Alias for plot() to match POPPY interface.
+        """
+        return self.plot(**kwargs)
 
     def plot(self, title: Optional[str] = None, figsize: Optional[tuple] = None, 
              show: bool = True, log_scale: bool = True, stack_method: Optional[Callable] = None,
@@ -566,6 +715,70 @@ class Wavefront(u.Quantity):
             
         return fig, axes
 
+    def propagate_fresnel(self, distance: u.Quantity) -> 'Wavefront':
+        """
+        Propagate the wavefront by a distance dz using the Angular Spectrum Method (ASM).
+        Maintains the same pixel scale (approx).
+        
+        Parameters
+        ----------
+        distance : astropy.Quantity
+            Propagation distance.
+            
+        Returns
+        -------
+        Wavefront
+            Propagated wavefront in the same plane type (PUPIL/INTERMEDIATE).
+        """
+        if not isinstance(distance, u.Quantity): distance = distance * u.m
+        dz = distance.to(u.m).value
+        
+        # Get spatial frequencies
+        if self.ndim == 3:
+            h, w = self.shape[1], self.shape[2]
+        else:
+            h, w = self.shape
+            
+        dx = self.pixel_scale.to(u.m).value
+        
+        fx = np.fft.fftfreq(w, d=dx)
+        fy = np.fft.fftfreq(h, d=dx)
+        FX, FY = np.meshgrid(fx, fy)
+        
+        # Wavenumber
+        lam = self.wavelength.to(u.m).value
+        k = 2 * np.pi / lam
+        
+        # Transfer function H = exp(i * z * sqrt(k^2 - 4*pi^2*(fx^2 + fy^2)))
+        # Or H = exp(i * k * z * sqrt(1 - (lambda*fx)^2 - (lambda*fy)^2))
+        
+        # Check for evanescent waves
+        sq_arg = 1 - (lam * FX)**2 - (lam * FY)**2
+        # Zero out evanescent waves to avoid instability
+        mask = sq_arg >= 0
+        
+        # Phase term
+        phase = k * dz * np.sqrt(sq_arg * mask)
+        H = np.exp(1j * phase) * mask
+        
+        # Propagate: IFT(FT(U) * H)
+        # We handle 3D or 2D
+        if self.ndim == 3:
+            new_field = np.zeros_like(self.value)
+            for i in range(self.shape[0]):
+                U_f = np.fft.fft2(self[i])
+                U_new = np.fft.ifft2(U_f * H)
+                new_field[i] = U_new
+        else:
+            U_f = np.fft.fft2(self)
+            U_new = np.fft.ifft2(U_f * H)
+            new_field = U_new
+            
+        new_wf = self.copy()
+        new_wf[:] = new_field
+        new_wf.history.append(f"Propagated Fresnel (ASM) by {distance}")
+        return new_wf
+
     def propagate(self, distance: Optional[u.Quantity] = None, padding: int = 1):
         """
         Propagate the wavefront towards the focal (image) plane.
@@ -606,6 +819,10 @@ class Wavefront(u.Quantity):
         else:
             d_m = float(distance.to(u.m).value)
 
+        # Check plane type
+        if self.planetype == PlaneType.IMAGE:
+            warnings.warn("Propagating from IMAGE plane. Assuming re-propagation or error.", RuntimeWarning)
+        
         wf = self
         if padding > 1:
             samples, h, w = self.shape
@@ -621,6 +838,9 @@ class Wavefront(u.Quantity):
             wf.sources = self.sources
             wf.source_directions = self.source_directions
             wf._last_focal_length_m = self._last_focal_length_m
+            wf.planetype = self.planetype
+            wf.history = list(self.history)
+            wf.history.append(f"Padded by factor {padding}")
 
         # Basic FFT-based Fraunhofer propagation to focal plane
         field = np.fft.fftshift(np.fft.fft2(np.fft.fftshift(wf, axes=(-2, -1)), axes=(-2, -1)), axes=(-2, -1))
@@ -629,6 +849,7 @@ class Wavefront(u.Quantity):
         new_wf.sources = wf.sources
         new_wf.source_directions = wf.source_directions
         new_wf._last_focal_length_m = wf._last_focal_length_m
+        new_wf.history = list(wf.history)
         
         N = field.shape[-1]
         
@@ -638,6 +859,9 @@ class Wavefront(u.Quantity):
             
             # Calculate pixel_angle
             new_wf.pixel_angle = (new_wf.pixel_scale / (d_m * u.m)) * u.rad
+            
+            new_wf.planetype = PlaneType.IMAGE
+            new_wf.history.append(f"Propagated to Image Plane (d={d_m}m). Scale: {new_wf.pixel_scale:.2e}")
         else:
             pass
             
