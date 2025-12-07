@@ -67,6 +67,9 @@ class CollectorData(BaseModel):
 class TelescopePayload(BaseModel):
     preset: str = "Single"
     diameter: Optional[float] = 8.0
+    pupil_type: str = "Circular"
+    central_obstruction: float = 0.0
+    spiders: int = 0
     collectors: List[CollectorData] = []
 
 class CameraPayload(BaseModel):
@@ -150,7 +153,21 @@ def create_telescope(config: TelescopePayload):
     elif config.preset == "Single":
          telescope = helios.TelescopeArray(name="Single Telescope")
          diam = config.diameter if config.diameter else 8.0
-         pupil = helios.Pupil(diameter=diam * u.m)
+         
+         if config.pupil_type == "VLT":
+             pupil = helios.Pupil.vlt()
+         elif config.pupil_type == "JWST":
+             pupil = helios.Pupil.jwst()
+         elif config.pupil_type == "Obstructed":
+             pupil = helios.Pupil(diameter=diam * u.m)
+             pupil.add_disk(radius=diam/2 * u.m)
+             pupil.add_central_obscuration(diameter=diam * config.central_obstruction * u.m)
+             if config.spiders > 0:
+                 pupil.add_spiders(arms=config.spiders, width=0.02 * diam * u.m)
+         else:
+             pupil = helios.Pupil(diameter=diam * u.m)
+             pupil.add_disk(radius=diam/2 * u.m)
+             
          telescope.add_collector(pupil=pupil, position=(0,0), size=diam*u.m)
          return telescope
     else:
@@ -166,10 +183,7 @@ def create_telescope(config: TelescopePayload):
                 p = helios.Pupil.jwst()
             elif col.pupil_type == "Obstructed":
                 p = helios.Pupil(diameter=col.diameter * u.m)
-                p.add_disk(radius=col.diameter/2 * u.m) # redundant if diameter set? Pupil init logic varies.
-                # Actually helios.Pupil(diameter=...) sets grid size, doesn't draw aperture?
-                # Need to verify Pupil class. It usually starts empty.
-                p.add_disk(radius=col.diameter/2 * u.m)
+                p.add_disk(radius=col.diameter/2 * u.m) 
                 p.add_central_obscuration(diameter=col.diameter * col.central_obstruction * u.m)
                 if col.spiders > 0: p.add_spiders(arms=col.spiders, width=0.02 * col.diameter * u.m)
             else: # Circular

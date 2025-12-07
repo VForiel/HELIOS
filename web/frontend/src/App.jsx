@@ -17,15 +17,30 @@ function App() {
     const [atmosphere, setAtmosphere] = useState({ enabled: false, rms_nm: 100, wind_speed: 5.0 });
 
     const [telescope, setTelescope] = useState({
-        preset: 'Single',
+        preset: 'Custom',
         diameter: 8.0,
-        collectors: []
+        collectors: [{ x: 0, y: 0, diameter: 8.0, pupil_type: 'Circular', central_obstruction: 0, spiders: 0 }]
     });
     const [camera, setCamera] = useState({ wavelength: 1.0, exposure: 0.1 });
 
     const [loading, setLoading] = useState(false);
     const [image, setImage] = useState(null);
     const [error, setError] = useState(null);
+
+    // UI State
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const [theme, setTheme] = useState('dark');
+
+    // Theme Effect
+    React.useEffect(() => {
+        if (theme === 'dark') {
+            document.documentElement.classList.add('dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+        }
+    }, [theme]);
+
+    const toggleTheme = () => setTheme(prev => prev === 'dark' ? 'light' : 'dark');
 
     // --- Pipeline Execution ---
     const runPipeline = async (pipeline_layers) => {
@@ -79,57 +94,53 @@ function App() {
     return (
         <ErrorBoundary>
             <ReactFlowProvider>
-                <div className="flex h-screen bg-slate-900 text-slate-100 font-sans overflow-hidden">
-                    {/* TOOLBOX SIDEBAR */}
-                    <div className="w-64 flex-shrink-0 bg-slate-900 border-r border-slate-800 flex flex-col h-full z-20 shadow-xl">
-                        <div className="p-5 border-b border-slate-800">
-                            <h1 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-indigo-500 bg-clip-text text-transparent">
-                                HELIOS <span className="text-xs font-normal text-slate-500 block">Visual Architect</span>
-                            </h1>
-                        </div>
+                <div className={`flex h-screen font-sans overflow-hidden transition-colors duration-300 ${theme === 'dark' ? 'bg-slate-900 text-slate-100' : 'bg-slate-50 text-slate-900'}`}>
 
-                        <div className="p-4 space-y-4">
+                    {/* TOOLBOX SIDEBAR */}
+                    <div className={`${isSidebarOpen ? 'w-64 translate-x-0' : 'w-0 -translate-x-full opacity-0'} transition-all duration-300 ease-in-out flex-shrink-0 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col h-full z-20 shadow-xl overflow-hidden`}>
+                        {/* Sidebar Header removed as it is now in Top Bar */}
+                        <div className="p-4 space-y-4 min-w-[256px] mt-4">
                             <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Block Library</div>
 
-                            <div className="bg-slate-800 p-3 rounded cursor-grab border border-slate-700 hover:border-blue-500 transition-colors flex items-center"
+                            <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-blue-500 transition-colors flex items-center"
                                 onDragStart={(event) => onDragStart(event, 'scene')} draggable>
                                 <div className="w-3 h-3 rounded-full bg-blue-500 mr-3"></div>
-                                <span>Scene Source</span>
+                                <span className="text-slate-700 dark:text-slate-200">Scene Source</span>
                             </div>
 
-                            <div className="bg-slate-800 p-3 rounded cursor-grab border border-slate-700 hover:border-cyan-500 transition-colors flex items-center"
+                            <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-cyan-500 transition-colors flex items-center"
                                 onDragStart={(event) => onDragStart(event, 'atmosphere')} draggable>
                                 <div className="w-3 h-3 rounded-full bg-cyan-500 mr-3"></div>
-                                <span>Atmosphere Layer</span>
+                                <span className="text-slate-700 dark:text-slate-200">Atmosphere Layer</span>
                             </div>
 
-                            <div className="bg-slate-800 p-3 rounded cursor-grab border border-slate-700 hover:border-purple-500 transition-colors flex items-center"
+                            <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-purple-500 transition-colors flex items-center"
                                 onDragStart={(event) => onDragStart(event, 'telescope')} draggable>
                                 <div className="w-3 h-3 rounded-full bg-purple-500 mr-3"></div>
-                                <span>Telescope</span>
+                                <span className="text-slate-700 dark:text-slate-200">Telescope</span>
                             </div>
 
-                            <div className="bg-slate-800 p-3 rounded cursor-grab border border-slate-700 hover:border-pink-500 transition-colors flex items-center"
+                            <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-pink-500 transition-colors flex items-center"
                                 onDragStart={(event) => onDragStart(event, 'camera')} draggable>
                                 <div className="w-3 h-3 rounded-full bg-pink-500 mr-3"></div>
-                                <span>Camera / Detector</span>
+                                <span className="text-slate-700 dark:text-slate-200">Camera / Detector</span>
                             </div>
                         </div>
 
-                        <div className="mt-auto p-4 border-t border-slate-800">
+                        <div className="mt-auto p-4 border-t border-slate-200 dark:border-slate-800 min-w-[256px]">
                             {image && (
                                 <div className="relative group cursor-pointer" onClick={() => window.open(image, '_blank')}>
-                                    <div className="absolute top-0 right-0 bg-blue-600 text-xs px-2 py-1 rounded-bl">Result</div>
-                                    <img src={image} className="w-full h-32 object-contain bg-black rounded border border-slate-700" alt="Result thumbnail" />
+                                    <div className="absolute top-0 right-0 bg-blue-600 text-xs px-2 py-1 rounded-bl text-white">Result</div>
+                                    <img src={image} className="w-full h-32 object-contain bg-black rounded border border-slate-300 dark:border-slate-700" alt="Result thumbnail" />
                                 </div>
                             )}
-                            {loading && <div className="text-center text-xs text-blue-400 mt-2 animate-pulse">Running Simulation...</div>}
-                            {error && <div className="text-xs text-red-400 mt-2 bg-red-900/20 p-2 rounded">{error}</div>}
+                            {loading && <div className="text-center text-xs text-blue-500 dark:text-blue-400 mt-2 animate-pulse">Running Simulation...</div>}
+                            {error && <div className="text-xs text-red-500 dark:text-red-400 mt-2 bg-red-100 dark:bg-red-900/20 p-2 rounded">{error}</div>}
                         </div>
                     </div>
 
                     {/* GRAPH EDITOR AREA */}
-                    <div className="flex-1 relative h-full bg-slate-950">
+                    <div className="flex-1 relative h-full bg-slate-50 dark:bg-slate-950">
                         <PipelineEditor
                             stars={stars} setStars={setStars}
                             planets={planets} setPlanets={setPlanets}
@@ -138,6 +149,9 @@ function App() {
                             telescope={telescope} setTelescope={setTelescope}
                             camera={camera} setCamera={setImage} // Basic camera node handling
                             runSimulation={runPipeline}
+                            onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+                            onToggleTheme={toggleTheme}
+                            isDark={theme === 'dark'}
                         />
                     </div>
                 </div>

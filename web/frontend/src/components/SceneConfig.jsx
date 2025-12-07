@@ -35,15 +35,15 @@ export default function SceneConfig({ stars, setStars, planets, setPlanets, zodi
         <div className="space-y-6">
 
             {/* Stars Section */}
-            <div className="bg-slate-800 p-5 rounded-lg border border-slate-700">
-                <h3 className="text-lg font-medium text-blue-400 mb-3 flex items-center">
+            <div className="bg-white dark:bg-slate-800 p-5 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm dark:shadow-none">
+                <h3 className="text-lg font-medium text-blue-600 dark:text-blue-400 mb-3 flex items-center">
                     <Sun className="w-5 h-5 mr-2" /> Stars
                 </h3>
                 <div className="space-y-3">
                     {stars.map((star, index) => (
-                        <div key={index} className="bg-slate-900/50 p-3 rounded border border-slate-800 text-sm">
+                        <div key={index} className="bg-slate-50 dark:bg-slate-900/50 p-3 rounded border border-slate-200 dark:border-slate-800 text-sm">
                             <div className="flex justify-between items-center mb-2">
-                                <span className="font-semibold text-slate-300">Star #{index + 1}</span>
+                                <span className="font-semibold text-slate-700 dark:text-slate-300">Star #{index + 1}</span>
                                 {stars.length > 0 && (
                                     <button onClick={() => removeStar(index)} className="text-red-400 hover:text-red-300">
                                         <Trash2 className="w-3.5 h-3.5" />
@@ -52,24 +52,24 @@ export default function SceneConfig({ stars, setStars, planets, setPlanets, zodi
                             </div>
                             <div className="grid grid-cols-2 gap-2">
                                 <div>
-                                    <label className="block text-xs text-slate-500">Temp (K)</label>
+                                    <label className="block text-xs text-slate-500 mb-1">Temp (K)</label>
                                     <input type="number" value={star.temperature} onChange={(e) => updateStar(index, 'temperature', e.target.value)}
-                                        className="w-full bg-slate-800 rounded px-2 py-1 border border-slate-700 focus:outline-none focus:border-blue-500" />
+                                        className="w-full bg-white dark:bg-slate-800 rounded px-2 py-1 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500" />
                                 </div>
                                 <div>
-                                    <label className="block text-xs text-slate-500">Mag</label>
+                                    <label className="block text-xs text-slate-500 mb-1">Mag</label>
                                     <input type="number" value={star.magnitude} onChange={(e) => updateStar(index, 'magnitude', e.target.value)}
-                                        className="w-full bg-slate-800 rounded px-2 py-1 border border-slate-700 focus:outline-none focus:border-blue-500" />
+                                        className="w-full bg-white dark:bg-slate-800 rounded px-2 py-1 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500" />
                                 </div>
                                 <div>
-                                    <label className="block text-xs text-slate-500">X (arcsec)</label>
+                                    <label className="block text-xs text-slate-500 mb-1">X (arcsec)</label>
                                     <input type="number" value={star.x_arcsec} onChange={(e) => updateStar(index, 'x_arcsec', e.target.value)}
-                                        className="w-full bg-slate-800 rounded px-2 py-1 border border-slate-700 focus:outline-none focus:border-blue-500" />
+                                        className="w-full bg-white dark:bg-slate-800 rounded px-2 py-1 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500" />
                                 </div>
                                 <div>
-                                    <label className="block text-xs text-slate-500">Y (arcsec)</label>
+                                    <label className="block text-xs text-slate-500 mb-1">Y (arcsec)</label>
                                     <input type="number" value={star.y_arcsec} onChange={(e) => updateStar(index, 'y_arcsec', e.target.value)}
-                                        className="w-full bg-slate-800 rounded px-2 py-1 border border-slate-700 focus:outline-none focus:border-blue-500" />
+                                        className="w-full bg-white dark:bg-slate-800 rounded px-2 py-1 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500" />
                                 </div>
                             </div>
                         </div>
@@ -81,39 +81,39 @@ export default function SceneConfig({ stars, setStars, planets, setPlanets, zodi
             </div>
 
             {/* Planets Section */}
-            <div className="bg-slate-800 p-5 rounded-lg border border-slate-700">
-                <h3 className="text-lg font-medium text-green-400 mb-3 flex items-center">
+            <div className="bg-white dark:bg-slate-800 p-5 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm dark:shadow-none">
+                <h3 className="text-lg font-medium text-green-600 dark:text-green-400 mb-3 flex items-center">
                     <Globe className="w-5 h-5 mr-2" /> Planets
                 </h3>
                 <div className="space-y-3">
                     {planets.map((planet, index) => (
-                        <div key={index} className="bg-slate-900/50 p-3 rounded border border-slate-800 text-sm">
+                        <div key={index} className="bg-slate-50 dark:bg-slate-900/50 p-3 rounded border border-slate-200 dark:border-slate-800 text-sm">
                             <div className="flex justify-between items-center mb-2">
-                                <span className="font-semibold text-slate-300">Planet #{index + 1}</span>
+                                <span className="font-semibold text-slate-700 dark:text-slate-300">Planet #{index + 1}</span>
                                 <button onClick={() => removePlanet(index)} className="text-red-400 hover:text-red-300">
                                     <Trash2 className="w-3.5 h-3.5" />
                                 </button>
                             </div>
                             <div className="grid grid-cols-2 gap-2">
                                 <div>
-                                    <label className="block text-xs text-slate-500">Separation (AU)</label>
+                                    <label className="block text-xs text-slate-500 mb-1">Separation (AU)</label>
                                     <input type="number" value={planet.separation} onChange={(e) => updatePlanet(index, 'separation', e.target.value)}
-                                        className="w-full bg-slate-800 rounded px-2 py-1 border border-slate-700 focus:outline-none focus:border-green-500" />
+                                        className="w-full bg-white dark:bg-slate-800 rounded px-2 py-1 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:border-green-500" />
                                 </div>
                                 <div>
-                                    <label className="block text-xs text-slate-500">Angle (deg)</label>
+                                    <label className="block text-xs text-slate-500 mb-1">Angle (deg)</label>
                                     <input type="number" value={planet.angle} onChange={(e) => updatePlanet(index, 'angle', e.target.value)}
-                                        className="w-full bg-slate-800 rounded px-2 py-1 border border-slate-700 focus:outline-none focus:border-green-500" />
+                                        className="w-full bg-white dark:bg-slate-800 rounded px-2 py-1 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:border-green-500" />
                                 </div>
                                 <div>
-                                    <label className="block text-xs text-slate-500">Mass (Mjup)</label>
+                                    <label className="block text-xs text-slate-500 mb-1">Mass (Mjup)</label>
                                     <input type="number" value={planet.mass} onChange={(e) => updatePlanet(index, 'mass', e.target.value)}
-                                        className="w-full bg-slate-800 rounded px-2 py-1 border border-slate-700 focus:outline-none focus:border-green-500" />
+                                        className="w-full bg-white dark:bg-slate-800 rounded px-2 py-1 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:border-green-500" />
                                 </div>
                                 <div>
-                                    <label className="block text-xs text-slate-500">Radius (Rjup)</label>
+                                    <label className="block text-xs text-slate-500 mb-1">Radius (Rjup)</label>
                                     <input type="number" value={planet.radius} onChange={(e) => updatePlanet(index, 'radius', e.target.value)}
-                                        className="w-full bg-slate-800 rounded px-2 py-1 border border-slate-700 focus:outline-none focus:border-green-500" />
+                                        className="w-full bg-white dark:bg-slate-800 rounded px-2 py-1 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:border-green-500" />
                                 </div>
                             </div>
                         </div>
@@ -125,9 +125,9 @@ export default function SceneConfig({ stars, setStars, planets, setPlanets, zodi
             </div>
 
             {/* Zodiacal Light Section */}
-            <div className="bg-slate-800 p-5 rounded-lg border border-slate-700">
+            <div className="bg-white dark:bg-slate-800 p-5 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm dark:shadow-none">
                 <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-lg font-medium text-yellow-400 flex items-center">
+                    <h3 className="text-lg font-medium text-yellow-500 dark:text-yellow-400 flex items-center">
                         <Zap className="w-5 h-5 mr-2" /> Zodiacal Light
                     </h3>
                     <div className="relative inline-block w-10 mr-2 align-middle select-none transition duration-200 ease-in">
@@ -138,14 +138,14 @@ export default function SceneConfig({ stars, setStars, planets, setPlanets, zodi
                 {zodiacal.enabled && (
                     <div className="grid grid-cols-2 gap-3 text-sm">
                         <div>
-                            <label className="block text-xs text-slate-500">Brightness</label>
+                            <label className="block text-xs text-slate-500 mb-1">Brightness</label>
                             <input type="number" value={zodiacal.brightness} step="0.1" onChange={(e) => setZodiacal({ ...zodiacal, brightness: parseFloat(e.target.value) })}
-                                className="w-full bg-slate-900 rounded px-2 py-1 border border-slate-700 focus:outline-none focus:border-yellow-500" />
+                                className="w-full bg-white dark:bg-slate-900 rounded px-2 py-1 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:border-yellow-500" />
                         </div>
                         <div>
-                            <label className="block text-xs text-slate-500">Radius (arcsec)</label>
+                            <label className="block text-xs text-slate-500 mb-1">Radius (arcsec)</label>
                             <input type="number" value={zodiacal.radius || ''} placeholder="Auto" onChange={(e) => setZodiacal({ ...zodiacal, radius: e.target.value ? parseFloat(e.target.value) : null })}
-                                className="w-full bg-slate-900 rounded px-2 py-1 border border-slate-700 focus:outline-none focus:border-yellow-500" />
+                                className="w-full bg-white dark:bg-slate-900 rounded px-2 py-1 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:border-yellow-500" />
                         </div>
                     </div>
                 )}

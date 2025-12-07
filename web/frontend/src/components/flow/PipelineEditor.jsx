@@ -9,6 +9,7 @@ import ReactFlow, {
     MiniMap
 } from 'reactflow';
 import 'reactflow/dist/style.css';
+import { Menu, Sun, Moon } from 'lucide-react';
 
 import SceneNode from './nodes/SceneNode';
 import AtmosphereNode from './nodes/AtmosphereNode';
@@ -32,7 +33,10 @@ export default function PipelineEditor({
     atmosphere, setAtmosphere,
     telescope, setTelescope,
     camera, setCamera,
-    runSimulation
+    runSimulation,
+    onToggleSidebar,
+    onToggleTheme,
+    isDark
 }) {
     const reactFlowWrapper = useRef(null);
     const [reactFlowInstance, setReactFlowInstance] = useState(null);
@@ -72,11 +76,6 @@ export default function PipelineEditor({
         setNodes((nds) =>
             nds.map((node) => {
                 if (node.type === 'scene') {
-                    // Update data refs directly to avoid full re-render on every keystroke if possible,
-                    // but ReactFlow shallow compares. We must pass fresh objects if we want updates inside nodes.
-                    // This creates a render loop if not careful.
-                    // Ideally, nodes should use internal state or context, but here we pass props.
-                    // We only strictly need to update if the reference changes from parent.
                     node.data = { stars, setStars, planets, setPlanets, zodiacal, setZodiacal };
                 } else if (node.type === 'atmosphere') {
                     node.data = { config: atmosphere, setConfig: setAtmosphere };
@@ -90,6 +89,16 @@ export default function PipelineEditor({
         );
     }, [stars, planets, zodiacal, atmosphere, telescope, camera, setNodes]);
 
+
+    // Enforce 1-to-1 connections per handle
+    const isValidConnection = useCallback((connection) => {
+        // Check if target handle already has a connection
+        const targetHasEdge = edges.some(e => e.target === connection.target && e.targetHandle === connection.targetHandle);
+        // Check if source handle already has a connection
+        const sourceHasEdge = edges.some(e => e.source === connection.source && e.sourceHandle === connection.sourceHandle);
+
+        return !targetHasEdge && !sourceHasEdge;
+    }, [edges]);
 
     const onConnect = useCallback((params) => setEdges((eds) => addEdge({ ...params, animated: true }, eds)), [setEdges]);
 
@@ -136,28 +145,18 @@ export default function PipelineEditor({
         [reactFlowInstance, stars, planets, zodiacal, atmosphere, telescope, camera, setStars, setPlanets, setZodiacal, setAtmosphere, setTelescope, setCamera, setNodes]
     );
 
-    // Serialization for backend
-    // We need to walk the graph from Scene to Camera
     const getPipeline = () => {
-        // Simple BFS or finding the 'scene' node and traversing edges
-        // Assuming linear chain for now
-
         let path = [];
-        // Find Scene Node
         const sceneNode = nodes.find(n => n.type === 'scene');
         if (!sceneNode) return [];
 
         let current = sceneNode;
         path.push({ type: 'scene', config: { stars, planets, zodiacal } });
 
-        // Basic traversal (handles linear only correctly)
-        // A better way is using react-flow getOutgoers
-        // Loop limit to prevent infinite
         for (let i = 0; i < 10; i++) {
             const outEdges = edges.filter(e => e.source === current.id);
             if (outEdges.length === 0) break;
 
-            // Prefer first edge
             const nextNodeId = outEdges[0].target;
             const nextNode = nodes.find(n => n.id === nextNodeId);
             if (!nextNode) break;
@@ -182,12 +181,39 @@ export default function PipelineEditor({
 
     return (
         <div className="flex h-full flex-col">
-            <div className="h-12 bg-slate-800 border-b border-slate-700 flex items-center px-4 justify-between">
-                <span className="text-slate-400 text-sm">Drag nodes from the left sidebar to add them. Connect visual path.</span>
-                <button onClick={handleRun} className="bg-blue-600 hover:bg-blue-500 px-4 py-1.5 rounded text-white text-sm font-bold shadow">
-                    Run Pipeline
-                </button>
+            {/* TOP BAR */}
+            <div className={`h-14 border-b flex items-center px-4 justify-between transition-colors ${isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+                <div className="flex items-center gap-4">
+                    <button
+                        onClick={onToggleSidebar}
+                        className={`p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors ${isDark ? 'text-slate-300' : 'text-slate-600'}`}
+                        title="Toggle Sidebar"
+                    >
+                        <Menu className="w-5 h-5" />
+                    </button>
+                    <h1 className="text-xl font-bold bg-gradient-to-r from-blue-500 to-indigo-500 bg-clip-text text-transparent">
+                        HELIOS <span className="text-xs font-normal text-slate-500 inline-block ml-2 align-middle">Visual Architect</span>
+                    </h1>
+                </div>
+
+                <div className="flex items-center gap-4">
+                    <button
+                        onClick={onToggleTheme}
+                        className={`p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors ${isDark ? 'text-yellow-400' : 'text-slate-600'}`}
+                        title="Toggle Theme"
+                    >
+                        {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+                    </button>
+
+                    <button
+                        onClick={handleRun}
+                        className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2 rounded-lg text-sm font-semibold shadow-md transition-transform active:scale-95 flex items-center"
+                    >
+                        Run Pipeline
+                    </button>
+                </div>
             </div>
+
             <div className="flex-1" ref={reactFlowWrapper}>
                 <ReactFlow
                     nodes={nodes}
@@ -195,6 +221,7 @@ export default function PipelineEditor({
                     onNodesChange={onNodesChange}
                     onEdgesChange={onEdgesChange}
                     onConnect={onConnect}
+                    isValidConnection={isValidConnection}
                     onInit={setReactFlowInstance}
                     onDrop={onDrop}
                     onDragOver={onDragOver}
@@ -202,7 +229,7 @@ export default function PipelineEditor({
                     fitView
                 >
                     <Controls />
-                    <Background color="#1e293b" gap={16} />
+                    <Background color={isDark ? "#1e293b" : "#e2e8f0"} gap={16} />
                 </ReactFlow>
             </div>
         </div>
