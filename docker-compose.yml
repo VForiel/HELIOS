@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: web/backend/Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./src:/app/src # Mount src for hot reload if developing backend (optional)
+      - ./web/backend:/app/backend
+
+  frontend:
+    build:
+      context: .
+      dockerfile: web/frontend/Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend

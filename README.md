@@ -44,3 +44,8 @@ image = context.observe()
 
 ## Documentation
 Full documentation is available on ReadTheDocs.
+
+## Web Interface
+A web-based graphical interface is available to easily experiment with HELIOS.
+See `web_interface/README.md` for instructions on how to run it using Docker.
+
