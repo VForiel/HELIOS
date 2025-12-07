@@ -214,7 +214,7 @@ def get_config_dict(config_obj):
 
 # --- Endpoint ---
 
-@app.post("/simulate")
+@app.post("/api/simulate")
 def run_pipeline(request: PipelineRequest):
     try:
         context = helios.Context()
@@ -295,7 +295,7 @@ def run_pipeline(request: PipelineRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/preview_layer")
+@app.post("/api/preview_layer")
 def preview_layer(layer_conf: LayerConfig):
     try:
         buf = io.BytesIO()
