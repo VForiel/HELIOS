@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Play } from 'lucide-react';
+import { Play, Download } from 'lucide-react';
 import { ReactFlowProvider } from 'reactflow';
 import PipelineEditor from './components/flow/PipelineEditor';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -130,7 +130,21 @@ function App() {
                         <div className="mt-auto p-4 border-t border-slate-200 dark:border-slate-800 min-w-[256px]">
                             {image && (
                                 <div className="relative group cursor-pointer" onClick={() => window.open(image, '_blank')}>
-                                    <div className="absolute top-0 right-0 bg-blue-600 text-xs px-2 py-1 rounded-bl text-white">Result</div>
+                                    <div className="absolute top-0 right-0 bg-blue-600 text-xs px-2 py-1 rounded-bl text-white z-10">Result</div>
+                                    <div className="absolute bottom-2 right-2 bg-white/10 backdrop-blur-sm p-1.5 rounded hover:bg-white/20 transition-colors z-10"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            const a = document.createElement('a');
+                                            a.href = image;
+                                            a.download = "simulation_result.png";
+                                            document.body.appendChild(a);
+                                            a.click();
+                                            setTimeout(() => document.body.removeChild(a), 1000);
+                                        }}
+                                        title="Download Image"
+                                    >
+                                        <Download className="w-4 h-4 text-white" />
+                                    </div>
                                     <img src={image} className="w-full h-32 object-contain bg-black rounded border border-slate-300 dark:border-slate-700" alt="Result thumbnail" />
                                 </div>
                             )}

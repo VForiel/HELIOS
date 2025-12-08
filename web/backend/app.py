@@ -597,7 +597,7 @@ def export_context_file(request: PipelineRequest):
         return Response(
             content=json_str, 
             media_type="application/json",
-            headers={"Content-Disposition": "attachment; filename=helios_context.json"}
+            headers={"Content-Disposition": 'attachment; filename="helios_context.json"'}
         )
     except Exception as e:
         import traceback
@@ -845,7 +845,7 @@ def preview_layer(layer_conf: LayerConfig):
         return Response(
             content=buf.getvalue(), 
             media_type="image/png",
-            headers={"Content-Disposition": f"attachment; filename={filename}"}
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
         )
 
     except Exception as e:

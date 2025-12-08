@@ -250,8 +250,12 @@ export default function PipelineEditor({
             a.download = "helios_context.json";
             document.body.appendChild(a);
             a.click();
-            window.URL.revokeObjectURL(url);
-            document.body.removeChild(a);
+
+            // Delay revocation to ensure download starts
+            setTimeout(() => {
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+            }, 1000);
         } catch (e) {
             console.error(e);
             alert("Export Failed: " + e.message);
