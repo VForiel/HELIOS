@@ -334,7 +334,7 @@ class Planet(CelestialBody):
                         # If position is angular, convert using scene distance
                         if self.scene.distance is not None:
                             sep_ang = np.sqrt(px**2 + py**2)
-                            separation = (sep_ang * self.scene.distance).to(u.AU)
+                            separation = (sep_ang * self.scene.distance).to(u.AU, equivalencies=u.dimensionless_angles())
                         else:
                             separation = 1 * u.AU  # Fallback
                     
@@ -655,13 +655,19 @@ class Scene(Layer):
                     alpha = 0.7
                     zorder = 5
                 elif isinstance(obj, Planet):
-                    ls = '--'
+                    ls = '-'
                     c = 'blue'
                     lw = 2.0
                     alpha = 1.0 # Make fully opaque
                     zorder = 10 # Bring to front
+                elif isinstance(obj, (Zodiacal, ExoZodiacal)):
+                    ls = '-'
+                    c = 'sandybrown'
+                    lw = 1.5
+                    alpha = 0.8
+                    zorder = 3
                 else:
-                    ls = ':'
+                    ls = '-'
                     c = 'gray'
                     lw = 1.0
                     alpha = 0.5
@@ -679,9 +685,9 @@ class Scene(Layer):
             except Exception as e:
                 print(f"Failed to plot SED for {obj}: {e}")
 
-        # Plot Total
-        if total_sed is not None and len(self.objects) > 1:
-            ax.loglog(wl_grid, total_sed, label='Total Scene', color='black', linewidth=2, alpha=0.8, linestyle='-', zorder=20)
+        # Plot Total (Removed as per user request)
+        # if total_sed is not None and len(self.objects) > 1:
+        #     ax.loglog(wl_grid, total_sed, label='Total Scene', color='black', linewidth=2, alpha=0.8, linestyle='-', zorder=20)
 
         ax.set_xlabel('Wavelength [um]')
         ax.set_ylabel('Spectral Radiance [W m^-2 um^-1 sr^-1]')
