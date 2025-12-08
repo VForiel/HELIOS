@@ -691,48 +691,6 @@ class Scene(Layer):
         
         return fig, ax
 
-
-
-
-def modified_blackbody(wavelengths: Optional[u.Quantity], temperature: u.Quantity, beta: float = 1.0,
-                       lambda0: u.Quantity = 100 * u.um, norm: Optional[float] = None):
-    """
-    Compute a modified blackbody spectrum B_lambda(λ, T) * (λ / lambda0)^{-beta}.
-
-    wavelengths: astropy Quantity array (if None, a default grid is created)
-    temperature: astropy Quantity (K)
-    Returns (wavelengths, sed) with sed in W / (m2 m sr)
-    """
-    # If wavelengths not provided, create a default grid
-    if wavelengths is None:
-        wavelengths = np.logspace(np.log10((0.1 * u.um).to(u.m).value), np.log10((100 * u.um).to(u.m).value), 200) * u.m
-
-    # Ensure proper units
-    wavelengths = wavelengths.to(u.m)
-    T = temperature.to(u.K)
-
-    h = const.h
-    c = const.c
-    kB = const.k_B
-
-    wl = wavelengths
-    # Planck function per unit wavelength B_lambda(λ, T)
-    exponent = (h * c) / (wl * kB * T)
-    # Avoid overflow warnings by using np.exp with values
-    B = (2 * h * c ** 2) / (wl ** 5) / (np.expm1(exponent))
-    # Ensure B has radiance units (per steradian)
-    B = B * (1.0 / u.sr)
-
-    # Modified emissivity
-    emissivity = (wl / lambda0.to(u.m)) ** (-beta)
-
-    sed = (B * emissivity).to(u.W / (u.m ** 2 * u.m * u.sr))
-
-    if norm is not None:
-        sed = sed * float(norm)
-
-    return wavelengths, sed
-
     def plot(self, ax=None):
         """
         Plot the scene.
@@ -856,6 +814,50 @@ def modified_blackbody(wavelengths: Optional[u.Quantity], temperature: u.Quantit
         plt.grid(True, linestyle='--', alpha=0.5)
         plt.title(f"Scene (Distance: {self.distance})")
         return fig, ax
+
+
+
+
+def modified_blackbody(wavelengths: Optional[u.Quantity], temperature: u.Quantity, beta: float = 1.0,
+                       lambda0: u.Quantity = 100 * u.um, norm: Optional[float] = None):
+    """
+    Compute a modified blackbody spectrum B_lambda(λ, T) * (λ / lambda0)^{-beta}.
+
+    wavelengths: astropy Quantity array (if None, a default grid is created)
+    temperature: astropy Quantity (K)
+    Returns (wavelengths, sed) with sed in W / (m2 m sr)
+    """
+    # If wavelengths not provided, create a default grid
+    if wavelengths is None:
+        wavelengths = np.logspace(np.log10((0.1 * u.um).to(u.m).value), np.log10((100 * u.um).to(u.m).value), 200) * u.m
+
+    # Ensure proper units
+    wavelengths = wavelengths.to(u.m)
+    T = temperature.to(u.K)
+
+    h = const.h
+    c = const.c
+    kB = const.k_B
+
+    wl = wavelengths
+    # Planck function per unit wavelength B_lambda(λ, T)
+    exponent = (h * c) / (wl * kB * T)
+    # Avoid overflow warnings by using np.exp with values
+    B = (2 * h * c ** 2) / (wl ** 5) / (np.expm1(exponent))
+    # Ensure B has radiance units (per steradian)
+    B = B * (1.0 / u.sr)
+
+    # Modified emissivity
+    emissivity = (wl / lambda0.to(u.m)) ** (-beta)
+
+    sed = (B * emissivity).to(u.W / (u.m ** 2 * u.m * u.sr))
+
+    if norm is not None:
+        sed = sed * float(norm)
+
+    return wavelengths, sed
+
+
 
 
 # Attach a module-level implementation of plot to ensure the method exists

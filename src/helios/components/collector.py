@@ -523,63 +523,93 @@ class TelescopeArray(Layer):
         baselines = self.get_baseline_array()
         
         if show_pupils:
-            # Determine plot extent and resolution
-            max_extent = 0
+            # Determine bounding box of all collectors
+            min_x, max_x = float('inf'), float('-inf')
+            min_y, max_y = float('inf'), float('-inf')
+            
             for collector in self.collectors:
                 x, y = collector.position
                 size = collector.size.to(u.m).value if hasattr(collector.size, 'to') else float(collector.size)
-                max_extent = max(max_extent, abs(x) + size, abs(y) + size)
+                radius = size / 2.0
+                min_x = min(min_x, x - radius)
+                max_x = max(max_x, x + radius)
+                min_y = min(min_y, y - radius)
+                max_y = max(max_y, y + radius)
+                
+            # If no collectors or single point, handle defaults
+            if min_x == float('inf'):
+                cx, cy = 0.0, 0.0
+                span = 10.0 # Default span
+            else:
+                cx = (min_x + max_x) / 2.0
+                cy = (min_y + max_y) / 2.0
+                span_x = max_x - min_x
+                span_y = max_y - min_y
+                span = max(span_x, span_y)
+                if span == 0: span = collector.size.to(u.m).value * 2.0 # Fallback for single point
             
-            # Create a large canvas to hold all pupils
-            margin = max_extent * 0.15  # 15% margin
-            canvas_size = 2 * (max_extent + margin)
-            npix_canvas = int(canvas_size * 10)  # 10 pixels/meter
+            # Add margin
+            margin = span * 0.15
+            canvas_span = span + 2 * margin
+            
+            # Setup canvas
+            npix_canvas = int(canvas_span * 10) # 10 pixels/meter resolution base
+            npix_canvas = max(512, min(npix_canvas, 2048)) # Clamp resolution
+            
+            # Pixel scale
+            pixel_scale = canvas_span / npix_canvas
+            
             canvas = np.zeros((npix_canvas, npix_canvas), dtype=float)
             
-            # Pixel scale (meters per pixel)
-            pixel_scale = canvas_size / npix_canvas
+            # Canvas extent
+            extent = [cx - canvas_span/2, cx + canvas_span/2, cy - canvas_span/2, cy + canvas_span/2]
             
             # Render each pupil onto the canvas
             for collector in self.collectors:
                 pupil = collector.pupil
                 x_pos, y_pos = collector.position
                 
-                # Render pupil at appropriate resolution
-                # pupil.diameter is a Quantity, need to convert to float
+                # Render pupil
                 diam_m = pupil.diameter.to(u.m).value if isinstance(pupil.diameter, u.Quantity) else float(pupil.diameter)
-                diam = diam_m * pupil_scale  # Now both are floats
-                npix_pupil = int(diam / pixel_scale)  # Both are floats
-                npix_pupil = max(32, min(npix_pupil, 256))  # Clamp to reasonable range
+                diam = diam_m * pupil_scale 
+                npix_pupil = int(diam / pixel_scale)
+                npix_pupil = max(32, min(npix_pupil, 256))
                 pupil_arr = pupil.get_array(npix=npix_pupil, soft=True)
                 
-                # Calculate pixel position on canvas
-                center_m = max_extent + margin
-                x_pix = int((x_pos + center_m) / pixel_scale)
-                y_pix = int((y_pos + center_m) / pixel_scale)
+                # Calculate pixel position on canvas relative to bottom-left corner of extent
+                # content_x = x_pos - extent[0]
                 
-                # Half-size in pixels
+                x_pix = int((x_pos - extent[0]) / pixel_scale)
+                y_pix = int((y_pos - extent[2]) / pixel_scale)
+                
                 half_npix = npix_pupil // 2
                 
-                # Insert pupil into canvas
-                x_start = max(0, x_pix - half_npix)
-                x_end = min(npix_canvas, x_pix + half_npix)
-                y_start = max(0, y_pix - half_npix)
-                y_end = min(npix_canvas, y_pix + half_npix)
+                # Insert pupil
+                x_start_can = max(0, x_pix - half_npix)
+                x_end_can = min(npix_canvas, x_pix + half_npix)
+                y_start_can = max(0, y_pix - half_npix)
+                y_end_can = min(npix_canvas, y_pix + half_npix)
                 
-                # Corresponding slice in pupil array
-                px_start = max(0, -(x_pix - half_npix))
-                px_end = px_start + (x_end - x_start)
-                py_start = max(0, -(y_pix - half_npix))
-                py_end = py_start + (y_end - y_start)
+                # Slices in pupil array
+                # If canvas start > intended start, we cropped left/bottom side of pupil
+                x_crop_start = max(0, -(x_pix - half_npix)) 
+                y_crop_start = max(0, -(y_pix - half_npix))
                 
-                # Overlay pupil (take maximum to avoid overwriting)
-                canvas[y_start:y_end, x_start:x_end] = np.maximum(
-                    canvas[y_start:y_end, x_start:x_end],
-                    pupil_arr[py_start:py_end, px_start:px_end]
-                )
-            
-            # Display the full canvas
-            extent = [-center_m, center_m, -center_m, center_m]
+                # Length to copy
+                len_x = x_end_can - x_start_can
+                len_y = y_end_can - y_start_can
+                
+                px_start = x_crop_start
+                px_end = px_start + len_x
+                py_start = y_crop_start
+                py_end = py_start + len_y
+                
+                if len_x > 0 and len_y > 0:
+                    canvas[y_start_can:y_end_can, x_start_can:x_end_can] = np.maximum(
+                        canvas[y_start_can:y_end_can, x_start_can:x_end_can],
+                        pupil_arr[py_start:py_end, px_start:px_end]
+                    )
+
             ax.imshow(canvas, origin='lower', cmap='gray', extent=extent, alpha=0.9)
         else:
             # Simple scatter plot

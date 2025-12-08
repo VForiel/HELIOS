@@ -95,8 +95,19 @@ class Pupil:
         mask = path.contains_points(pts)
         return mask.reshape(xg.shape)
 
-    def get_array(self, npix: int = 256, soft: bool = False, oversample: int = 4, size_m: Optional[float] = None) -> np.ndarray:
+    def get_array(self, npix: int = 256, soft: bool = False, oversample: int = 4, size_m: Optional[float] = None, padding: int = 10) -> np.ndarray:
         """Retourne la pupille en tableau 2D (valeurs dans [0,1])."""
+        
+        # Calculate size_m including padding if not provided
+        if size_m is None:
+            eff_npix = npix - 2 * padding
+            if eff_npix <= 0:
+                raise ValueError(f"Padding ({padding}) is too large for npix ({npix})")
+            diameter_m = self.diameter.to(u.m).value
+            # The grid covers 'size_m'. The central 'eff_npix' pixels cover 'diameter'.
+            # So size_m / diameter = npix / eff_npix
+            size_m = diameter_m * (npix / eff_npix)
+            
         ov = oversample if soft and oversample >= 2 else 1
         xg, yg, dx = self._make_grid(npix, oversample=ov, size_m=size_m)
         im = np.zeros_like(xg, dtype=float)
@@ -184,19 +195,25 @@ class Pupil:
             im = im.reshape(H//ov, ov, W//ov, ov).mean(axis=(1,3))
         return np.clip(im, 0.0, 1.0)
 
-    def plot(self, npix: int = 512, soft: bool = True, oversample: int = 4, ax: Optional[_plt.Axes] = None, cmap: str = 'gray') -> _plt.Axes:
+    def plot(self, npix: int = 512, soft: bool = True, oversample: int = 4, ax: Optional[_plt.Axes] = None, cmap: str = 'gray', padding: int = 10) -> _plt.Axes:
         """Plot the pupil and return the Matplotlib Axes."""
-        arr = self.get_array(npix=npix, soft=soft, oversample=oversample)
+        arr = self.get_array(npix=npix, soft=soft, oversample=oversample, padding=padding)
         if ax is None:
             fig, ax = _plt.subplots()
-        d = self.diameter.to(u.m).value
+            
+        # Calculate extent including padding
+        eff_npix = npix - 2 * padding
+        diameter_m = self.diameter.to(u.m).value
+        size_m = diameter_m * (npix / eff_npix)
+        
+        d = size_m
         ax.imshow(arr, origin='lower', cmap=cmap, extent=[-d/2, d/2, -d/2, d/2])
         ax.set_xlabel('m')
         ax.set_ylabel('m')
         ax.set_aspect('equal')
         return ax
 
-    def diffraction_pattern(self, npix: int = 1024, soft: bool = True, oversample: int = 4, wavelength: float = 550e-9) -> np.ndarray:
+    def diffraction_pattern(self, npix: int = 1024, soft: bool = True, oversample: int = 4, wavelength: float = 550e-9, padding: int = 10) -> np.ndarray:
         """Compute the (monochromatic) diffraction pattern (PSF intensity) of the pupil.
 
         - Returns a 2D NumPy array of shape (npix, npix) with values normalized to peak = 1.
@@ -204,7 +221,7 @@ class Pupil:
         - `soft` and `oversample` are forwarded to `get_array` to control anti-aliasing on the pupil.
         """
         # get pupil amplitude (transmission) array
-        pup = self.get_array(npix=npix, soft=soft, oversample=oversample)
+        pup = self.get_array(npix=npix, soft=soft, oversample=oversample, padding=padding)
         # ensure float32 for fft speed
         pupf = np.asarray(pup, dtype=np.complex64)
         # compute FFT; use ifftshift/fftshift for correct centering
@@ -216,13 +233,22 @@ class Pupil:
             intensity = intensity / float(maxv)
         return intensity
 
-    def plot_diffraction_pattern(self, npix: int = 1024, soft: bool = True, oversample: int = 4, ax: Optional[_plt.Axes] = None, cmap: str = 'viridis', log: bool = True, vmax: Optional[float] = None, wavelength: float = 550e-9) -> _plt.Axes:
+    def plot_diffraction_pattern(self, npix: int = 1024, soft: bool = True, oversample: int = 4, ax: Optional[_plt.Axes] = None, cmap: str = 'viridis', log: bool = True, vmax: Optional[float] = None, wavelength: float = 550e-9, padding: int = 10) -> _plt.Axes:
         """Plot the diffraction pattern (PSF) and return the Matplotlib Axes.
 
         - By default the intensity is shown on a log scale (dB-like) for dynamic range.
         - `vmax` can be used to clip the displayed maximum (after normalization).
         """
-        intensity = self.diffraction_pattern(npix=npix, soft=soft, oversample=oversample, wavelength=wavelength)
+        # Pass padding to get_array indirectly via diffraction_pattern? 
+        # diffraction_pattern calls get_array. We need to update diffraction_pattern signature too to support passing padding.
+        # But for now, let's assume we call diffraction_pattern which defaults or we update it first.
+        # Actually I missed updating diffraction_pattern signature in the plan!
+        # I should update diffraction_pattern first or here.
+        
+        # NOTE: self.diffraction_pattern internally calls self.get_array.
+        # So I need to pass padding to it.
+        intensity = self.diffraction_pattern(npix=npix, soft=soft, oversample=oversample, wavelength=wavelength, padding=padding)
+        
         if ax is None:
             fig, ax = _plt.subplots()
         disp = intensity
@@ -233,12 +259,19 @@ class Pupil:
         # frequency axis fx = (i - N/2) / (N * dx) cycles/m
         # units lambda/D = fx * D
         N = intensity.shape[0]
-        # dx used when building pupil: size / N_pixels where size = self.diameter
-        d = self.diameter.to(u.m).value
-        dx = d / float(N)
+        
+        # Calculate dx correctly including padding
+        eff_npix = N - 2 * padding
+        diameter_m = self.diameter.to(u.m).value
+        # size_m (total grid size)
+        size_m = diameter_m * (N / eff_npix)
+        dx = size_m / float(N)
+        
         fx = (np.arange(N) - N // 2) / (N * dx)
-        # lambda/D units
-        lamD = fx * d
+        # lambda/D units: theta / (lambda/D) = (fx * lambda) / (lambda/D) = fx * D
+        # Wait, relationship: theta = fx * wavelength.
+        # units of lambda/D: theta_norm = theta / (lambda/D) = fx * wavelength / (lambda/D) = fx * D
+        lamD = fx * diameter_m # use physical diameter D, not padded size
         extent = [lamD[0], lamD[-1], lamD[0], lamD[-1]]
         im = ax.imshow(disp, origin='lower', cmap=cmap, extent=extent)
         ax.set_xlabel('Focal plane (arb. units)')

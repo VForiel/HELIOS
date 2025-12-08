@@ -10,7 +10,7 @@ import ReactFlow, {
     MiniMap
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { Menu, Sun, Moon } from 'lucide-react';
+import { Menu, Sun, Moon, Heart, Github, Book } from 'lucide-react';
 
 import SceneNode from './nodes/SceneNode';
 import AtmosphereNode from './nodes/AtmosphereNode';
@@ -246,7 +246,41 @@ export default function PipelineEditor({
                     </h1>
                 </div>
 
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                    {/* Support Button */}
+                    <a
+                        href="https://paypal.me/vincentforiel"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-pink-500 hover:text-pink-600"
+                        title="Support the Project"
+                    >
+                        <Heart className="w-5 h-5 fill-current" />
+                    </a>
+
+                    {/* GitHub Button */}
+                    <a
+                        href="https://github.com/vforiel/helios"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-slate-600 dark:text-slate-300 hover:text-black dark:hover:text-white"
+                        title="GitHub Repository"
+                    >
+                        <Github className="w-5 h-5" />
+                    </a>
+
+                    {/* Documentation Button */}
+                    <a
+                        href="http://helios-project.rtfd.io/"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400"
+                        title="Project Documentation"
+                    >
+                        <Book className="w-5 h-5" />
+                    </a>
+
+                    <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-1"></div>
                     <button
                         onClick={onToggleTheme}
                         className={`p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors ${isDark ? 'text-yellow-400' : 'text-slate-600'}`}
