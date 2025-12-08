@@ -9,7 +9,7 @@ from astropy import units as u
 from typing import Tuple, List, Union, Optional
 import matplotlib.pyplot as _plt
 
-from ..core.context import Element, Context
+from ..core.context import Element, Context, serialize_value, deserialize_value
 from ..core.simulation import Wavefront, WavefrontArray
 from .collector import TelescopeArray
 
@@ -113,7 +113,47 @@ class Atmosphere(Element):
         
         # Cache for frozen turbulent screen
         self._frozen_screen = None
+        self._frozen_screen = None
         self._screen_size = None
+
+    def to_dict(self) -> dict:
+        """Serialize atmosphere configuration."""
+        # Reconstruct wind velocity as vector tuple
+        vx = self.wind_velocity[0] * u.m/u.s
+        vy = self.wind_velocity[1] * u.m/u.s
+        
+        data = super().to_dict()
+        data.update({
+            "rms": serialize_value(self.rms * u.m),
+            "wind_speed": serialize_value((vx, vy)), # Save as vector tuple
+            "wind_direction": 0.0, # Direction implicitly included in vector
+            "seed": self.seed,
+            "inner_scale": serialize_value(self.inner_scale * u.m) if self.inner_scale is not None else None,
+            "outer_scale": serialize_value(self.outer_scale * u.m) if self.outer_scale is not None else None
+        })
+        return data
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'Atmosphere':
+        """Create atmosphere from dictionary."""
+        name = data.get("name")
+        rms = deserialize_value(data.get("rms"))
+        
+        # wind_speed might be deserialized as list from JSON
+        wind_speed_raw = deserialize_value(data.get("wind_speed"))
+        if isinstance(wind_speed_raw, list):
+            wind_speed = tuple(wind_speed_raw)
+        else:
+            wind_speed = wind_speed_raw
+            
+        wind_direction = data.get("wind_direction", 0.0)
+        seed = data.get("seed")
+        
+        inner_scale = deserialize_value(data.get("inner_scale"))
+        outer_scale = deserialize_value(data.get("outer_scale"))
+        
+        return cls(rms=rms, wind_speed=wind_speed, wind_direction=wind_direction,
+                   seed=seed, inner_scale=inner_scale, outer_scale=outer_scale, name=name)
 
 
     def _generate_frozen_screen(self, N: int, oversample: int = 2) -> np.ndarray:

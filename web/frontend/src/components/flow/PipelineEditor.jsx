@@ -10,7 +10,7 @@ import ReactFlow, {
     MiniMap
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { Menu, Sun, Moon, Heart, Github, Book } from 'lucide-react';
+import { Menu, Sun, Moon, Heart, Github, Book, Download, Upload } from 'lucide-react';
 
 import SceneNode from './nodes/SceneNode';
 import AtmosphereNode from './nodes/AtmosphereNode';
@@ -229,6 +229,129 @@ export default function PipelineEditor({
         runSimulation(pipeline);
     };
 
+    const handleExport = async () => {
+        try {
+            const pipeline = getPipeline();
+            // Wrap in payload
+            const payload = { mode: 'pipeline', layers: pipeline };
+
+            const response = await fetch('/api/context/export_file', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) throw new Error("Export failed");
+
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = "helios_context.json";
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        } catch (e) {
+            console.error(e);
+            alert("Export Failed: " + e.message);
+        }
+    };
+
+    const fileInputRef = useRef(null);
+
+    const handleImportClick = () => {
+        fileInputRef.current.click();
+    };
+
+    const handleFileChange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        try {
+            const text = await file.text();
+            const jsonData = JSON.parse(text);
+
+            const response = await fetch('/api/context/import_file', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(jsonData)
+            });
+
+            if (!response.ok) throw new Error("Import failed");
+
+            const result = await response.json();
+            // result is PipelineRequest { mode, layers }
+
+            // Rebuild State
+            const layers = result.layers || [];
+
+            const newNodes = [];
+            const newEdges = [];
+            let xPos = 50;
+            let lastNodeId = null;
+
+            // Clear current selection/highlight if any (omitted)
+
+            // Process layers
+            layers.forEach((layer, idx) => {
+                const id = `node_imp_${idx}`;
+                const position = { x: xPos, y: 100 };
+                xPos += 450; // spacing
+
+                let type = layer.type;
+                // Map config to state
+                if (type === 'scene') {
+                    // Update global state vars
+                    // We assume one scene for now. If multiple, we overwrite or merge?
+                    // Basic App only supports one set of state variables.
+                    // So we take the first one found.
+                    const conf = layer.config;
+                    if (conf.stars) setStars(conf.stars);
+                    if (conf.planets) setPlanets(conf.planets);
+                    if (conf.zodiacal) setZodiacal(conf.zodiacal);
+                } else if (type === 'atmosphere') {
+                    setAtmosphere(layer.config);
+                } else if (type === 'telescope') {
+                    setTelescope(layer.config);
+                } else if (type === 'camera') {
+                    setCamera(layer.config);
+                }
+
+                // Create Node
+                // Note: The DATA property of the node depends on the STATE vars (stars, etc.)
+                // But the setState above is async/batched.
+                // The useMemo hook in PipelineEditor updates node.data when state changes.
+                // So we just creating the node with correct type is enough?
+                // Yes, useMemo will inject the data.
+
+                newNodes.push({
+                    id, type, position, data: {}
+                });
+
+                if (lastNodeId) {
+                    newEdges.push({
+                        id: `e_${lastNodeId}_${id}`,
+                        source: lastNodeId,
+                        target: id,
+                        animated: true
+                    });
+                }
+                lastNodeId = id;
+            });
+
+            setNodes(newNodes);
+            setEdges(newEdges);
+
+            // Reset file input
+            e.target.value = null;
+
+        } catch (e) {
+            console.error(e);
+            alert("Import Failed: " + e.message);
+        }
+    };
+
     return (
         <div className="flex h-full flex-col">
             {/* TOP BAR */}
@@ -279,6 +402,33 @@ export default function PipelineEditor({
                     >
                         <Book className="w-5 h-5" />
                     </a>
+
+                    <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-1"></div>
+
+                    {/* Import/Export */}
+                    <input
+                        type="file"
+                        ref={fileInputRef}
+                        style={{ display: 'none' }}
+                        accept=".json"
+                        onChange={handleFileChange}
+                    />
+
+                    <button
+                        onClick={handleImportClick}
+                        className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400"
+                        title="Import Context"
+                    >
+                        <Upload className="w-5 h-5" />
+                    </button>
+
+                    <button
+                        onClick={handleExport}
+                        className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400"
+                        title="Export Context"
+                    >
+                        <Download className="w-5 h-5" />
+                    </button>
 
                     <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-1"></div>
                     <button

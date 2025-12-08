@@ -3,7 +3,7 @@ from astropy import units as u
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 from typing import Optional, Tuple, Any
-from ..core.context import Layer, Element, Context
+from ..core.context import Layer, Element, Context, serialize_value, deserialize_value
 from ..core.simulation import Wavefront
 from astropy import constants as const
 
@@ -30,6 +30,23 @@ class CelestialBody(Element):
         super().__init__(name=name)
         self.position = position
         self.kwargs = kwargs
+
+    def to_dict(self) -> dict:
+        """Serialize celestial body."""
+        data = super().to_dict()
+        data.update({
+            "position": serialize_value(self.position),
+            "kwargs": serialize_value(self.kwargs)
+        })
+        return data
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'CelestialBody':
+        """Create celestial body from dict."""
+        name = data.get("name")
+        position = deserialize_value(data.get("position", (0*u.arcsec, 0*u.arcsec)))
+        kwargs = deserialize_value(data.get("kwargs", {}))
+        return cls(name=name, position=position, **kwargs)
 
     def process(self, wavefront: Any, context: Context) -> Any:
         """
@@ -209,6 +226,28 @@ class Star(CelestialBody):
         self.mass = mass
         super().__init__(**kwargs)
 
+    def to_dict(self) -> dict:
+        data = super().to_dict()
+        data.update({
+            "temperature": serialize_value(self.temperature),
+            "magnitude": self.magnitude,
+            "mass": serialize_value(self.mass)
+        })
+        return data
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'Star':
+        name = data.get("name")
+        position = deserialize_value(data.get("position"))
+        kwargs = deserialize_value(data.get("kwargs", {}))
+        
+        temperature = deserialize_value(data.get("temperature"))
+        magnitude = data.get("magnitude", 5.0)
+        mass = deserialize_value(data.get("mass"))
+        
+        return cls(name=name, position=position, temperature=temperature, 
+                   magnitude=magnitude, mass=mass, **kwargs)
+
     def sed(self, wavelengths: Optional[u.Quantity] = None, **kwargs):
         """Return star SED using stellar temperature.
         
@@ -270,6 +309,34 @@ class Planet(CelestialBody):
             self.radius = radius
             
         super().__init__(**kwargs)
+
+    def to_dict(self) -> dict:
+        data = super().to_dict()
+        data.update({
+            "mass": serialize_value(self.mass),
+            "radius": serialize_value(self.radius),
+            "temperature": serialize_value(self.temperature),
+            "albedo": self.albedo,
+            "reflection_ratio": self.reflection_ratio
+        })
+        return data
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'Planet':
+        name = data.get("name")
+        position = deserialize_value(data.get("position"))
+        kwargs = deserialize_value(data.get("kwargs", {}))
+        
+        mass = deserialize_value(data.get("mass"))
+        radius = deserialize_value(data.get("radius"))
+        temperature = deserialize_value(data.get("temperature"))
+        albedo = data.get("albedo", 0.3)
+        reflection_ratio = data.get("reflection_ratio")
+        
+        # Note: scene is not restored here, it's linked when added to Scene object
+        return cls(name=name, position=position, mass=mass, radius=radius,
+                   temperature=temperature, albedo=albedo, 
+                   reflection_ratio=reflection_ratio, **kwargs)
 
     def sed(self, 
             wavelengths: Optional[u.Quantity] = None, 
@@ -371,6 +438,22 @@ class ExoZodiacal(CelestialBody):
         self.brightness = brightness
         self.radius = radius
         super().__init__(**kwargs)
+        
+    def to_dict(self) -> dict:
+        data = super().to_dict()
+        data.update({
+            "brightness": self.brightness,
+            "radius": serialize_value(self.radius)
+        })
+        return data
+        
+    @classmethod
+    def from_dict(cls, data: dict) -> 'ExoZodiacal':
+        name = data.get("name")
+        kwargs = deserialize_value(data.get("kwargs", {}))
+        brightness = data.get("brightness", 1.0)
+        radius = deserialize_value(data.get("radius"))
+        return cls(name=name, brightness=brightness, radius=radius, **kwargs)
 
     def sed(self, wavelengths: Optional[u.Quantity] = None, temperature: Optional[u.Quantity] = None, **kwargs):
         """Return exozodiacal dust SED as warm blackbody.
@@ -391,6 +474,22 @@ class Zodiacal(CelestialBody):
         self.brightness = brightness
         self.radius = radius
         super().__init__(**kwargs)
+
+    def to_dict(self) -> dict:
+        data = super().to_dict()
+        data.update({
+            "brightness": self.brightness,
+            "radius": serialize_value(self.radius)
+        })
+        return data
+        
+    @classmethod
+    def from_dict(cls, data: dict) -> 'Zodiacal':
+        name = data.get("name")
+        kwargs = deserialize_value(data.get("kwargs", {}))
+        brightness = data.get("brightness", 1.0)
+        radius = deserialize_value(data.get("radius"))
+        return cls(name=name, brightness=brightness, radius=radius, **kwargs)
 
     def sed(self, wavelengths: Optional[u.Quantity] = None, temperature: Optional[u.Quantity] = None, **kwargs):
         """Return zodiacal dust SED as warm blackbody.
@@ -432,7 +531,43 @@ class Scene(Layer):
     def __init__(self, distance: Optional[u.Quantity] = 10*u.pc, name: Optional[str] = None):
         super().__init__(name=name or "Scene")
         self.distance = distance
+        self.distance = distance
         # Note: self.elements is inherited from Layer
+
+    def to_dict(self) -> dict:
+        data = super().to_dict()
+        data["distance"] = serialize_value(self.distance)
+        return data
+        
+    @classmethod
+    def from_dict(cls, data: dict, context: Optional[Context] = None) -> 'Scene':
+        name = data.get("name")
+        distance = deserialize_value(data.get("distance"))
+        scene = cls(name=name, distance=distance)
+        
+        # Restore elements
+        # We need to map types to classes again or reuse registry concept
+        # Local mapping for Scene components
+        type_map = {
+            'Star': Star,
+            'Planet': Planet,
+            'Zodiacal': Zodiacal,
+            'ExoZodiacal': ExoZodiacal
+        }
+        
+        elements_data = data.get("elements", [])
+        for elem_data in elements_data:
+            type_name = elem_data.get("type")
+            if type_name in type_map:
+                try:
+                    obj = type_map[type_name].from_dict(elem_data)
+                    scene.add(obj)
+                except Exception as e:
+                    print(f"Error restoring scene object {type_name}: {e}")
+            else:
+                 print(f"Unknown scene object type: {type_name}")
+                 
+        return scene
 
     def add(self, obj: CelestialBody):
         """

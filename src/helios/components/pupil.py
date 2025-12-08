@@ -11,6 +11,9 @@ import matplotlib.pyplot as _plt
 from copy import deepcopy as copy
 
 
+from ..core.context import serialize_value, deserialize_value
+
+
 class Pupil:
     """Pupil builder and rasterizer.
 
@@ -24,6 +27,26 @@ class Pupil:
         self.diameter = diameter
         self.focal_length = focal_length
         self.elements: List[dict] = []
+
+    def to_dict(self) -> dict:
+        """Serialize pupil configuration."""
+        return {
+            "diameter": serialize_value(self.diameter),
+            "focal_length": serialize_value(self.focal_length),
+            "elements": [serialize_value(e) for e in self.elements]
+        }
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> 'Pupil':
+        """Create pupil from dictionary."""
+        diameter = deserialize_value(data.get("diameter", 1.0*u.m))
+        focal_length = deserialize_value(data.get("focal_length", 1.0*u.m))
+        pupil = cls(diameter=diameter, focal_length=focal_length)
+        
+        elements = data.get("elements", [])
+        for e in elements:
+             pupil.elements.append(deserialize_value(e))
+        return pupil
 
     def process(self, wavefront: 'Wavefront', auto_magnify: Optional[bool] = None) -> 'Wavefront':
         """Process wavefront through pupil."""

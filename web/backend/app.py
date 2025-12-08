@@ -227,11 +227,420 @@ def get_config_dict(config_obj):
         return config_obj
     if hasattr(config_obj, 'model_dump'):
         return config_obj.model_dump()
-    if hasattr(config_obj, 'dict'):
-        return config_obj.dict()
     return config_obj
 
+# --- Converters (Context -> Payload) ---
+
+def scene_to_payload(scene: helios.Scene) -> ScenePayload:
+    stars_data = []
+    planets_data = []
+    zodiacal_data = ZodiacalData(enabled=False)
+    
+    for elem in scene.elements:
+        if isinstance(elem, helios.Star):
+            x_as = 0.0
+            y_as = 0.0
+            if hasattr(elem, 'position'):
+                try:
+                    pos = elem.position
+                    if isinstance(pos, (list, tuple)) and len(pos) >= 2:
+                        x_as = u.Quantity(pos[0], u.arcsec).to(u.arcsec).value
+                        y_as = u.Quantity(pos[1], u.arcsec).to(u.arcsec).value
+                except: pass
+            
+            s = StarData(
+                temperature=elem.temperature.to(u.K).value if hasattr(elem.temperature, 'to') else float(elem.temperature),
+                magnitude=float(elem.magnitude),
+                x_arcsec=float(x_as),
+                y_arcsec=float(y_as)
+            )
+            stars_data.append(s)
+            
+        elif isinstance(elem, helios.Planet):
+            dist_pc = scene.distance.to(u.pc).value if hasattr(scene, 'distance') and scene.distance is not None else 10.0
+            
+            x_as = 0.0
+            y_as = 0.0
+            sep_au = 1.0
+            if hasattr(elem, 'position'):
+                 try:
+                    pos = elem.position
+                    x_len = u.Quantity(pos[0], u.m)
+                    y_len = u.Quantity(pos[1], u.m)
+                    
+                    x_as = (x_len / (dist_pc * u.pc)).to(u.dimensionless_unscaled).value * 206265
+                    y_as = (y_len / (dist_pc * u.pc)).to(u.dimensionless_unscaled).value * 206265
+                    
+                    sep_au = np.hypot(x_len.to(u.au).value, y_len.to(u.au).value)
+                 except: pass
+
+            p = PlanetData(
+                mass=elem.mass.to(u.M_jup).value if hasattr(elem.mass, 'to') else float(elem.mass),
+                radius=elem.radius.to(u.R_jup).value if hasattr(elem, 'radius') and elem.radius is not None else 1.0,
+                separation=float(sep_au),
+                x_arcsec=float(x_as),
+                y_arcsec=float(y_as),
+                angle=0.0
+            )
+            planets_data.append(p)
+            
+        elif isinstance(elem, helios.Zodiacal):
+            zodiacal_data = ZodiacalData(
+                enabled=True,
+                brightness=float(elem.brightness),
+                radius=None
+            )
+            
+    return ScenePayload(stars=stars_data, planets=planets_data, zodiacal=zodiacal_data)
+
+def atmosphere_to_payload(atm: helios.Atmosphere) -> AtmospherePayload:
+    speed = np.linalg.norm(atm.wind_velocity)
+    return AtmospherePayload(
+        enabled=True,
+        rms_nm=float(u.Quantity(atm.rms, u.m).to(u.nm).value),
+        wind_speed=float(u.Quantity(speed, u.m/u.s).to(u.m/u.s).value)
+    )
+
+def telescope_to_payload(tel: helios.TelescopeArray) -> TelescopePayload:
+    collectors = []
+    max_diam = 8.0
+    for i, col in enumerate(tel.collectors):
+        x = col.position[0]
+        y = col.position[1]
+        
+        diam = 8.0
+        if col.size is not None:
+             diam = u.Quantity(col.size, u.m).to(u.m).value
+        max_diam = max(max_diam, diam)
+        
+        p_type = "Circular"
+        if hasattr(col.pupil, 'elements') and len(col.pupil.elements) > 2:
+                  pass
+        
+        collectors.append(CollectorData(
+            id=f"c{i}", x=float(x), y=float(y), diameter=float(diam),
+            pupil_type=p_type
+        ))
+        
+    return TelescopePayload(
+        preset="Custom",
+        diameter=float(max_diam),
+        collectors=collectors
+    )
+
+def camera_to_payload(cam: helios.Camera) -> CameraPayload:
+    exp = 0.1
+    if hasattr(cam, 'integration_time'):
+        exp = u.Quantity(cam.integration_time, u.s).to(u.s).value
+    return CameraPayload(exposure=float(exp), wavelength=1.0)
+
+# --- Converters (Context -> Payload) ---
+
+def scene_to_payload(scene: helios.Scene) -> ScenePayload:
+    stars_data = []
+    planets_data = []
+    zodiacal_data = ZodiacalData(enabled=False)
+    
+    for elem in scene.elements:
+        if isinstance(elem, helios.Star):
+            # Convert Star
+            # Pos is (ra, dec) or (x, y). Assumed x,y in arcsec for this simple UI
+            x_as = 0.0
+            y_as = 0.0
+            if hasattr(elem, 'position'):
+                try:
+                    pos = elem.position
+                    if isinstance(pos, (list, tuple)) and len(pos) >= 2:
+                        x_as = u.Quantity(pos[0], u.arcsec).to(u.arcsec).value
+                        y_as = u.Quantity(pos[1], u.arcsec).to(u.arcsec).value
+                except: pass
+            
+            s = StarData(
+                temperature=elem.temperature.to(u.K).value if hasattr(elem.temperature, 'to') else float(elem.temperature),
+                magnitude=float(elem.magnitude),
+                x_arcsec=float(x_as),
+                y_arcsec=float(y_as)
+            )
+            stars_data.append(s)
+            
+        elif isinstance(elem, helios.Planet):
+            # Convert Planet
+            dist_pc = scene.distance.to(u.pc).value if hasattr(scene, 'distance') and scene.distance is not None else 10.0
+            
+            x_as = 0.0
+            y_as = 0.0
+            sep_au = 1.0
+            if hasattr(elem, 'position'):
+                 try:
+                    pos = elem.position
+                    # If pos is in length (m/au), convert to arcsec via distance
+                    # separation ~ sqrt(x^2 + y^2)
+                    # angle ~ atan2(y, x)
+                    # But UI supports x/y arcsec directly
+                    
+                    # Assume stored as length (e.g. AU) in simulation
+                    # Convert to arcsec: theta = r / d
+                    x_len = u.Quantity(pos[0], u.m)
+                    y_len = u.Quantity(pos[1], u.m)
+                    
+                    x_as = (x_len / (dist_pc * u.pc)).to(u.dimensionless_unscaled).value * 206265
+                    y_as = (y_len / (dist_pc * u.pc)).to(u.dimensionless_unscaled).value * 206265
+                    
+                    sep_au = np.hypot(x_len.to(u.au).value, y_len.to(u.au).value)
+                 except: pass
+
+            p = PlanetData(
+                mass=elem.mass.to(u.M_jup).value if hasattr(elem.mass, 'to') else float(elem.mass),
+                radius=elem.radius.to(u.R_jup).value if hasattr(elem, 'radius') and elem.radius is not None else 1.0,
+                separation=float(sep_au),
+                x_arcsec=float(x_as),
+                y_arcsec=float(y_as),
+                angle=0.0 # derived from x/y if needed, but x/y is sufficient
+            )
+            planets_data.append(p)
+            
+        elif isinstance(elem, helios.Zodiacal):
+            zodiacal_data = ZodiacalData(
+                enabled=True,
+                brightness=float(elem.brightness),
+                radius=None # TODO if needed
+            )
+            
+    return ScenePayload(stars=stars_data, planets=planets_data, zodiacal=zodiacal_data)
+
+def atmosphere_to_payload(atm: helios.Atmosphere) -> AtmospherePayload:
+    # Estimate wind speed magnitude
+    speed = np.linalg.norm(atm.wind_velocity)
+    return AtmospherePayload(
+        enabled=True,
+        rms_nm=float(u.Quantity(atm.rms, u.m).to(u.nm).value),
+        wind_speed=float(u.Quantity(speed, u.m/u.s).to(u.m/u.s).value)
+    )
+
+def telescope_to_payload(tel: helios.TelescopeArray) -> TelescopePayload:
+    # Check if generic preset
+    # For now, always return Custom to be safe
+    collectors = []
+    max_diam = 8.0
+    for i, col in enumerate(tel.collectors):
+        x = col.position[0]
+        y = col.position[1]
+        
+        diam = 8.0
+        if col.size is not None:
+             diam = u.Quantity(col.size, u.m).to(u.m).value
+        max_diam = max(max_diam, diam)
+        
+        # Infer pupil type
+        p_type = "Circular"
+        if hasattr(col.pupil, 'elements'):
+             # Very rough heuristic
+             if len(col.pupil.elements) > 2: #Likely complex
+                  pass
+        
+        collectors.append(CollectorData(
+            id=f"c{i}", x=float(x), y=float(y), diameter=float(diam),
+            pupil_type=p_type
+        ))
+        
+    return TelescopePayload(
+        preset="Custom",
+        diameter=float(max_diam),
+        collectors=collectors
+    )
+
+def camera_to_payload(cam: helios.Camera) -> CameraPayload:
+    # exposure
+    exp = 0.1
+    if hasattr(cam, 'integration_time'):
+        exp = u.Quantity(cam.integration_time, u.s).to(u.s).value
+    return CameraPayload(exposure=float(exp), wavelength=1.0) # wavelength dummy
+
+
+# --- Converters (Context -> Payload) ---
+
+def scene_to_payload(scene: helios.Scene) -> ScenePayload:
+    stars_data = []
+    planets_data = []
+    zodiacal_data = ZodiacalData(enabled=False)
+    
+    for elem in scene.elements:
+        if isinstance(elem, helios.Star):
+            x_as = 0.0
+            y_as = 0.0
+            if hasattr(elem, 'position'):
+                try:
+                    pos = elem.position
+                    if isinstance(pos, (list, tuple)) and len(pos) >= 2:
+                        x_as = u.Quantity(pos[0], u.arcsec).to(u.arcsec).value
+                        y_as = u.Quantity(pos[1], u.arcsec).to(u.arcsec).value
+                except: pass
+            
+            s = StarData(
+                temperature=elem.temperature.to(u.K).value if hasattr(elem.temperature, 'to') else float(elem.temperature),
+                magnitude=float(elem.magnitude),
+                x_arcsec=float(x_as),
+                y_arcsec=float(y_as)
+            )
+            stars_data.append(s)
+            
+        elif isinstance(elem, helios.Planet):
+            dist_pc = scene.distance.to(u.pc).value if hasattr(scene, 'distance') and scene.distance is not None else 10.0
+            
+            x_as = 0.0
+            y_as = 0.0
+            sep_au = 1.0
+            if hasattr(elem, 'position'):
+                 try:
+                    pos = elem.position
+                    x_len = u.Quantity(pos[0], u.m)
+                    y_len = u.Quantity(pos[1], u.m)
+                    
+                    x_as = (x_len / (dist_pc * u.pc)).to(u.dimensionless_unscaled).value * 206265
+                    y_as = (y_len / (dist_pc * u.pc)).to(u.dimensionless_unscaled).value * 206265
+                    
+                    sep_au = np.hypot(x_len.to(u.au).value, y_len.to(u.au).value)
+                 except: pass
+
+            p = PlanetData(
+                mass=elem.mass.to(u.M_jup).value if hasattr(elem.mass, 'to') else float(elem.mass),
+                radius=elem.radius.to(u.R_jup).value if hasattr(elem, 'radius') and elem.radius is not None else 1.0,
+                separation=float(sep_au),
+                x_arcsec=float(x_as),
+                y_arcsec=float(y_as),
+                angle=0.0
+            )
+            planets_data.append(p)
+            
+        elif isinstance(elem, helios.Zodiacal):
+            zodiacal_data = ZodiacalData(
+                enabled=True,
+                brightness=float(elem.brightness),
+                radius=None
+            )
+            
+    return ScenePayload(stars=stars_data, planets=planets_data, zodiacal=zodiacal_data)
+
+def atmosphere_to_payload(atm: helios.Atmosphere) -> AtmospherePayload:
+    speed = np.linalg.norm(atm.wind_velocity)
+    return AtmospherePayload(
+        enabled=True,
+        rms_nm=float(u.Quantity(atm.rms, u.m).to(u.nm).value),
+        wind_speed=float(u.Quantity(speed, u.m/u.s).to(u.m/u.s).value)
+    )
+
+def telescope_to_payload(tel: helios.TelescopeArray) -> TelescopePayload:
+    collectors = []
+    max_diam = 8.0
+    for i, col in enumerate(tel.collectors):
+        x = col.position[0]
+        y = col.position[1]
+        
+        diam = 8.0
+        if col.size is not None:
+             diam = u.Quantity(col.size, u.m).to(u.m).value
+        max_diam = max(max_diam, diam)
+        
+        p_type = "Circular"
+        if hasattr(col.pupil, 'elements') and len(col.pupil.elements) > 2:
+                  pass
+        
+        collectors.append(CollectorData(
+            id=f"c{i}", x=float(x), y=float(y), diameter=float(diam),
+            pupil_type=p_type
+        ))
+        
+    return TelescopePayload(
+        preset="Custom",
+        diameter=float(max_diam),
+        collectors=collectors
+    )
+
+def camera_to_payload(cam: helios.Camera) -> CameraPayload:
+    exp = 0.1
+    if hasattr(cam, 'integration_time'):
+        exp = u.Quantity(cam.integration_time, u.s).to(u.s).value
+    return CameraPayload(exposure=float(exp), wavelength=1.0)
+
 # --- Endpoint ---
+
+@app.post("/api/context/export_file")
+def export_context_file(request: PipelineRequest):
+    """Export current pipeline configuration as a library-compatible JSON context file."""
+    try:
+        # 1. Build Context from request
+        context = helios.Context()
+        for layer_conf in request.layers:
+            layer_obj = None
+            if layer_conf.type == 'scene':
+                 data = ScenePayload(**get_config_dict(layer_conf.config))
+                 layer_obj = create_scene(data)
+            elif layer_conf.type == 'atmosphere':
+                 data = AtmospherePayload(**get_config_dict(layer_conf.config))
+                 layer_obj = create_atmosphere(data)
+            elif layer_conf.type == 'telescope':
+                 data = TelescopePayload(**get_config_dict(layer_conf.config))
+                 layer_obj = create_telescope(data)
+            elif layer_conf.type == 'camera':
+                 data = CameraPayload(**get_config_dict(layer_conf.config))
+                 layer_obj = create_camera(data, context)
+            
+            if layer_obj:
+                context.add_layer(layer_obj)
+        
+        # 2. Serialize
+        data_dict = context.to_dict()
+        
+        # 3. Return as file
+        import json
+        json_str = json.dumps(data_dict, indent=2)
+        return Response(
+            content=json_str, 
+            media_type="application/json",
+            headers={"Content-Disposition": "attachment; filename=helios_context.json"}
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/context/import_file")
+def import_context_file(file_data: Dict[str, Any]):
+    """Import a library JSON context file and convert it to pipeline configuration."""
+    try:
+        # file_data is the JSON dict parsed by FastAPI from body
+        # 1. Load Context
+        context = helios.Context.from_dict(file_data)
+        
+        # 2. Convert to PipelineRequest layers
+        layers_config = []
+        
+        for layer in context.layers:
+             l_type = None
+             l_config = None
+             
+             if isinstance(layer, helios.Scene):
+                 l_type = 'scene'
+                 l_config = scene_to_payload(layer)
+             elif isinstance(layer, helios.Atmosphere):
+                 l_type = 'atmosphere'
+                 l_config = atmosphere_to_payload(layer)
+             elif isinstance(layer, helios.TelescopeArray):
+                 l_type = 'telescope'
+                 l_config = telescope_to_payload(layer)
+             elif isinstance(layer, helios.Camera):
+                 l_type = 'camera'
+                 l_config = camera_to_payload(layer)
+             
+             if l_type and l_config:
+                 layers_config.append(LayerConfig(type=l_type, config=l_config))
+                 
+        return PipelineRequest(mode='pipeline', layers=layers_config)
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/simulate")
 def run_pipeline(request: PipelineRequest):

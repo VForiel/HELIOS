@@ -10,7 +10,41 @@ from pathlib import Path
 import os
 import xml.etree.ElementTree as ET
 import re
+import json
 from .simulation import Wavefront, WavefrontArray
+
+# Serialization Helpers
+def serialize_value(value: Any) -> Any:
+    """Recursively serialize values to JSON-friendly types."""
+    if isinstance(value, u.Quantity):
+        return {"value": float(value.value), "unit": str(value.unit)}
+    elif isinstance(value, np.ndarray):
+        return value.tolist()
+    elif isinstance(value, np.integer):
+        return int(value)
+    elif isinstance(value, np.floating):
+        return float(value)
+    elif isinstance(value, (list, tuple)):
+        return [serialize_value(v) for v in value]
+    elif isinstance(value, dict):
+        return {k: serialize_value(v) for k, v in value.items()}
+    elif hasattr(value, 'to_dict'):
+        return value.to_dict()
+    return value
+
+def deserialize_value(value: Any) -> Any:
+    """Recursively deserialize values from JSON types."""
+    if isinstance(value, dict):
+        if "value" in value and "unit" in value and len(value) == 2:
+            try:
+                return value["value"] * u.Unit(value["unit"])
+            except Exception:
+                pass # Not a quantity dict
+        return {k: deserialize_value(v) for k, v in value.items()}
+    elif isinstance(value, list):
+        return [deserialize_value(v) for v in value]
+    return value
+
 
 class Element:
     """
@@ -163,6 +197,39 @@ class Element:
             If the subclass does not implement this method.
         """
         raise NotImplementedError("Subclasses must implement process()")
+
+    def to_dict(self) -> dict:
+        """
+        Serialize element configuration to dictionary.
+        
+        Returns
+        -------
+        dict
+            Dictionary containing class info and attributes.
+        """
+        return {
+            "type": self.__class__.__name__,
+            "module": self.__class__.__module__,
+            "name": self.name
+        }
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> 'Element':
+        """
+        Create element instance from dictionary.
+        
+        Parameters
+        ----------
+        data : dict
+            Dictionary containing element configuration
+            
+        Returns
+        -------
+        Element
+            New element instance
+        """
+        name = data.get("name")
+        return cls(name=name)
 
 class Layer:
     """
@@ -392,6 +459,26 @@ class Layer:
         """
         raise NotImplementedError("Subclasses must implement process()")
 
+    def to_dict(self) -> dict:
+        """
+        Serialize layer configuration to dictionary.
+        """
+        return {
+            "type": self.__class__.__name__,
+            "module": self.__class__.__module__,
+            "name": self.name,
+            "elements": [e.to_dict() for e in self.elements]
+        }
+    
+    @classmethod
+    def from_dict(cls, data: dict, context: Optional['Context'] = None) -> 'Layer':
+        """
+        Create layer instance from dictionary.
+        """
+        name = data.get("name")
+        layer = cls(name=name)
+        return layer
+
 class Context:
     """
     Main simulation context managing layers and execution.
@@ -576,6 +663,97 @@ class Context:
             lines.append("")  # Empty line between layers
         
         return "\n".join(lines)
+
+    def to_dict(self) -> dict:
+        """
+        Serialize complete context to dictionary.
+        
+        Returns
+        -------
+        dict
+            Complete simulation state found in JSON-compatible format.
+        """
+        layers_data = []
+        for layer_item in self.layers:
+            if isinstance(layer_item, list):
+                # Parallel layers
+                layers_data.append([
+                    l.to_dict() if l is not None else None 
+                    for l in layer_item
+                ])
+            else:
+                layers_data.append(layer_item.to_dict())
+                
+        return {
+            "date": str(self.date) if self.date else None,
+            "declination": serialize_value(self.declination),
+            "kwargs": serialize_value(self.kwargs),
+            "layers": layers_data
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'Context':
+        """
+        Reconstruct context from dictionary.
+        """
+        # Basic context params
+        date = data.get("date")
+        declination = deserialize_value(data.get("declination"))
+        kwargs = deserialize_value(data.get("kwargs", {}))
+        
+        ctx = cls(date=date, declination=declination, **kwargs)
+        
+        # Reconstruct layers
+        from ..components import scene, atmosphere, collector, detectors
+        from .context import Layer # import self for check? No need.
+        
+        # Mapping of type names to classes
+        type_map = {
+            'Scene': scene.Scene,
+            'Atmosphere': atmosphere.Atmosphere,
+            'TelescopeArray': collector.TelescopeArray,
+            'Camera': detectors.Camera
+        }
+        
+        def restore_layer(l_data):
+            if l_data is None: return None
+            
+            type_name = l_data.get("type")
+            if type_name in type_map:
+                try:
+                    return type_map[type_name].from_dict(l_data)
+                except Exception as e:
+                    print(f"Error restoring layer {type_name}: {e}")
+                    return None
+            else:
+                print(f"Unknown layer type: {type_name}")
+                return None
+
+        layers_data = data.get("layers", [])
+        for l_item in layers_data:
+            if isinstance(l_item, list):
+                # Parallel
+                parallel_layers = [restore_layer(ld) for ld in l_item]
+                ctx.add_layer(parallel_layers)
+            else:
+                layer = restore_layer(l_item)
+                if layer:
+                    ctx.add_layer(layer)
+                    
+        return ctx
+
+    def save(self, filename: Union[str, Path]):
+        """Save context to a JSON file."""
+        data = self.to_dict()
+        with open(filename, 'w') as f:
+            json.dump(data, f, indent=2)
+            
+    @classmethod
+    def load(cls, filename: Union[str, Path]) -> 'Context':
+        """Load context from a JSON file."""
+        with open(filename, 'r') as f:
+            data = json.load(f)
+        return cls.from_dict(data)
 
     def get_input_wavefront(self, wavelength: Optional[u.Quantity] = None, 
                             size: Optional[Union[int, u.Quantity]] = None,

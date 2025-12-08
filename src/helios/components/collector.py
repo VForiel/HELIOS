@@ -13,7 +13,7 @@ from astropy import units as u
 from typing import Tuple, Optional, Any, Union
 import matplotlib.pyplot as _plt
 
-from ..core.context import Layer, Element, Context
+from ..core.context import Layer, Element, Context, serialize_value, deserialize_value
 from ..core.simulation import Wavefront, WavefrontArray
 from .pupil import Pupil
 
@@ -92,6 +92,35 @@ class Collector(Element):
         self.size = size
         
         self.metadata = metadata
+        
+    def to_dict(self) -> dict:
+        """Serialize collector."""
+        data = super().to_dict()
+        data.update({
+            "pupil": self.pupil.to_dict(),
+            "position": serialize_value(self.position),
+            "size": serialize_value(self.size),
+            "metadata": serialize_value(self.metadata)
+        })
+        return data
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'Collector':
+        """Create collector from dict."""
+        name = data.get("name")
+        pupil_data = data.get("pupil")
+        pupil = Pupil.from_dict(pupil_data) if pupil_data else None
+        
+        # Position can be list/tuple from JSON
+        pos_raw = deserialize_value(data.get("position", (0,0)))
+        # Ensure tuple
+        if isinstance(pos_raw, list):
+            pos_raw = tuple(pos_raw)
+            
+        size = deserialize_value(data.get("size"))
+        metadata = deserialize_value(data.get("metadata", {}))
+        
+        return cls(pupil=pupil, position=pos_raw, size=size, name=name, **metadata)
     
     def process(self, wavefront: Wavefront, context: Context, auto_magnify: Optional[bool] = None) -> Any:
         """
@@ -246,6 +275,40 @@ class TelescopeArray(Layer):
         self.longitude = longitude
         self.altitude = altitude
         # Note: self.elements is inherited from Layer
+
+    def to_dict(self) -> dict:
+        data = super().to_dict()
+        data.update({
+            "latitude": serialize_value(self.latitude),
+            "longitude": serialize_value(self.longitude),
+            "altitude": serialize_value(self.altitude)
+        })
+        return data
+
+    @classmethod
+    def from_dict(cls, data: dict, context: Optional[Context] = None) -> 'TelescopeArray':
+        name = data.get("name")
+        latitude = deserialize_value(data.get("latitude"))
+        longitude = deserialize_value(data.get("longitude"))
+        altitude = deserialize_value(data.get("altitude"))
+        
+        array = cls(name=name, latitude=latitude, longitude=longitude, altitude=altitude)
+        
+        # Restore collectors (elements)
+        elements_data = data.get("elements", [])
+        for elem_data in elements_data:
+            type_name = elem_data.get("type", "Collector")
+            # We assume it's a Collector if part of TelescopeArray
+            if "Collector" in type_name: 
+                try:
+                    collector = Collector.from_dict(elem_data)
+                    array.add_element(collector)
+                except Exception as e:
+                    print(f"Error restoring collector: {e}")
+            else:
+                 print(f"Unknown TelescopeArray element type: {type_name}")
+                 
+        return array
     
     @property
     def num_outputs(self) -> int:

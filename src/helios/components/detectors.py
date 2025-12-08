@@ -1,7 +1,7 @@
 import numpy as np
 from typing import Tuple, Optional, Any
 from astropy import units as u
-from ..core.context import Element, Context
+from ..core.context import Element, Context, serialize_value, deserialize_value
 from ..core.simulation import Wavefront, WavefrontArray
 import matplotlib.pyplot as plt
 
@@ -105,6 +105,41 @@ class Camera(Element):
         
         # Random number generator for reproducible noise
         self._rng = np.random.default_rng()
+        
+    def to_dict(self) -> dict:
+        """Serialize camera configuration."""
+        data = super().to_dict()
+        data.update({
+            "pixels": list(self.pixels),
+            "dark_current": serialize_value(self.dark_current * u.electron / u.s),
+            "read_noise": serialize_value(self.read_noise * u.electron),
+            "integration_time": serialize_value(self.integration_time),
+            "quantum_efficiency": self.quantum_efficiency,
+            "gain": self.gain,
+            "thermal_background": serialize_value(self.thermal_background * u.electron / u.s) if self.thermal_background else None,
+            "thermal_background_temp": serialize_value(self.thermal_background_temp)
+        })
+        return data
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'Camera':
+        """Create camera from dictionary."""
+        name = data.get("name")
+        pixels = tuple(data.get("pixels", (1024, 1024)))
+        
+        dark_current = deserialize_value(data.get("dark_current"))
+        read_noise = deserialize_value(data.get("read_noise"))
+        integration_time = deserialize_value(data.get("integration_time"))
+        quantum_efficiency = data.get("quantum_efficiency", 0.9)
+        gain = data.get("gain", 1.0)
+        
+        thermal_background = deserialize_value(data.get("thermal_background"))
+        thermal_background_temp = deserialize_value(data.get("thermal_background_temp"))
+        
+        return cls(pixels=pixels, dark_current=dark_current, read_noise=read_noise,
+                   integration_time=integration_time, quantum_efficiency=quantum_efficiency,
+                   gain=gain, thermal_background=thermal_background,
+                   thermal_background_temp=thermal_background_temp, name=name)
     
     def _combine_wavefronts(self, wf_array: WavefrontArray) -> np.ndarray:
         """Combine wavefronts from an array into a single focal plane intensity image."""
