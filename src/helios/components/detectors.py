@@ -345,6 +345,17 @@ class Camera(Element):
         >>> dark_manual = camera.get_dark()
         >>> reduced_manual = raw_manual - dark_manual
         """
+        # Automatic path simulation if wavefront is None
+        if wavefront is None and context is not None:
+             # Try to propagate from context
+             try:
+                 # We look for 'propagate_until' method which we added to Context
+                 if hasattr(context, 'propagate_until'):
+                    wavefront = context.propagate_until(self)
+             except Exception as e:
+                 print(f"Camera path simulation failed: {e}")
+                 # Fallthrough to None (dark frame)
+
         if not subtract_dark:
             # Return raw image without reduction
             return self.get_raw_image(wavefront, context)

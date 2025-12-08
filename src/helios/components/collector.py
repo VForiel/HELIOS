@@ -83,7 +83,10 @@ class Collector(Element):
         # Infer size from pupil if not provided
         if size is None:
             if hasattr(pupil, 'diameter'):
-                size = pupil.diameter * u.m  # pupil.diameter stored as float in meters
+                if isinstance(pupil.diameter, u.Quantity):
+                    size = pupil.diameter
+                else:
+                    size = pupil.diameter * u.m
             else:
                 size = 1.0 * u.m
         self.size = size

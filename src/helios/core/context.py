@@ -885,6 +885,101 @@ class Context:
             
         return wf
 
+    def propagate_until(self, target_layer: Any) -> Any:
+        """
+        Run the simulation pipeline until reaching the target layer.
+        
+        Returns the input signal destined for the target layer.
+        """
+        # Initial wavefront/signal
+        current_signal = None
+
+        for i, layer in enumerate(self.layers):
+            # Check if this single layer is the target
+            if layer is target_layer:
+                return current_signal
+
+            if isinstance(layer, list):
+                # Check if target is inside this parallel block
+                if target_layer in layer:
+                    # Parallel processing logic to find input for target
+                    # Ensure current_signal is a list
+                    if not isinstance(current_signal, list):
+                        current_signal = [current_signal] if current_signal is not None else []
+                    
+                    input_idx = 0
+                    for sub_layer in layer:
+                        # Determine how many inputs this element consumes
+                        if sub_layer is None:
+                            num_inputs = 1
+                        elif hasattr(sub_layer, 'num_inputs'):
+                            num_inputs = sub_layer.num_inputs
+                        else:
+                            num_inputs = 1
+                        
+                        # Gather inputs for this element
+                        if input_idx + num_inputs > len(current_signal):
+                            inputs = current_signal[input_idx:]
+                        else:
+                            inputs = current_signal[input_idx : input_idx + num_inputs]
+                        
+                        # If this is the target, return its inputs
+                        if sub_layer is target_layer:
+                             if num_inputs == 1 and len(inputs) == 1:
+                                return inputs[0]
+                             else:
+                                return inputs
+                        
+                        input_idx += num_inputs
+                    
+                    # If target in list but not found (shouldn't happen), assume processed?
+                    return None
+
+                # Parallel processing (N-to-M routing) - Copied from observe
+                outputs = []
+                
+                if not isinstance(current_signal, list):
+                    current_signal = [current_signal] if current_signal is not None else []
+                
+                input_idx = 0
+                for sub_layer in layer:
+                    if sub_layer is None:
+                        num_inputs = 1
+                    elif hasattr(sub_layer, 'num_inputs'):
+                        num_inputs = sub_layer.num_inputs
+                    else:
+                        num_inputs = 1
+                    
+                    if input_idx + num_inputs > len(current_signal):
+                        inputs = current_signal[input_idx:]
+                    else:
+                        inputs = current_signal[input_idx : input_idx + num_inputs]
+                    
+                    input_idx += num_inputs
+                    
+                    if sub_layer is None:
+                        outputs.extend(inputs)
+                    else:
+                        if num_inputs == 1 and len(inputs) == 1:
+                            proc_input = inputs[0]
+                        else:
+                            proc_input = inputs
+                            
+                        result = sub_layer.process(proc_input, self)
+                        
+                        if isinstance(result, list):
+                            outputs.extend(result)
+                        else:
+                            outputs.append(result)
+                
+                current_signal = outputs
+
+            else:
+                # Single layer processing
+                current_signal = layer.process(current_signal, self)
+
+        return current_signal
+
     def observe(self) -> Any:
         """
         Run the simulation through all layers.
