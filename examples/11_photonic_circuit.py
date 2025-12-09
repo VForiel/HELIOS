@@ -37,13 +37,13 @@ def run_demo():
 
     # Process
     print("Processing through circuit...")
-    wf_coupled = fiber_in.process(wf_in, None)
-    wf_split = splitter.process(wf_coupled, None)
-    wf_top = tops_top.process(wf_split[0], None)
-    wf_bot = tops_bot.process(wf_split[1], None)
-    wf_out_mmi = mmi.process([wf_top, wf_bot], None)
-    output_1 = fiber_out_1.process(wf_out_mmi[0], None)
-    output_2 = fiber_out_2.process(wf_out_mmi[1], None)
+    wf_coupled = fiber_in.process(wf_in)
+    wf_split = splitter.process(wf_coupled)
+    wf_top = tops_top.process(wf_split[0])
+    wf_bot = tops_bot.process(wf_split[1])
+    wf_out_mmi = mmi.process([wf_top, wf_bot])
+    output_1 = fiber_out_1.process(wf_out_mmi[0])
+    output_2 = fiber_out_2.process(wf_out_mmi[1])
 
     # Visualize
     fig, axes = plt.subplots(1, 3, figsize=(15, 5))

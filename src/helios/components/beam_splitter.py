@@ -22,21 +22,19 @@ class BeamSplitter(Element):
     Examples
     --------
     >>> bs = BeamSplitter(cutoff=0.5)
-    >>> wf_out = bs.process(wf_in, context)  # Returns list of 2 wavefronts
+    >>> wf_out = bs.process(wf_in)  # Returns list of 2 wavefronts
     """
     def __init__(self, cutoff: float = 0.5, name: Optional[str] = None):
         super().__init__(name=name or "BeamSplitter")
         self.cutoff = cutoff
 
-    def process(self, wavefront: Wavefront, context: Context) -> List[Wavefront]:
+    def process(self, wavefront: Wavefront) -> List[Wavefront]:
         """Split wavefront into two paths.
         
         Parameters
         ----------
         wavefront : Wavefront
             Input wavefront
-        context : Context
-            Simulation context
         
         Returns
         -------

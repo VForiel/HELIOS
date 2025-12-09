@@ -191,7 +191,7 @@ class Camera(Element):
         # Return intensity
         return intensity
 
-    def get_raw_image(self, wavefront: Optional[Any], context: Optional[Context] = None) -> np.ndarray:
+    def get_raw_image(self, wavefront: Optional[Any]) -> np.ndarray:
         """
         Acquire raw detector image including signal, dark current, and noise.
         
@@ -206,8 +206,6 @@ class Camera(Element):
         wavefront : Wavefront or WavefrontArray or None
             Input wavefront containing the electromagnetic field. If None,
             only dark current and noise are generated (dark frame).
-        context : Context, optional
-            Simulation context (unused currently, reserved for future features)
         
         Returns
         -------
@@ -235,11 +233,25 @@ class Camera(Element):
                 intensity = self._combine_wavefronts(wavefront)
             elif isinstance(wavefront, Wavefront):
                 # Single wavefront
+                # Single wavefront
                 if wavefront.ndim == 3:
-                    # Sum intensities of samples (incoherent sum)
-                    intensity = np.sum(np.abs(wavefront) ** 2, axis=0)
+                     # Calculate focal plane field via FFT
+                     # fftshift moves zero freq to center
+                     # We assume the wavefront is at the pupil plane and we want the image plane
+                     # Use .value to ensure we work with numpy arrays (avoid Unit issues)
+                     wf_data = wavefront.value if hasattr(wavefront, 'value') else wavefront
+                     focal_field = np.fft.fftshift(np.fft.fft2(np.fft.fftshift(wf_data, axes=(1,2)), axes=(1,2)), axes=(1,2))
+                     intensity = np.sum(np.abs(focal_field)**2, axis=0)
+                     # Normalize FFT energy (Parseval: sum(|F|^2) = N*sum(|f|^2)). We want sum(|I|^2) = sum(|P|^2) for simple conservation check
+                     norm = focal_field.shape[1] * focal_field.shape[2]
+                     intensity /= norm
                 else:
-                    intensity = np.abs(wavefront) ** 2
+                    wf_data = wavefront.value if hasattr(wavefront, 'value') else wavefront
+                    focal_field = np.fft.fftshift(np.fft.fft2(np.fft.fftshift(wf_data)))
+                    intensity = np.abs(focal_field) ** 2
+                    # Normalize FFT energy
+                    norm = focal_field.shape[0] * focal_field.shape[1]
+                    intensity /= norm
             else:
                 intensity = np.zeros(self.pixels)
             
@@ -314,10 +326,9 @@ class Camera(Element):
         >>> print(f"Dark noise: {dark.std():.1f} e-")
         """
         # Dark frame = raw image with no wavefront input
-        return self.get_raw_image(wavefront=None, context=None)
+        return self.get_raw_image(wavefront=None)
     
-    def get_image(self, wavefront: Optional[Wavefront], context: Optional[Context] = None,
-                  subtract_dark: bool = True) -> np.ndarray:
+    def get_image(self, wavefront: Optional[Wavefront] = None) -> np.ndarray:
         """
         Get calibrated (reduced) detector image with automatic dark subtraction.
         
@@ -333,18 +344,11 @@ class Camera(Element):
         ----------
         wavefront : Wavefront or None
             Input wavefront containing the electromagnetic field
-        context : Context, optional
-            Simulation context
-        subtract_dark : bool, optional
-            If True, subtract dark frame from raw image. If False, return
-            raw image without dark subtraction. Default: True
         
         Returns
         -------
         reduced_image : ndarray
             Calibrated detector image in electrons. Shape matches self.pixels.
-            - If subtract_dark=True: signal + residual noise
-            - If subtract_dark=False: raw image (same as get_raw_image)
         
         Notes
         -----
@@ -368,37 +372,26 @@ class Camera(Element):
         Examples
         --------
         >>> camera = Camera(pixels=(256, 256), integration_time=60*u.s)
+        >>> context.add_layer(camera) # Add the camera to the desired context
         >>> 
         >>> # Get reduced image (recommended for science)
         >>> reduced = camera.get_image(wavefront, context)
-        >>> 
-        >>> # Get raw image without dark subtraction
-        >>> raw = camera.get_image(wavefront, context, subtract_dark=False)
-        >>> 
-        >>> # Manual reduction
-        >>> raw_manual = camera.get_raw_image(wavefront, context)
-        >>> dark_manual = camera.get_dark()
-        >>> reduced_manual = raw_manual - dark_manual
         """
         # Automatic path simulation if wavefront is None
-        if wavefront is None and context is not None:
+        if wavefront is None and self.context is not None:
              # Try to propagate from context
              try:
                  # We look for 'propagate_until' method which we added to Context
-                 if hasattr(context, 'propagate_until'):
-                    wavefront = context.propagate_until(self)
+                 if hasattr(self.context, 'propagate_until'):
+                    wavefront = self.context.propagate_until(self)
              except Exception as e:
                  print(f"Camera path simulation failed: {e}")
                  # Fallthrough to None (dark frame)
 
-        if not subtract_dark:
-            # Return raw image without reduction
-            return self.get_raw_image(wavefront, context)
-        
         # Automatic data reduction pipeline:
         
         # 1. Acquire raw science frame
-        raw_image = self.get_raw_image(wavefront, context)
+        raw_image = self.get_raw_image(wavefront)
         
         # 2. Acquire dark frame (same integration time)
         dark_frame = self.get_dark()
@@ -408,7 +401,7 @@ class Camera(Element):
         
         return reduced_image
 
-    def process(self, wavefront: Wavefront, context: Context) -> np.ndarray:
+    def process(self, wavefront: Wavefront) -> np.ndarray:
         """
         Process wavefront and return reduced detector image.
         
@@ -421,18 +414,15 @@ class Camera(Element):
         ----------
         wavefront : Wavefront
             Input wavefront
-        context : Context
-            Simulation context
         
         Returns
         -------
         ndarray
             Reduced detector image in electrons
         """
-        return self.get_image(wavefront, context, subtract_dark=True)
+        return self.get_image(wavefront)
         
     def plot(self, wavefront: Optional[Wavefront] = None, 
-             context: Optional[Context] = None,
              ax: Optional[plt.Axes] = None,
              show: bool = True,
              title: Optional[str] = None,
@@ -447,8 +437,6 @@ class Camera(Element):
         ----------
         wavefront : Wavefront, optional
             Input wavefront. If None, plots a dark frame (or empty image).
-        context : Context, optional
-            Simulation context.
         ax : matplotlib.axes.Axes, optional
             Axes to plot on. If None, creates a new figure.
         show : bool, optional
@@ -464,7 +452,7 @@ class Camera(Element):
             The axes containing the plot.
         """
         # Get the simulated image
-        image = self.get_image(wavefront, context)
+        image = self.get_image(wavefront)
         
         if ax is None:
             fig, ax = plt.subplots(figsize=(8, 8))
@@ -543,14 +531,14 @@ def test_camera():
             self.field = np.ones((size, size), dtype=np.complex128)
     
     mock_wf = MockWavefront(1024)
-    reduced = default_cam.get_image(mock_wf, None)
+    reduced = default_cam.get_image(mock_wf)
     assert reduced.shape == (1024, 1024)
     
     # Test that dark subtraction changes the result
-    raw = default_cam.get_raw_image(mock_wf, None)
-    reduced_manual = default_cam.get_image(mock_wf, None, subtract_dark=True)
-    raw_via_get_image = default_cam.get_image(mock_wf, None, subtract_dark=False)
-    assert np.allclose(raw, raw_via_get_image), "Raw image should match when subtract_dark=False"
+    raw = default_cam.get_raw_image(mock_wf)
+    reduced_manual = default_cam.get_image(mock_wf)
+    # raw_via_get_image = default_cam.get_image(mock_wf, None, subtract_dark=False)
+    # assert np.allclose(raw, raw_via_get_image), "Raw image should match when subtract_dark=False"
     
     print("✓ Camera basic instantiation")
     print("✓ Dark frame generation")

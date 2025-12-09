@@ -99,7 +99,11 @@ def test_raw_image_with_signal():
     
     # Create a wavefront with uniform intensity
     wf = helios.Wavefront(wavelength=550e-9 * u.m, npix=128)
-    wf[:] = np.ones((128, 128), dtype=np.complex128) * 10  # Amplitude = 10
+    wf[:] = np.zeros((1, 128, 128), dtype=np.complex128)
+    # Use delta in pupil to get flat focal plane
+    # Mean intensity 100 -> Total energy 100 * 128*128 (matches original test |10|^2=100)
+    # Input Amplitude = sqrt(100 * 128*128)
+    wf[0, 64, 64] = np.sqrt(100 * 128 * 128)
     
     raw = cam.get_raw_image(wf)
     
@@ -129,13 +133,15 @@ def test_image_reduction():
     
     # Create wavefront with signal
     wf = helios.Wavefront(wavelength=550e-9 * u.m, npix=128)
-    wf[:] = np.ones((128, 128), dtype=np.complex128) * 10  # |field|² = 100
+    wf[:] = np.zeros((1, 128, 128), dtype=np.complex128)
+    # Mean intensity 100
+    wf[0, 64, 64] = np.sqrt(100 * 128 * 128)
     
     # Get reduced image (with dark subtraction)
-    reduced = cam.get_image(wf, subtract_dark=True)
+    reduced = cam.get_image(wf)
     
     # Get raw image (without dark subtraction)
-    raw = cam.get_image(wf, subtract_dark=False)
+    raw = cam.get_raw_image(wf)
     
     # Raw should have more signal than reduced (contains dark)
     # Expected dark: 1.0 e-/s × 10s = 10 e-/pixel
@@ -157,13 +163,13 @@ def test_process_method():
     wf[:] = np.ones((64, 64), dtype=np.complex128)
     
     # process() should return reduced image by default
-    result = cam.process(wf, None)
+    result = cam.process(wf)
     
     assert result.shape == (64, 64)
     assert isinstance(result, np.ndarray)
     
     # Should be equivalent to get_image with subtract_dark=True
-    reduced = cam.get_image(wf, None, subtract_dark=True)
+    reduced = cam.get_image(wf)
     
     # Won't be exactly equal due to random noise, but should be statistically similar
     assert abs(result.mean() - reduced.mean()) < 5
@@ -184,7 +190,9 @@ def test_noise_statistics():
     # Create wavefront with known signal
     wf = helios.Wavefront(wavelength=550e-9 * u.m, npix=512)
     signal_level = 1000  # photons
-    wf[:] = np.ones((512, 512), dtype=np.complex128) * np.sqrt(signal_level)
+    wf[:] = np.zeros((1, 512, 512), dtype=np.complex128) * np.sqrt(signal_level)
+    # Mean signal level 1000
+    wf[0, 256, 256] = np.sqrt(signal_level * 512 * 512)
     
     # Get raw image
     raw = cam.get_raw_image(wf)

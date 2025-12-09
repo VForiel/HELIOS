@@ -113,7 +113,7 @@ def demo_fresnel():
     print("2. Propagation Fresnel (Lentille + ASM)")
     wf_fresnel = wf.copy()
     lens = helios.Lens(focal_length=focal_length)
-    wf_fresnel = lens.process(wf_fresnel, None) # Application de la phase quadratique
+    wf_fresnel = lens.process(wf_fresnel) # Application de la phase quadratique
     wf_fresnel = wf_fresnel.propagate_fresnel(distance=focal_length) # Propagation ASM
     
     # Visualisation comparative

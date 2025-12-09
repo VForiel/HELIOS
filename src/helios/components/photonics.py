@@ -27,7 +27,7 @@ class PhotonicChip(Layer):
         # For convenience, we can check if the element has a set_chip method or similar.
         pass
 
-    def process(self, wavefronts: Union[Wavefront, List[Wavefront]], context: Context) -> Union[Wavefront, List[Wavefront]]:
+    def process(self, wavefronts: Union[Wavefront, List[Wavefront]]) -> Union[Wavefront, List[Wavefront]]:
         # Process light through the chip's internal layers
         # This acts as a mini-context
         current_signal = wavefronts
@@ -39,7 +39,7 @@ class PhotonicChip(Layer):
             # Ensure element has access to chip properties if needed
             # (Already handled by parent link in Element)
             
-            current_signal = element.process(current_signal, context)
+            current_signal = element.process(current_signal)
         return current_signal
 
 class YSplitter(Element):
@@ -54,7 +54,7 @@ class YSplitter(Element):
         self.num_inputs = 1
         self.num_outputs = 2
         
-    def process(self, wavefront: Wavefront, context: Context) -> List[Wavefront]:
+    def process(self, wavefront: Wavefront) -> List[Wavefront]:
         # Split input into 2 identical copies (amplitude division)
         # Energy conservation: amplitude / sqrt(2) -> intensity / 2
         
@@ -85,7 +85,7 @@ class ThermoOpticPhaseShifter(Element):
         """Set the phase shift in radians."""
         self.phase = phase
         
-    def process(self, wavefront: Wavefront, context: Context) -> Wavefront:
+    def process(self, wavefront: Wavefront) -> Wavefront:
         # Apply phase shift
         wf_out = copy.deepcopy(wavefront)
         wf_out *= np.exp(1j * self.phase)
@@ -107,7 +107,7 @@ class MultiModeInterferometer(Element):
         # Matrix shape: (M_outputs, N_inputs)
         self.num_outputs, self.num_inputs = self.matrix.shape
         
-    def process(self, wavefronts: Union[Wavefront, List[Wavefront]], context: Context) -> List[Wavefront]:
+    def process(self, wavefronts: Union[Wavefront, List[Wavefront]]) -> List[Wavefront]:
         # Handle input: can be single Wavefront or list
         if isinstance(wavefronts, Wavefront):
             inputs = [wavefronts]
@@ -182,7 +182,7 @@ class Swap(Layer):
         self.num_inputs = len(mapping)
         self.num_outputs = len(mapping)
         
-    def process(self, wavefronts: Union[Wavefront, List[Wavefront]], context: Context) -> List[Wavefront]:
+    def process(self, wavefronts: Union[Wavefront, List[Wavefront]]) -> List[Wavefront]:
         # Ensure input is a list
         if not isinstance(wavefronts, list):
             inputs = [wavefronts]
@@ -211,13 +211,16 @@ def test_photonics():
     # Test YSplitter
     ys = YSplitter()
     wf = Wavefront(wavelength=1.55*u.um, size=10)
-    outs = ys.process(wf, None)
+    # Test YSplitter
+    ys = YSplitter()
+    wf = Wavefront(wavelength=1.55*u.um, size=10)
+    outs = ys.process(wf)
     assert len(outs) == 2
     assert np.allclose(np.abs(outs[0])**2 + np.abs(outs[1])**2, np.abs(wf)**2)
     
     # Test TOPS
     tops = TOPS(phase=np.pi)
-    out_tops = tops.process(wf, None)
+    out_tops = tops.process(wf)
     assert np.allclose(out_tops, -wf)
     
     # Test MMI 2x2 (Hadamard-like)
@@ -227,7 +230,7 @@ def test_photonics():
     assert mmi.num_outputs == 2
     
     ins = [wf, wf] # Constructive interference on port 0, destructive on port 1
-    mmi_outs = mmi.process(ins, None)
+    mmi_outs = mmi.process(ins)
     # Port 0: (1+1)/sqrt(2) = sqrt(2) -> Intensity 2
     # Port 1: (1-1)/sqrt(2) = 0 -> Intensity 0
     # Input intensity sum: 1+1 = 2

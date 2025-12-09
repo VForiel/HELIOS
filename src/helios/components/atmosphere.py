@@ -287,7 +287,7 @@ class Atmosphere(Element):
         
         return screen
 
-    def process(self, wavefront: Union[Wavefront, List[Wavefront]], context: Context = None) -> Union[Wavefront, WavefrontArray]:
+    def process(self, wavefront: Union[Wavefront, List[Wavefront]]) -> Union[Wavefront, WavefrontArray]:
         """Apply atmospheric turbulence to wavefront.
         
         Converts OPD (optical path difference) to phase: φ = 2π * OPD / λ
@@ -302,7 +302,7 @@ class Atmosphere(Element):
         wavefront : Wavefront or List[Wavefront]
             Input wavefront(s).
         context : Context, optional
-            Simulation context (may contain time information)
+            Simulation context (may contain time information) - Now accessed via self.context
         
         Returns
         -------
@@ -314,18 +314,18 @@ class Atmosphere(Element):
 
         # 1. Check for downstream TelescopeArray to optimize
         target_collectors = []
-        if context is not None and hasattr(context, 'layers'):
+        if self.context is not None and hasattr(self.context, 'layers'):
             # Find this atmosphere layer index
             my_index = -1
-            for i, layer in enumerate(context.layers):
+            for i, layer in enumerate(self.context.layers):
                 if layer is self:
                     my_index = i
                     break
             
             # Look for next TelescopeArray
             if my_index != -1:
-                for i in range(my_index + 1, len(context.layers)):
-                    layer = context.layers[i]
+                for i in range(my_index + 1, len(self.context.layers)):
+                    layer = self.context.layers[i]
                     if type(layer).__name__ == 'TelescopeArray':
                         target_collectors = layer.collectors
                         break
@@ -336,7 +336,7 @@ class Atmosphere(Element):
                            not isinstance(wavefront, (list, WavefrontArray)))
         
         if use_optimization:
-            return self._process_optimized(wavefront, target_collectors, context)
+            return self._process_optimized(wavefront, target_collectors)
 
         # Standard processing (single wavefront)
         try:
@@ -348,8 +348,8 @@ class Atmosphere(Element):
             return wavefront
 
         # Get observation time from context or default to t=0
-        if context is not None and hasattr(context, 'time'):
-            time = context.time
+        if self.context is not None and hasattr(self.context, 'time'):
+            time = self.context.time
         else:
             time = 0.0 * u.s
         
@@ -371,7 +371,7 @@ class Atmosphere(Element):
         wavefront[:] = wavefront * np.exp(1j * phase).astype(wavefront.dtype)
         return wavefront
 
-    def _process_optimized(self, wavefront: Wavefront, collectors: List['Collector'], context: Context) -> WavefrontArray:
+    def _process_optimized(self, wavefront: Wavefront, collectors: List['Collector']) -> WavefrontArray:
         """Optimized processing for telescope arrays."""
         if wavefront.ndim == 3:
             N_in = wavefront.shape[-1]
@@ -379,8 +379,8 @@ class Atmosphere(Element):
             N_in = wavefront.shape[0]
         
         # Get time
-        if context is not None and hasattr(context, 'time'):
-            time = context.time
+        if self.context is not None and hasattr(self.context, 'time'):
+            time = self.context.time
         else:
             time = 0.0 * u.s
         time_s = time.to(u.s).value if hasattr(time, 'to') else float(time)
@@ -677,7 +677,13 @@ class Atmosphere(Element):
         wf_init = Wavefront(wavelength=wavelength, size=npix)
         wf_init[:] = np.ones((npix, npix), dtype=np.complex128)
         ctx_init = TimeContext(times[0])
-        wf_atm_init = self.process(wf_init, ctx_init)
+        # Swapping context
+        old = self.context
+        self.context = ctx_init
+        try:
+            wf_atm_init = self.process(wf_init)
+        finally:
+            self.context = old
         phase_init = np.angle(wf_atm_init)
         
         # Display initial phase screen
@@ -731,7 +737,13 @@ class Atmosphere(Element):
             wf = Wavefront(wavelength=wavelength, size=npix)
             wf[:] = np.ones((npix, npix), dtype=np.complex128)
             ctx = TimeContext(t)
-            wf_atm = self.process(wf, ctx)
+            # Swapping context
+            old = self.context
+            self.context = ctx
+            try:
+                wf_atm = self.process(wf)
+            finally:
+                self.context = old
             phase = np.angle(wf_atm)
             
             # Update phase screen
@@ -1065,7 +1077,7 @@ class AdaptiveOptics(Element):
             R = self._radial_polynomial(n, -m, rho)
             return R * np.sin((-m) * theta)
 
-    def process(self, wavefront: Wavefront, context: Context) -> Wavefront:
+    def process(self, wavefront: Wavefront) -> Wavefront:
         try:
             N = wavefront.npix
         except Exception:

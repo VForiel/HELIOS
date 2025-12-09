@@ -33,15 +33,13 @@ class FiberIn(Element):
         super().__init__()
         self.num_inputs = 1
     
-    def process(self, wavefront: Wavefront, context: Context) -> Wavefront:
+    def process(self, wavefront: Wavefront) -> Wavefront:
         """Couple wavefront into fiber.
         
         Parameters
         ----------
         wavefront : Wavefront
             Input free-space wavefront
-        context : Context
-            Simulation context
         
         Returns
         -------
@@ -78,15 +76,13 @@ class FiberOut(Element):
         super().__init__()
         self.num_inputs = 1
 
-    def process(self, wavefront: Wavefront, context: Context) -> Wavefront:
+    def process(self, wavefront: Wavefront) -> Wavefront:
         """Output light from fiber.
         
         Parameters
         ----------
         wavefront : Wavefront
             Input fiber-guided wavefront
-        context : Context
-            Simulation context
         
         Returns
         -------

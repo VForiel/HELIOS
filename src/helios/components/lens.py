@@ -74,7 +74,7 @@ class Lens(Element):
         wf._last_focal_length_m = self.focal_length_m
         return wf
 
-    def process(self, wavefront: Any, context: Context) -> Any:
+    def process(self, wavefront: Any) -> Any:
         """
         Apply the thin lens phase to a `Wavefront` or each channel in a `WavefrontArray`.
 
@@ -82,8 +82,6 @@ class Lens(Element):
         ----------
         wavefront : Wavefront or WavefrontArray
             Input wavefront(s) in the pupil plane.
-        context : Context
-            Simulation context (unused).
 
         Returns
         -------
@@ -112,7 +110,7 @@ def test_lens_basic():
     wf.pixel_scale = 0.01 * u.m
 
     lens = Lens(focal_length=10 * u.m)
-    wf_out = lens.process(wf, None)
+    wf_out = lens.process(wf)
 
     assert wf_out.shape == (128, 128)
     # Phase should not be uniformly zero

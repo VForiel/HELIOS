@@ -171,7 +171,7 @@ class Element:
         """
         return {}
 
-    def process(self, wavefront: Any, context: 'Context') -> Any:
+    def process(self, wavefront: Any) -> Any:
         """
         Process the incoming wavefront/signal and return the result.
         
@@ -182,8 +182,6 @@ class Element:
         ----------
         wavefront : Wavefront or list of Wavefront
             The input electromagnetic field(s) to process
-        context : Context
-            The simulation context providing global parameters
         
         Returns
         -------
@@ -430,7 +428,7 @@ class Layer:
         """
         return {}
 
-    def process(self, wavefront: Any, context: 'Context') -> Any:
+    def process(self, wavefront: Any) -> Any:
         """
         Process the incoming wavefront/signal and return the result.
         
@@ -442,9 +440,6 @@ class Layer:
         wavefront : Wavefront or list of Wavefront
             The input electromagnetic field(s) to process. For parallel layers,
             this may be a list of wavefronts.
-        context : Context
-            The simulation context providing global parameters (time, observation
-            conditions, etc.)
         
         Returns
         -------
@@ -578,12 +573,18 @@ class Context:
         if isinstance(layer, list):
             for l in layer:
                 if l is not None:
+                    if l.context is not None and l.context is not self:
+                        import warnings
+                        warnings.warn(f"Layer {l} is being moved from Context {l.context} to {self}.")
                     l.context = self
                     # Propagate to elements if layer has them
                     if hasattr(l, 'elements') and l.elements:
                         for element in l.elements:
                             element.context = self
         else:
+            if layer.context is not None and layer.context is not self:
+                import warnings
+                warnings.warn(f"Layer {layer} is being moved from Context {layer.context} to {self}.")
             layer.context = self
             # Propagate to elements if layer has them
             if hasattr(layer, 'elements') and layer.elements:
@@ -1143,7 +1144,7 @@ class Context:
                         else:
                             proc_input = inputs
                             
-                        result = sub_layer.process(proc_input, self)
+                        result = sub_layer.process(proc_input)
                         
                         if isinstance(result, list):
                             outputs.extend(result)
@@ -1154,7 +1155,7 @@ class Context:
 
             else:
                 # Single layer processing
-                current_signal = layer.process(current_signal, self)
+                current_signal = layer.process(current_signal)
 
         return current_signal
 
@@ -1228,7 +1229,7 @@ class Context:
                         else:
                             proc_input = inputs
                             
-                        result = sub_layer.process(proc_input, self)
+                        result = sub_layer.process(proc_input)
                         
                         # Result handling: always extend the outputs list
                         if isinstance(result, list):
@@ -1245,7 +1246,7 @@ class Context:
                 # But typically a single layer after a split might be a detector array or a combiner.
                 
                 # Let's let the layer handle the input type
-                current_signal = layer.process(current_signal, self)
+                current_signal = layer.process(current_signal)
 
         return current_signal
 

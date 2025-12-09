@@ -55,15 +55,13 @@ class Coronagraph(Element):
         # Optional physical diameter (focal-plane mask scale reference)
         self.diameter = diameter if diameter is None else diameter.to(u.m)
 
-    def process(self, wavefront: Wavefront, context: Context, auto_magnify: Optional[bool] = None) -> Wavefront:
+    def process(self, wavefront: Wavefront, auto_magnify: Optional[bool] = None) -> Wavefront:
         """Apply coronagraph mask to wavefront.
         
         Parameters
         ----------
         wavefront : Wavefront
             Input wavefront (pupil plane)
-        context : Context
-            Simulation context
         
         Returns
         -------

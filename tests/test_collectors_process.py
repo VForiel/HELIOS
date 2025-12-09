@@ -23,7 +23,7 @@ def test_telescope_array_applies_pupil_mask():
     # start with uniform amplitude ones
     wf[:] = np.ones_like(wf, dtype=complex)
 
-    wf2 = array.process(wf, None)
+    wf2 = array.process(wf)
 
     # get expected mask at same sampling
     mask = p.get_array(npix=128, soft=True)

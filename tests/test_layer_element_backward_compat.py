@@ -73,7 +73,7 @@ def test_celestial_body_element_interface():
     # Test process() method (should be pass-through for CelestialBody)
     from helios.core.simulation import Wavefront
     wf = Wavefront(wavelength=550e-9*u.m, size=256)
-    wf_processed = star.process(wf, None)
+    wf_processed = star.process(wf)
     assert wf_processed is wf, "CelestialBody.process() should return the same wavefront"
     
     print("✓ CelestialBody is Element: process() method works")

@@ -48,7 +48,7 @@ class CelestialBody(Element):
         kwargs = deserialize_value(data.get("kwargs", {}))
         return cls(name=name, position=position, **kwargs)
 
-    def process(self, wavefront: Any, context: Context) -> Any:
+    def process(self, wavefront: Any) -> Any:
         """
         Process the wavefront through this celestial body.
         
@@ -60,8 +60,6 @@ class CelestialBody(Element):
         ----------
         wavefront : Wavefront or None
             Input wavefront (may be None for scene initialization).
-        context : Context
-            Simulation context.
         
         Returns
         -------
@@ -540,7 +538,7 @@ class Scene(Layer):
         return data
         
     @classmethod
-    def from_dict(cls, data: dict, context: Optional[Context] = None) -> 'Scene':
+    def from_dict(cls, data: dict) -> 'Scene':
         name = data.get("name")
         distance = deserialize_value(data.get("distance"))
         scene = cls(name=name, distance=distance)
@@ -628,7 +626,7 @@ class Scene(Layer):
                 
         return flux_scaling
 
-    def process(self, wavefront: None, context: Context) -> Wavefront:
+    def process(self, wavefront: None) -> Wavefront:
         """
         Generates the initial wavefront from the scene.
         
@@ -640,8 +638,8 @@ class Scene(Layer):
         """
         # If wavefront is None, generate it using the context
         if wavefront is None:
-            if context is not None:
-                return context.get_input_wavefront()
+            if self.context is not None:
+                return self.context.get_input_wavefront()
             return None
         
         # Calculate total flux scaling

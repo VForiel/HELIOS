@@ -42,7 +42,7 @@ def run_demo():
         wf_t.field = p_amp.astype(np.complex128)
         
         ctx = ObservationContext(t*u.s)
-        wf_t_atm = atm_flow.process(wf_t, ctx)
+        wf_t_atm = atm_flow.process(wf_t)
         
         phase_t = np.angle(wf_t_atm.field)
         

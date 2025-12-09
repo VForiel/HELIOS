@@ -122,7 +122,7 @@ class Collector(Element):
         
         return cls(pupil=pupil, position=pos_raw, size=size, name=name, **metadata)
     
-    def process(self, wavefront: Wavefront, context: Context, auto_magnify: Optional[bool] = None) -> Any:
+    def process(self, wavefront: Wavefront, auto_magnify: Optional[bool] = None) -> Any:
         """
         Process the wavefront through this collector's pupil.
         
@@ -133,8 +133,6 @@ class Collector(Element):
         ----------
         wavefront : Wavefront
             Input wavefront to process.
-        context : Context
-            Simulation context.
         auto_magnify : bool, optional
             If True, resize wavefront to match collector size.
             If False, crop wavefront to collector size.
@@ -693,7 +691,7 @@ class TelescopeArray(Layer):
         
         return ax
     
-    def process(self, wavefront: Any, context: Context) -> Any:
+    def process(self, wavefront: Any) -> Any:
         """Apply telescope array aperture mask to wavefront.
         
         This method overrides the default Layer.process() to implement custom
@@ -716,8 +714,6 @@ class TelescopeArray(Layer):
         ----------
         wavefront : Wavefront or WavefrontArray or List[Wavefront]
             Input wavefront(s) to process.
-        context : Context
-            Simulation context.
         
         Returns
         -------
@@ -731,7 +727,7 @@ class TelescopeArray(Layer):
         if not is_list_input:
             # If no input provided, generate input wavefronts from context
             if wavefront is None:
-                wf_generated = context.get_input_wavefront(collectors=self.elements)
+                wf_generated = self.context.get_input_wavefront(collectors=self.elements)
                 # wf_generated is WavefrontArray; convert to list
                 wf_list = [wf_generated[i] for i in range(len(self.elements))]
             else:
@@ -785,7 +781,7 @@ class TelescopeArray(Layer):
                 # But for now, we assume Context handles it.
                 
                 # Apply collector pupil
-                wf_processed = collector.process(wf, context)
+                wf_processed = collector.process(wf)
                 output_list.append(wf_processed)
                 locations.append(collector.position)
         
