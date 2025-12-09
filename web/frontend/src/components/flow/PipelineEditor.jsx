@@ -6,9 +6,11 @@ import ReactFlow, {
     useNodesState,
     useEdgesState,
     Controls,
+    ControlButton,
     Background,
     MiniMap,
-    useReactFlow
+    useReactFlow,
+    Panel
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import SceneNode from './nodes/SceneNode';
@@ -16,7 +18,7 @@ import AtmosphereNode from './nodes/AtmosphereNode';
 import TelescopeNode from './nodes/TelescopeNode';
 import CameraNode from './nodes/CameraNode';
 import GenericNode from './nodes/GenericNode';
-import { Menu, Sun, Moon, Heart, Github, Book, Download, Upload, Cpu, Disc, Divide, GitFork, Zap, Activity } from 'lucide-react';
+import { Menu, Sun, Moon, Heart, Github, Book, Download, Upload, Cpu, Disc, Divide, GitFork, Zap, Activity, Hand, MousePointer2 } from 'lucide-react';
 
 const nodeTypes = {
     scene: SceneNode,
@@ -69,6 +71,7 @@ export default function PipelineEditor({
     const reactFlowWrapper = useRef(null);
     const [reactFlowInstance, setReactFlowInstance] = useState(null);
     const [clipboard, setClipboard] = useState(null);
+    const [interactionMode, setInteractionMode] = useState('nav'); // 'nav' | 'select'
 
     // Initial Nodes
     const initialNodes = [
@@ -213,7 +216,11 @@ export default function PipelineEditor({
                         // (Use loose match for robustness against null/undefined)
                         const h1 = e.sourceHandle || null;
                         const h2 = params.sourceHandle || null;
-                        if (h1 === h2) return false;
+
+                        // Strict Replacement:
+                        // 1. If handles match, replace.
+                        // 2. If existing edge has NO handle (legacy/bug), replace it to clean up.
+                        if (h1 === h2 || !h1) return false;
                     } else {
                         // For others (Scene, etc.): Collision if source node matches (Single Output)
                         return false;
@@ -355,50 +362,140 @@ export default function PipelineEditor({
     );
 
     const getPipeline = () => {
-        // BFS Traversal
+        // Advanced Traversal for Parallel Branches (Fan-Out)
+        // 1. Identify Start (Scene)
+        // 2. Traverse. If multiple outgoing edges to unvisited nodes -> Parallel Block
+
         const sceneNode = nodes.find(n => n.type === 'scene');
         if (!sceneNode) return [];
 
         let configList = [];
-        let queue = [sceneNode];
-        let visited = new Set([sceneNode.id]);
+        let visited = new Set();
 
-        while (queue.length > 0) {
-            const current = queue.shift();
+        // Recursive Helper
+        const traverse = (node) => {
+            if (visited.has(node.id)) return null;
+            visited.add(node.id);
 
-            // Extract Config
-            let layerType = current.type;
+            // Create Config
+            let layerType = node.type;
             let layerConfig = {};
+            if (layerType === 'scene') layerConfig = { stars, planets, zodiacal };
+            else if (layerType === 'atmosphere') layerConfig = atmosphere;
+            else if (layerType === 'telescope') layerConfig = telescope;
+            else if (layerType === 'camera') layerConfig = camera;
+            else layerConfig = node.data.config;
 
-            if (layerType === 'scene') {
-                layerConfig = { stars, planets, zodiacal };
-            } else if (layerType === 'atmosphere') {
-                layerConfig = atmosphere;
-            } else if (layerType === 'telescope') {
-                layerConfig = telescope;
-            } else if (layerType === 'camera') {
-                layerConfig = camera;
+            const myConfig = { type: layerType, config: layerConfig, metadata: { position: node.position } };
+
+            // Find Next Nodes
+            const outEdges = edges.filter(e => e.source === node.id);
+            const targets = outEdges
+                .map(e => nodes.find(n => n.id === e.target))
+                .filter(n => n && !visited.has(n.id));
+
+            // Deduplicate targets (just in case multiple edges point to same node)
+            const uniqueTargets = [...new Set(targets)];
+
+            if (uniqueTargets.length === 0) {
+                return myConfig;
+            } else if (uniqueTargets.length === 1) {
+                // Linear
+                const next = traverse(uniqueTargets[0]);
+                if (next) return [myConfig, ... (Array.isArray(next) ? next : [next])]; // Flatten linear chain
+                return myConfig;
             } else {
-                // Generics
-                layerConfig = current.data.config;
+                // Branching / Parallel
+                // We return current node, followed by a List of parallel branches
+                // BUT: PipelineRequest structure is flat list of layers/lists.
+                // So: [Current, [Branch1, Branch2, ...]]
+                // Wait, if we return [A, [B, C]], this structure means A is followed by parallel B and C.
+
+                const branches = uniqueTargets.map(t => {
+                    // Traverse each branch independently
+                    // Note: If branches merge later, this simple tree approach duplicates or fails. 
+                    // Assuming Tree structure for now (Fan-Out Only).
+                    const branchResult = traverse(t);
+                    // Flatten branch result if it's a list (linear branch) -> [Node1, Node2]
+                    // If it's a single node -> Node
+                    return Array.isArray(branchResult) ? branchResult : [branchResult];
+                });
+
+                // Ideally we want to flatten the result into the main list if possible, but here we are returning structure.
+                // Problem: 'traverse' returns a chain.
+                // Let's change strategy: Linear accumulation with explicit 'Parallel Block' insertion.
             }
+        };
 
-            configList.push({ type: layerType, config: layerConfig });
+        // Iterative Strategy for simplicity and control
+        let queue = [sceneNode];
+        visited = new Set([sceneNode.id]);
 
-            // Find Outgoing Edges
-            const outEdges = edges.filter(e => e.source === current.id);
-            // Sort by target Y position to handle parallel branches deterministically?
-            // Or just use insertion order.
-            // For now, simple traversal.
-            const targets = outEdges.map(e => nodes.find(n => n.id === e.target)).filter(n => n);
+        // This is tricky because we need to construct the Nested JSON.
+        // Let's do a tailored recursion that returns the LIST structure expected by backend.
 
-            targets.forEach(node => {
-                if (!visited.has(node.id)) {
-                    visited.add(node.id);
-                    queue.push(node);
-                }
-            });
-        }
+        const buildChain = (node) => {
+            // 1. Build Payload for Current Node
+            let layerType = node.type;
+            let layerConfig = {};
+            if (layerType === 'scene') layerConfig = { stars, planets, zodiacal };
+            else if (layerType === 'atmosphere') layerConfig = atmosphere;
+            else if (layerType === 'telescope') layerConfig = telescope;
+            else if (layerType === 'camera') layerConfig = camera;
+            else layerConfig = node.data.config;
+
+            const currentItem = { type: layerType, config: layerConfig, metadata: { position: node.position } };
+
+            // 2. Find Children
+            const outEdges = edges.filter(e => e.source === node.id);
+            const targets = outEdges
+                .map(e => nodes.find(n => n.id === e.target))
+                .filter(n => n); // don't filter visited here for Graph logic, but for Tree yes.
+
+            // Filter targets that we haven't processed yet?
+            // For simple Fan-Out Pipeline (Tree):
+            const children = targets.filter(t => !visited.has(t.id));
+            children.forEach(c => visited.add(c.id));
+
+            if (children.length === 0) {
+                return [currentItem];
+            } else if (children.length === 1) {
+                // Sequence
+                return [currentItem, ...buildChain(children[0])];
+            } else {
+                // Parallel
+                // [Current, [Branch1, Branch2]]
+                const branches = children.map(c => {
+                    // Find edge to get sourceHandle
+                    const edge = edges.find(e => e.source === node.id && e.target === c.id);
+                    const sourceHandle = edge ? edge.sourceHandle : null;
+
+                    let res = buildChain(c);
+
+                    // Inject sourceHandle into the child's metadata (whether it's a single config or list)
+                    let targetNodeConf = null;
+                    if (Array.isArray(res)) {
+                        targetNodeConf = res[0];
+                    } else {
+                        targetNodeConf = res;
+                    }
+
+                    if (targetNodeConf && sourceHandle) {
+                        if (!targetNodeConf.metadata) targetNodeConf.metadata = {};
+                        targetNodeConf.metadata.sourceHandle = sourceHandle;
+                    }
+
+                    // Flatten if single element (common case: Telescope -> Cameras)
+                    if (Array.isArray(res) && res.length === 1) return res[0];
+                    return res;
+                });
+                return [currentItem, branches];
+            }
+        };
+
+        visited.clear();
+        visited.add(sceneNode.id);
+        configList = buildChain(sceneNode);
 
         return configList;
     };
@@ -413,6 +510,7 @@ export default function PipelineEditor({
             const pipeline = getPipeline();
             // Wrap in payload
             const payload = { mode: 'pipeline', layers: pipeline };
+            console.log("Export Payload:", JSON.stringify(payload, null, 2));
 
             const response = await fetch('/api/context/export_file', {
                 method: 'POST',
@@ -467,6 +565,9 @@ export default function PipelineEditor({
             } else if (meta && e.key === 's') {
                 e.preventDefault();
                 handleExport(); // Use existing export logic
+            } else if (meta && e.key === 'a') {
+                e.preventDefault();
+                setNodes(nds => nds.map(n => ({ ...n, selected: true })));
             }
         };
 
@@ -510,73 +611,109 @@ export default function PipelineEditor({
             // Clear current selection/highlight if any (omitted)
 
             // Process layers
-            layers.forEach((layer, idx) => {
-                const id = `node_imp_${idx}`;
-                const position = { x: xPos, y: 100 };
-                xPos += 450; // spacing
+            // Recursive Rebuild
+            const processLayerList = (layerListObj, parentId, autoX) => {
+                const layerList = Array.isArray(layerListObj) ? layerListObj : [layerListObj];
+                let localX = autoX;
+                let lastId = parentId;
 
-                let type = layer.type;
-                let data = {};
+                layerList.forEach((item, idx) => {
+                    if (Array.isArray(item)) {
+                        // Parallel Block! 
+                        const branches = item;
+                        let branchY = 100;
+                        if (lastId) {
+                            const pNode = newNodes.find(n => n.id === lastId);
+                            if (pNode) branchY = pNode.position.y - ((branches.length - 1) * 100 * 0.5);
+                        }
 
-                // Map config to state
-                if (type === 'scene') {
-                    // Update global state vars
-                    const conf = layer.config;
-                    if (conf.stars) setStars(conf.stars);
-                    if (conf.planets) setPlanets(conf.planets);
-                    if (conf.zodiacal) setZodiacal(conf.zodiacal);
-                } else if (type === 'atmosphere') {
-                    setAtmosphere(layer.config);
-                } else if (type === 'telescope') {
-                    setTelescope(layer.config);
-                } else if (type === 'camera') {
-                    setCamera(layer.config);
-                } else {
-                    // Generics
-                    const conf = layer.config;
-                    const setConfig = (c) => updateNodeConfig(id, c);
-                    // Base data
-                    data = { config: conf, setConfig, hasInput: true, hasOutput: true, isDark };
+                        branches.forEach((branch, bIdx) => {
+                            // Branch is a List of layers
+                            // Vertical offset for branches
+                            processLayerList(branch, lastId, localX);
+                        });
 
-                    if (type === 'lens') {
-                        data = { ...data, label: 'Lens', icon: Disc, fields: [{ name: 'focal_length', type: 'number', label: 'Focal Length', step: 0.1 }] };
-                    } else if (type === 'beam_splitter') {
-                        data = { ...data, label: 'Beam Splitter', icon: Divide, fields: [{ name: 'split_ratio', type: 'number', label: 'Split Ratio', step: 0.1 }] };
-                    } else if (type === 'coronagraph') {
-                        data = { ...data, label: 'Coronagraph', icon: Disc, fields: [{ name: 'type', type: 'select', label: 'Mask Type', options: [{ value: '4quadrants', label: '4-Quadrants' }, { value: 'vortex', label: 'Vortex' }] }] };
-                    } else if (type === 'fiber_in') {
-                        data = { ...data, label: 'Fiber Injection', icon: Zap, fields: [{ name: 'modes', type: 'number', label: 'Modes', step: 1 }] };
-                    } else if (type === 'fiber_out') {
-                        data = { ...data, label: 'Fiber Output', icon: Zap, fields: [] };
-                    } else if (type === 'photonic') {
-                        data = {
-                            ...data, label: 'Photonic Chip', icon: Cpu, fields: [
-                                {
-                                    name: 'type', type: 'select', label: 'Component Type', options: [
-                                        { value: 'y_splitter', label: 'Y-Splitter' },
-                                        { value: 'tops', label: 'Phase Shifter' },
-                                        { value: 'mmi', label: 'MMI Coupler' },
-                                        { value: 'swap', label: 'Waveguide Crossing' }
-                                    ]
-                                },
-                                { name: 'phase', type: 'number', label: 'Phase (rad)', step: 0.1 }
-                            ]
-                        };
+                    } else {
+                        // Single Layer
+                        const layer = item;
+                        const id = `node_imp_${newNodes.length}`;
+
+                        // Position Logic
+                        let position;
+                        if (layer.metadata && layer.metadata.position) {
+                            position = layer.metadata.position;
+                            if (position.x >= localX) localX = position.x + 400;
+                        } else {
+                            // Auto Layout
+                            position = { x: localX, y: 100 + (Math.random() * 50) };
+                            const pNode = newNodes.find(n => n.id === parentId);
+                            if (parentId && pNode) {
+                                position.y = pNode.position.y + ((idx - (layerList.length - 1) / 2) * 200);
+                                // Simple spacing if previous was branch parent? 
+                                // Actually for linear chain inside branch, use parent Y.
+                                // Only for the start of branch we need offset.
+                                // Let's refine:
+                                if (layerList.length > 1) {
+                                    // We are at start of parallel list? No.
+                                    // item is 'layer'. layerList is the branch array? No.
+                                    // If we are in processLayerList(branch), then layerList is the branch content.
+                                    // It's linear.
+                                    // Wait, processLayerList iterates linear list.
+                                }
+                            }
+                            localX += 450;
+                        }
+
+                        let type = layer.type;
+                        let data = {};
+
+                        // ... Config Mapping ...
+                        if (type === 'scene') {
+                            const conf = layer.config;
+                            if (conf.stars) setStars(conf.stars);
+                            if (conf.planets) setPlanets(conf.planets);
+                            if (conf.zodiacal) setZodiacal(conf.zodiacal);
+                        } else if (type === 'atmosphere') {
+                            setAtmosphere(layer.config);
+                        } else if (type === 'telescope') {
+                            setTelescope(layer.config);
+                        } else if (type === 'camera') {
+                            setCamera(layer.config);
+                        } else {
+                            // Generics
+                            const conf = layer.config;
+                            const setConfig = (c) => updateNodeConfig(id, c);
+                            data = { config: conf, setConfig, hasInput: true, hasOutput: true, isDark };
+
+                            if (type === 'lens') data = { ...data, label: 'Lens', icon: Disc, fields: [{ name: 'focal_length', type: 'number', label: 'Focal Length', step: 0.1 }] };
+                            else if (type === 'beam_splitter') data = { ...data, label: 'Beam Splitter', icon: Divide, fields: [{ name: 'split_ratio', type: 'number', label: 'Split Ratio', step: 0.1 }] };
+                            else if (type === 'coronagraph') data = { ...data, label: 'Coronagraph', icon: Disc, fields: [{ name: 'type', type: 'select', label: 'Mask Type', options: [{ value: '4quadrants', label: '4-Quadrants' }, { value: 'vortex', label: 'Vortex' }] }] };
+                            else if (type === 'fiber_in') data = { ...data, label: 'Fiber Injection', icon: Zap, fields: [{ name: 'modes', type: 'number', label: 'Modes', step: 1 }] };
+                            else if (type === 'fiber_out') data = { ...data, label: 'Fiber Output', icon: Zap, fields: [] };
+                            else if (type === 'photonic') data = { ...data, label: 'Photonic Chip', icon: Cpu, fields: [{ name: 'type', type: 'select', label: 'Component Type', options: [{ value: 'y_splitter', label: 'Y-Splitter' }, { value: 'tops', label: 'Phase Shifter' }, { value: 'mmi', label: 'MMI Coupler' }, { value: 'swap', label: 'Waveguide Crossing' }] }, { name: 'phase', type: 'number', label: 'Phase (rad)', step: 0.1 }] };
+                        }
+
+                        newNodes.push({ id, type, position, data });
+
+                        if (parentId) {
+                            const edge = {
+                                id: `e_${parentId}_${id}`,
+                                source: parentId,
+                                target: id,
+                                animated: true
+                            };
+                            if (layer.metadata && layer.metadata.sourceHandle) {
+                                edge.sourceHandle = layer.metadata.sourceHandle;
+                            }
+                            newEdges.push(edge);
+                        }
+
+                        lastId = id;
                     }
-                }
+                });
+            };
 
-                newNodes.push({ id, type, position, data });
-
-                if (lastNodeId) {
-                    newEdges.push({
-                        id: `e_${lastNodeId}_${id}`,
-                        source: lastNodeId,
-                        target: id,
-                        animated: true
-                    });
-                }
-                lastNodeId = id;
-            });
+            processLayerList(layers, null, 50);
 
             setNodes(newNodes);
             setEdges(newEdges);
@@ -703,12 +840,31 @@ export default function PipelineEditor({
                     onDragOver={onDragOver}
                     nodeTypes={nodeTypes}
                     connectionLineType="smoothstep"
+                    selectionOnDrag={interactionMode === 'select'}
+                    panOnDrag={interactionMode === 'nav' || [1, 2]}
+                    selectionMode="partial"
                     fitView
                 >
-                    <Controls />
+                    <Controls>
+                        <ControlButton
+                            onClick={() => setInteractionMode('nav')}
+                            title="Navigation Mode (Pan)"
+                            className={interactionMode === 'nav' ? 'text-blue-600 bg-blue-100 font-bold' : ''}
+                        >
+                            <Hand className="w-4 h-4 p-0.5" />
+                        </ControlButton>
+                        <ControlButton
+                            onClick={() => setInteractionMode('select')}
+                            title="Selection Mode (Box Select)"
+                            className={interactionMode === 'select' ? 'text-blue-600 bg-blue-100 font-bold' : ''}
+                        >
+                            <MousePointer2 className="w-4 h-4 p-0.5" />
+                        </ControlButton>
+                    </Controls>
                     <Background color={isDark ? "#1e293b" : "#e2e8f0"} gap={16} />
                 </ReactFlow>
             </div>
         </div>
     );
 }
+

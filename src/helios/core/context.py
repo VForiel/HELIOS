@@ -86,6 +86,7 @@ class Element:
         self.context: Optional['Context'] = None
         self.num_inputs: int = 1  # Number of inputs this element consumes
         self.num_outputs: int = 1 # Number of outputs this element produces
+        self.metadata: dict = {}  # Store for UI/Application specific data
 
     def twin(self) -> 'Element':
         """
@@ -208,7 +209,10 @@ class Element:
         return {
             "type": self.__class__.__name__,
             "module": self.__class__.__module__,
-            "name": self.name
+            "type": self.__class__.__name__,
+            "module": self.__class__.__module__,
+            "name": self.name,
+            "metadata": self.metadata
         }
     
     @classmethod
@@ -227,7 +231,10 @@ class Element:
             New element instance
         """
         name = data.get("name")
-        return cls(name=name)
+        name = data.get("name")
+        elem = cls(name=name)
+        elem.metadata = data.get("metadata", {})
+        return elem
 
 class Layer:
     """
@@ -273,6 +280,7 @@ class Layer:
         self.name = name
         self.elements: List[Element] = []
         self.context: Optional['Context'] = None
+        self.metadata: dict = {} # Store for UI/Application specific data
         self.num_inputs: int = 1  # Number of inputs this layer consumes (if single layer)
         # self.num_outputs is defined as class attribute to allow property override
     
@@ -462,6 +470,7 @@ class Layer:
             "type": self.__class__.__name__,
             "module": self.__class__.__module__,
             "name": self.name,
+            "metadata": self.metadata,
             "elements": [e.to_dict() for e in self.elements]
         }
     
@@ -471,7 +480,9 @@ class Layer:
         Create layer instance from dictionary.
         """
         name = data.get("name")
+        name = data.get("name")
         layer = cls(name=name)
+        layer.metadata = data.get("metadata", {})
         return layer
 
 class Context:

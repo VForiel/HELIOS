@@ -291,6 +291,7 @@ class TelescopeArray(Layer):
         altitude = deserialize_value(data.get("altitude"))
         
         array = cls(name=name, latitude=latitude, longitude=longitude, altitude=altitude)
+        array.metadata = data.get("metadata", {})
         
         # Restore collectors (elements)
         elements_data = data.get("elements", [])

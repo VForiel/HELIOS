@@ -37,17 +37,28 @@ export default function TelescopeNode({ id, data, selected }) {
             </div>
 
             {/* Dynamic Output Handles - One per collector */}
-            {collectors.map((col, index) => (
+            {collectors.length > 0 ? (
+                collectors.map((col, index) => (
+                    <Handle
+                        key={col.id || index}
+                        type="source"
+                        position={Position.Right}
+                        id={col.id || `out-${index}`}
+                        style={{ top: `${((index + 1) * 100) / (collectors.length + 1)}%` }}
+                        className="!bg-purple-500 !-right-4 !w-4 !h-4"
+                        title={`Collector ${index + 1}`}
+                    />
+                ))
+            ) : (
+                /* Fallback Default Handle if no collectors defined */
                 <Handle
-                    key={col.id || index}
                     type="source"
                     position={Position.Right}
-                    id={col.id || `out-${index}`}
-                    style={{ top: `${((index + 1) * 100) / (collectors.length + 1)}%` }}
+                    id="out-default"
                     className="!bg-purple-500 !-right-4 !w-4 !h-4"
-                    title={`Collector ${index + 1}`}
+                    title="Output"
                 />
-            ))}
+            )}
 
             <div className="p-4 max-h-[400px] overflow-y-auto custom-scrollbar nodrag nowheel">
                 <TelescopeConfig config={data.config} setConfig={data.setConfig} />
