@@ -28,9 +28,9 @@ class FiberIn(Element):
     >>> # Multi-mode fiber with 5 modes
     >>> fiber_mm = FiberIn(modes=5)
     """
-    def __init__(self, modes: int = 1, **kwargs):
+    def __init__(self, modes: int = 1, name: str = None, **kwargs):
         self.modes = modes
-        super().__init__()
+        super().__init__(name=name)
         self.num_inputs = 1
     
     def process(self, wavefront: Wavefront) -> Wavefront:
@@ -72,8 +72,8 @@ class FiberOut(Element):
     --------
     >>> fiber_out = FiberOut()
     """
-    def __init__(self, **kwargs):
-        super().__init__()
+    def __init__(self, name: str = None, **kwargs):
+        super().__init__(name=name)
         self.num_inputs = 1
 
     def process(self, wavefront: Wavefront) -> Wavefront:

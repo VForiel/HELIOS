@@ -4,7 +4,7 @@ import TelescopeConfig from '../../TelescopeConfig';
 import LayerVisualizer from './LayerVisualizer';
 import { Trash2 } from 'lucide-react';
 
-export default function TelescopeNode({ id, data }) {
+export default function TelescopeNode({ id, data, selected }) {
     const { deleteElements } = useReactFlow();
     const updateNodeInternals = useUpdateNodeInternals();
 
@@ -17,7 +17,7 @@ export default function TelescopeNode({ id, data }) {
     }, [id, updateNodeInternals, collectors.length, collectors]); // Deep dependency on collectors to catch ID changes
 
     return (
-        <div className="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 shadow-xl min-w-[350px] relative">
+        <div className={`bg-white dark:bg-slate-800 rounded-lg border shadow-xl min-w-[350px] relative transition-all ${selected ? 'border-blue-500 ring-2 ring-blue-500 ring-opacity-50' : 'border-slate-200 dark:border-slate-700'}`}>
             <Handle type="target" position={Position.Left} className="!bg-cyan-500 !-left-4 !w-4 !h-4" />
 
             <div className="bg-slate-50 dark:bg-slate-900 px-4 py-2 border-b border-slate-200 dark:border-slate-800 rounded-t-lg font-semibold text-purple-600 dark:text-purple-400 flex items-center justify-between">

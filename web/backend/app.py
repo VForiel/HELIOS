@@ -12,6 +12,11 @@ from astropy import units as u
 
 import helios
 from helios.components import Zodiacal, Atmosphere, Pupil
+import helios.components.photonics as photonics
+import helios.components.fibers as fibers
+import helios.components.lens as lens_comp
+import helios.components.beam_splitter as bs_comp
+import helios.components.coronagraph as corona_comp
 
 app = FastAPI(title="Helios Web API")
 
@@ -81,10 +86,30 @@ class CameraPayload(BaseModel):
     wavelength: float = 1.0
     exposure: float = 0.1
 
+class LensPayload(BaseModel):
+    focal_length: float = 1.0
+
+class BeamSplitterPayload(BaseModel):
+    split_ratio: float = 0.5
+
+class CoronagraphPayload(BaseModel):
+    type: str = "4quadrants" # 4quadrants, vortex, etc.
+
+class FiberPayload(BaseModel):
+    modes: int = 1
+    name: Optional[str] = None
+
+class PhotonicPayload(BaseModel):
+    type: Literal['y_splitter', 'tops', 'mmi', 'swap']
+    phase: Optional[float] = 0.0
+    matrix_preset: Optional[str] = "hadamard"
+    mapping: Optional[List[int]] = None
+    name: Optional[str] = None
+
 # Generic Layer Wrapper
 class LayerConfig(BaseModel):
-    type: Literal['scene', 'atmosphere', 'telescope', 'camera']
-    config: Union[ScenePayload, AtmospherePayload, TelescopePayload, CameraPayload, Dict[str, Any]]
+    type: Literal['scene', 'atmosphere', 'telescope', 'camera', 'lens', 'beam_splitter', 'coronagraph', 'fiber_in', 'fiber_out', 'photonic']
+    config: Union[ScenePayload, AtmospherePayload, TelescopePayload, CameraPayload, LensPayload, BeamSplitterPayload, CoronagraphPayload, FiberPayload, PhotonicPayload, Dict[str, Any]]
 
 class PipelineRequest(BaseModel):
     mode: Literal['pipeline'] = 'pipeline'
@@ -197,6 +222,46 @@ def create_telescope(config: TelescopePayload):
             
             telescope.add_collector(pupil=p, position=(col.x * u.m, col.y * u.m), size=col.diameter * u.m, name=f"T{i+1}")
         return telescope
+
+
+def create_lens(config: LensPayload):
+    return helios.Lens(focal_length=config.focal_length * u.m)
+
+def create_beam_splitter(config: BeamSplitterPayload):
+    return helios.BeamSplitter(cutoff=config.split_ratio)
+
+def create_coronagraph(config: CoronagraphPayload):
+    # Map type string to implementation params if needed
+    # Currently Coronagraph just takes type string e.g. '4quadrants'
+    return helios.Coronagraph(phase_mask=config.type)
+
+def create_fiber(config: FiberPayload, is_input: bool):
+    if is_input:
+        return fibers.FiberIn(modes=config.modes, name=config.name)
+    else:
+        return fibers.FiberOut(name=config.name)
+
+def create_photonic(config: PhotonicPayload):
+    if config.type == 'y_splitter':
+        return photonics.YSplitter(name=config.name)
+    elif config.type == 'tops':
+        return photonics.TOPS(phase=config.phase if config.phase is not None else 0.0, name=config.name)
+    elif config.type == 'mmi':
+        # Simple preset handling
+        if config.matrix_preset == 'hadamard':
+            mat = np.array([[1, 1], [1, -1]]) / np.sqrt(2)
+        elif config.matrix_preset == 'cross':
+             mat = np.array([
+                [np.exp(1j*np.pi/4), np.exp(-1j*np.pi/4)],
+                [np.exp(-1j*np.pi/4), np.exp(1j*np.pi/4)]
+            ]) / np.sqrt(2)
+        else:
+             mat = np.eye(2) # Fallback identity
+        return photonics.MMI(matrix=mat, name=config.name)
+    elif config.type == 'swap':
+        mapping = config.mapping if config.mapping else [0, 1]
+        return photonics.Swap(mapping=mapping, name=config.name)
+    return None
 
 def create_camera(config: CameraPayload, context):
     # Camera needs pixel scale. We can try to infer from context or defaults.
@@ -584,6 +649,24 @@ def export_context_file(request: PipelineRequest):
             elif layer_conf.type == 'camera':
                  data = CameraPayload(**get_config_dict(layer_conf.config))
                  layer_obj = create_camera(data, context)
+            elif layer_conf.type == 'lens':
+                 data = LensPayload(**get_config_dict(layer_conf.config))
+                 layer_obj = create_lens(data)
+            elif layer_conf.type == 'beam_splitter':
+                 data = BeamSplitterPayload(**get_config_dict(layer_conf.config))
+                 layer_obj = create_beam_splitter(data)
+            elif layer_conf.type == 'coronagraph':
+                 data = CoronagraphPayload(**get_config_dict(layer_conf.config))
+                 layer_obj = create_coronagraph(data)
+            elif layer_conf.type == 'fiber_in':
+                 data = FiberPayload(**get_config_dict(layer_conf.config))
+                 layer_obj = create_fiber(data, is_input=True)
+            elif layer_conf.type == 'fiber_out':
+                 data = FiberPayload(**get_config_dict(layer_conf.config))
+                 layer_obj = create_fiber(data, is_input=False)
+            elif layer_conf.type == 'photonic':
+                 data = PhotonicPayload(**get_config_dict(layer_conf.config))
+                 layer_obj = create_photonic(data)
             
             if layer_obj:
                 context.add_layer(layer_obj)
@@ -685,6 +768,25 @@ def run_pipeline(request: PipelineRequest):
                 else:
                     data = layer_conf.config
                 layer_obj = create_camera(data, context)
+            
+            elif layer_conf.type == 'lens':
+                data = LensPayload(**get_config_dict(layer_conf.config))
+                layer_obj = create_lens(data)
+            elif layer_conf.type == 'beam_splitter':
+                data = BeamSplitterPayload(**get_config_dict(layer_conf.config))
+                layer_obj = create_beam_splitter(data)
+            elif layer_conf.type == 'coronagraph':
+                data = CoronagraphPayload(**get_config_dict(layer_conf.config))
+                layer_obj = create_coronagraph(data)
+            elif layer_conf.type == 'fiber_in':
+                data = FiberPayload(**get_config_dict(layer_conf.config))
+                layer_obj = create_fiber(data, is_input=True)
+            elif layer_conf.type == 'fiber_out':
+                data = FiberPayload(**get_config_dict(layer_conf.config))
+                layer_obj = create_fiber(data, is_input=False)
+            elif layer_conf.type == 'photonic':
+                data = PhotonicPayload(**get_config_dict(layer_conf.config))
+                layer_obj = create_photonic(data)
             
             if layer_obj:
                 context.add_layer(layer_obj)

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import ReactFlow, {
     ReactFlowProvider,
     addEdge,
@@ -7,25 +7,52 @@ import ReactFlow, {
     useEdgesState,
     Controls,
     Background,
-    MiniMap
+    MiniMap,
+    useReactFlow
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { Menu, Sun, Moon, Heart, Github, Book, Download, Upload } from 'lucide-react';
-
 import SceneNode from './nodes/SceneNode';
 import AtmosphereNode from './nodes/AtmosphereNode';
 import TelescopeNode from './nodes/TelescopeNode';
 import CameraNode from './nodes/CameraNode';
+import GenericNode from './nodes/GenericNode';
+import { Menu, Sun, Moon, Heart, Github, Book, Download, Upload, Cpu, Disc, Divide, GitFork, Zap, Activity } from 'lucide-react';
 
 const nodeTypes = {
     scene: SceneNode,
     atmosphere: AtmosphereNode,
     telescope: TelescopeNode,
-    camera: CameraNode
+    camera: CameraNode,
+    lens: GenericNode,
+    beam_splitter: GenericNode,
+    coronagraph: GenericNode,
+    fiber_in: GenericNode,
+    fiber_out: GenericNode,
+    photonic: GenericNode
 };
 
 let id = 1;
 const getId = () => `node_${id++}`;
+
+// History Helper
+const useUndoRedo = (initialNodes, initialEdges) => {
+    const [past, setPast] = useState([]);
+    const [future, setFuture] = useState([]);
+
+    const takeSnapshot = useCallback((nodes, edges) => {
+        setPast(old => {
+            const newPast = [...old, { nodes, edges }];
+            if (newPast.length > 50) newPast.shift(); // Limit to 50
+            return newPast;
+        });
+        setFuture([]);
+    }, []);
+
+    const canUndo = past.length > 0;
+    const canRedo = future.length > 0;
+
+    return { past, setPast, future, setFuture, takeSnapshot, canUndo, canRedo };
+};
 
 export default function PipelineEditor({
     stars, setStars,
@@ -41,6 +68,7 @@ export default function PipelineEditor({
 }) {
     const reactFlowWrapper = useRef(null);
     const [reactFlowInstance, setReactFlowInstance] = useState(null);
+    const [clipboard, setClipboard] = useState(null);
 
     // Initial Nodes
     const initialNodes = [
@@ -72,6 +100,67 @@ export default function PipelineEditor({
     const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
     const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
 
+    // Undo/Redo Hook
+    const { past, setPast, future, setFuture, takeSnapshot, canUndo, canRedo } = useUndoRedo(initialNodes, initialEdges);
+
+    const undo = useCallback(() => {
+        if (!canUndo) return;
+        const current = { nodes, edges };
+        const previous = past[past.length - 1];
+        const newPast = past.slice(0, past.length - 1);
+
+        setPast(newPast);
+        setFuture([current, ...future]);
+        setNodes(previous.nodes);
+        setEdges(previous.edges);
+    }, [nodes, edges, past, future, canUndo, setNodes, setEdges, setPast, setFuture]);
+
+    const redo = useCallback(() => {
+        if (!canRedo) return;
+        const current = { nodes, edges };
+        const next = future[0];
+        const newFuture = future.slice(1);
+
+        setPast([...past, current]);
+        setFuture(newFuture);
+        setNodes(next.nodes);
+        setEdges(next.edges);
+    }, [nodes, edges, past, future, canRedo, setNodes, setEdges, setPast, setFuture]);
+
+    // Snapshot Trigger
+    const registerChange = useCallback(() => {
+        takeSnapshot(nodes, edges);
+    }, [nodes, edges, takeSnapshot]);
+
+    // Copy/Paste Logic
+    const handleCopy = useCallback(() => {
+        const selected = nodes.filter(n => n.selected);
+        if (selected.length > 0) {
+            setClipboard(selected);
+            console.log("Copied", selected.length, "nodes");
+        }
+    }, [nodes]);
+
+    const handlePaste = useCallback(() => {
+        if (!clipboard || clipboard.length === 0) return;
+        registerChange(); // Snapshot before paste
+
+        const newNodes = clipboard.map(node => {
+            const newId = getId();
+            return {
+                ...node,
+                id: newId,
+                position: { x: node.position.x + 50, y: node.position.y + 50 },
+                selected: true,
+                data: { ...node.data } // Deep copy needed if nested, spread is shallow but okay for simple config? 
+                // GenericNode checks 'fields' in data
+            };
+        });
+
+        // Deselect current
+        setNodes(nds => nds.map(n => ({ ...n, selected: false })).concat(newNodes));
+    }, [clipboard, registerChange, setNodes]);
+
     // Update node data when props change
     useMemo(() => {
         setNodes((nds) =>
@@ -99,6 +188,7 @@ export default function PipelineEditor({
 
     const onConnect = useCallback((params) => {
         if (!reactFlowInstance) return;
+        registerChange(); // Snapshot
 
         // Find source node to check if it supports multiple outputs (only Telescope does)
         const sourceNode = reactFlowInstance.getNode(params.source);
@@ -134,7 +224,7 @@ export default function PipelineEditor({
             });
             return addEdge({ ...params, animated: true }, filtered);
         });
-    }, [setEdges, reactFlowInstance]);
+    }, [setEdges, reactFlowInstance, registerChange]);
 
     const edgeUpdateSuccessful = useRef(true);
 
@@ -144,8 +234,10 @@ export default function PipelineEditor({
 
     const onEdgeUpdate = useCallback((oldEdge, newConnection) => {
         edgeUpdateSuccessful.current = true;
+        registerChange(); // Snapshot
         setEdges((els) => updateEdge(oldEdge, newConnection, els));
-    }, [setEdges]);
+    }, [setEdges, registerChange]);
+
     const onEdgeUpdateEnd = useCallback((_, edge) => {
         // If the update was not successful (e.g. dropped on background), 
         // we DO NOT delete the edge anymore. It just snaps back.
@@ -157,9 +249,19 @@ export default function PipelineEditor({
         event.dataTransfer.dropEffect = 'move';
     }, []);
 
+    const updateNodeConfig = useCallback((id, newConfig) => {
+        setNodes((nds) => nds.map((node) => {
+            if (node.id === id) {
+                return { ...node, data: { ...node.data, config: newConfig } };
+            }
+            return node;
+        }));
+    }, [setNodes]);
+
     const onDrop = useCallback(
         (event) => {
             event.preventDefault();
+            registerChange(); // Snapshot
 
             const type = event.dataTransfer.getData('application/reactflow');
             if (typeof type === 'undefined' || !type) {
@@ -171,8 +273,11 @@ export default function PipelineEditor({
                 y: event.clientY - reactFlowWrapper.current.getBoundingClientRect().top,
             });
 
-            // Populate data based on type
+            const nodeId = getId();
             let data = {};
+            const setConfig = (c) => updateNodeConfig(nodeId, c);
+
+            // Defaults
             if (type === 'scene') {
                 data = { stars, setStars, planets, setPlanets, zodiacal, setZodiacal };
             } else if (type === 'atmosphere') {
@@ -182,9 +287,63 @@ export default function PipelineEditor({
             } else if (type === 'camera') {
                 data = { config: camera, setConfig: setCamera };
             }
+            // New Types using GenericNode
+            else if (type === 'lens') {
+                data = {
+                    label: 'Lens', icon: Disc, isDark,
+                    config: { focal_length: 1.0 },
+                    fields: [{ name: 'focal_length', type: 'number', label: 'Focal Length (m)', step: 0.1 }],
+                    setConfig, hasInput: true, hasOutput: true
+                };
+            } else if (type === 'beam_splitter') {
+                data = {
+                    label: 'Beam Splitter', icon: Divide, isDark,
+                    config: { split_ratio: 0.5 },
+                    fields: [{ name: 'split_ratio', type: 'number', label: 'Split Ratio (0-1)', step: 0.1 }],
+                    setConfig, hasInput: true, hasOutput: true
+                };
+            } else if (type === 'coronagraph') {
+                data = {
+                    label: 'Coronagraph', icon: Disc, isDark,
+                    config: { type: '4quadrants' },
+                    fields: [{ name: 'type', type: 'select', label: 'Mask Type', options: [{ value: '4quadrants', label: '4-Quadrants' }, { value: 'vortex', label: 'Vortex' }] }],
+                    setConfig, hasInput: true, hasOutput: true
+                };
+            } else if (type === 'fiber_in') {
+                data = {
+                    label: 'Fiber Injection', icon: Zap, isDark,
+                    config: { modes: 1 },
+                    fields: [{ name: 'modes', type: 'number', label: 'Modes', step: 1 }],
+                    setConfig, hasInput: true, hasOutput: true
+                };
+            } else if (type === 'fiber_out') {
+                data = {
+                    label: 'Fiber Output', icon: Zap, isDark,
+                    config: {},
+                    fields: [],
+                    setConfig, hasInput: true, hasOutput: true
+                };
+            } else if (type === 'photonic') {
+                data = {
+                    label: 'Photonic Chip', icon: Cpu, isDark,
+                    config: { type: 'y_splitter', phase: 0.0 }, // default
+                    fields: [
+                        {
+                            name: 'type', type: 'select', label: 'Component Type', options: [
+                                { value: 'y_splitter', label: 'Y-Splitter' },
+                                { value: 'tops', label: 'Phase Shifter' },
+                                { value: 'mmi', label: 'MMI Coupler' },
+                                { value: 'swap', label: 'Waveguide Crossing' }
+                            ]
+                        },
+                        { name: 'phase', type: 'number', label: 'Phase (rad)', step: 0.1 }
+                    ],
+                    setConfig, hasInput: true, hasOutput: true
+                };
+            }
 
             const newNode = {
-                id: getId(),
+                id: nodeId,
                 type,
                 position,
                 data: data
@@ -192,36 +351,56 @@ export default function PipelineEditor({
 
             setNodes((nds) => nds.concat(newNode));
         },
-        [reactFlowInstance, stars, planets, zodiacal, atmosphere, telescope, camera, setStars, setPlanets, setZodiacal, setAtmosphere, setTelescope, setCamera, setNodes]
+        [reactFlowInstance, stars, planets, zodiacal, atmosphere, telescope, camera, setStars, setPlanets, setZodiacal, setAtmosphere, setTelescope, setCamera, setNodes, updateNodeConfig, isDark, registerChange]
     );
 
     const getPipeline = () => {
-        let path = [];
+        // BFS Traversal
         const sceneNode = nodes.find(n => n.type === 'scene');
         if (!sceneNode) return [];
 
-        let current = sceneNode;
-        path.push({ type: 'scene', config: { stars, planets, zodiacal } });
+        let configList = [];
+        let queue = [sceneNode];
+        let visited = new Set([sceneNode.id]);
 
-        for (let i = 0; i < 10; i++) {
-            const outEdges = edges.filter(e => e.source === current.id);
-            if (outEdges.length === 0) break;
+        while (queue.length > 0) {
+            const current = queue.shift();
 
-            const nextNodeId = outEdges[0].target;
-            const nextNode = nodes.find(n => n.id === nextNodeId);
-            if (!nextNode) break;
+            // Extract Config
+            let layerType = current.type;
+            let layerConfig = {};
 
-            if (nextNode.type === 'atmosphere') {
-                path.push({ type: 'atmosphere', config: atmosphere });
-            } else if (nextNode.type === 'telescope') {
-                path.push({ type: 'telescope', config: telescope });
-            } else if (nextNode.type === 'camera') {
-                path.push({ type: 'camera', config: camera });
+            if (layerType === 'scene') {
+                layerConfig = { stars, planets, zodiacal };
+            } else if (layerType === 'atmosphere') {
+                layerConfig = atmosphere;
+            } else if (layerType === 'telescope') {
+                layerConfig = telescope;
+            } else if (layerType === 'camera') {
+                layerConfig = camera;
+            } else {
+                // Generics
+                layerConfig = current.data.config;
             }
 
-            current = nextNode;
+            configList.push({ type: layerType, config: layerConfig });
+
+            // Find Outgoing Edges
+            const outEdges = edges.filter(e => e.source === current.id);
+            // Sort by target Y position to handle parallel branches deterministically?
+            // Or just use insertion order.
+            // For now, simple traversal.
+            const targets = outEdges.map(e => nodes.find(n => n.id === e.target)).filter(n => n);
+
+            targets.forEach(node => {
+                if (!visited.has(node.id)) {
+                    visited.add(node.id);
+                    queue.push(node);
+                }
+            });
         }
-        return path;
+
+        return configList;
     };
 
     const handleRun = () => {
@@ -261,6 +440,39 @@ export default function PipelineEditor({
             alert("Export Failed: " + e.message);
         }
     };
+
+    // Keyboard Listeners
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            // Check modifier (Ctrl or Cmd)
+            const meta = e.ctrlKey || e.metaKey;
+
+            if (meta && e.key === 'z') {
+                e.preventDefault();
+                undo();
+            } else if (meta && e.key === 'y') {
+                e.preventDefault();
+                redo();
+            } else if (meta && e.key === 'c') {
+                // Let native copy work for text? Only if no input focused.
+                if (document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+                    e.preventDefault();
+                    handleCopy();
+                }
+            } else if (meta && e.key === 'v') {
+                if (document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+                    e.preventDefault();
+                    handlePaste();
+                }
+            } else if (meta && e.key === 's') {
+                e.preventDefault();
+                handleExport(); // Use existing export logic
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [undo, redo, handleCopy, handlePaste]); // handleExport needs to be stable or ref
 
     const fileInputRef = useRef(null);
 
@@ -304,12 +516,11 @@ export default function PipelineEditor({
                 xPos += 450; // spacing
 
                 let type = layer.type;
+                let data = {};
+
                 // Map config to state
                 if (type === 'scene') {
                     // Update global state vars
-                    // We assume one scene for now. If multiple, we overwrite or merge?
-                    // Basic App only supports one set of state variables.
-                    // So we take the first one found.
                     const conf = layer.config;
                     if (conf.stars) setStars(conf.stars);
                     if (conf.planets) setPlanets(conf.planets);
@@ -320,18 +531,41 @@ export default function PipelineEditor({
                     setTelescope(layer.config);
                 } else if (type === 'camera') {
                     setCamera(layer.config);
+                } else {
+                    // Generics
+                    const conf = layer.config;
+                    const setConfig = (c) => updateNodeConfig(id, c);
+                    // Base data
+                    data = { config: conf, setConfig, hasInput: true, hasOutput: true, isDark };
+
+                    if (type === 'lens') {
+                        data = { ...data, label: 'Lens', icon: Disc, fields: [{ name: 'focal_length', type: 'number', label: 'Focal Length', step: 0.1 }] };
+                    } else if (type === 'beam_splitter') {
+                        data = { ...data, label: 'Beam Splitter', icon: Divide, fields: [{ name: 'split_ratio', type: 'number', label: 'Split Ratio', step: 0.1 }] };
+                    } else if (type === 'coronagraph') {
+                        data = { ...data, label: 'Coronagraph', icon: Disc, fields: [{ name: 'type', type: 'select', label: 'Mask Type', options: [{ value: '4quadrants', label: '4-Quadrants' }, { value: 'vortex', label: 'Vortex' }] }] };
+                    } else if (type === 'fiber_in') {
+                        data = { ...data, label: 'Fiber Injection', icon: Zap, fields: [{ name: 'modes', type: 'number', label: 'Modes', step: 1 }] };
+                    } else if (type === 'fiber_out') {
+                        data = { ...data, label: 'Fiber Output', icon: Zap, fields: [] };
+                    } else if (type === 'photonic') {
+                        data = {
+                            ...data, label: 'Photonic Chip', icon: Cpu, fields: [
+                                {
+                                    name: 'type', type: 'select', label: 'Component Type', options: [
+                                        { value: 'y_splitter', label: 'Y-Splitter' },
+                                        { value: 'tops', label: 'Phase Shifter' },
+                                        { value: 'mmi', label: 'MMI Coupler' },
+                                        { value: 'swap', label: 'Waveguide Crossing' }
+                                    ]
+                                },
+                                { name: 'phase', type: 'number', label: 'Phase (rad)', step: 0.1 }
+                            ]
+                        };
+                    }
                 }
 
-                // Create Node
-                // Note: The DATA property of the node depends on the STATE vars (stars, etc.)
-                // But the setState above is async/batched.
-                // The useMemo hook in PipelineEditor updates node.data when state changes.
-                // So we just creating the node with correct type is enough?
-                // Yes, useMemo will inject the data.
-
-                newNodes.push({
-                    id, type, position, data: {}
-                });
+                newNodes.push({ id, type, position, data });
 
                 if (lastNodeId) {
                     newEdges.push({
