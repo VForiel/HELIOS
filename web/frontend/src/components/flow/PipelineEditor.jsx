@@ -13,24 +13,20 @@ import ReactFlow, {
     Panel
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import SceneNode from './nodes/SceneNode';
-import AtmosphereNode from './nodes/AtmosphereNode';
 import TelescopeNode from './nodes/TelescopeNode';
 import CameraNode from './nodes/CameraNode';
 import GenericNode from './nodes/GenericNode';
-import { Menu, Sun, Moon, Heart, Github, Book, Download, Upload, Cpu, Disc, Divide, GitFork, Zap, Activity, Hand, MousePointer2 } from 'lucide-react';
+import { Menu, Sun, Moon, Heart, Github, Book, Download, Upload, Cpu, Disc, Divide, GitFork, Zap, Activity, Hand, MousePointer2, Stars, Search, Camera, CloudFog } from 'lucide-react';
+
+import LayerNode from './nodes/LayerNode';
+import ParallelEdge from './edges/ParallelEdge';
 
 const nodeTypes = {
-    scene: SceneNode,
-    atmosphere: AtmosphereNode,
-    telescope: TelescopeNode,
-    camera: CameraNode,
-    lens: GenericNode,
-    beam_splitter: GenericNode,
-    coronagraph: GenericNode,
-    fiber_in: GenericNode,
-    fiber_out: GenericNode,
-    photonic: GenericNode
+    layer: LayerNode
+};
+
+const edgeTypes = {
+    parallel: ParallelEdge
 };
 
 let id = 1;
@@ -69,39 +65,69 @@ export default function PipelineEditor({
     isDark
 }) {
     const reactFlowWrapper = useRef(null);
+    const edgeUpdateSuccessful = useRef(true);
     const [reactFlowInstance, setReactFlowInstance] = useState(null);
     const [clipboard, setClipboard] = useState(null);
     const [interactionMode, setInteractionMode] = useState('nav'); // 'nav' | 'select'
 
-    // Initial Nodes
+    // Initial Nodes (Layers)
     const initialNodes = [
         {
-            id: 'scene-1',
-            type: 'scene',
+            id: 'layer-1',
+            type: 'layer',
             position: { x: 50, y: 100 },
-            data: { stars, setStars, planets, setPlanets, zodiacal, setZodiacal }
+            data: {
+                elements: [
+                    { type: 'scene', label: 'Scene', config: { stars, planets, zodiacal }, icon: Stars }
+                ]
+            }
         },
         {
-            id: 'tel-1',
-            type: 'telescope',
+            id: 'layer-2',
+            type: 'layer',
             position: { x: 500, y: 100 },
-            data: { config: telescope, setConfig: setTelescope }
+            data: {
+                elements: [
+                    { type: 'telescope', label: 'Telescope', config: telescope, icon: Search }
+                ]
+            }
         },
         {
-            id: 'cam-1',
-            type: 'camera',
+            id: 'layer-3',
+            type: 'layer',
             position: { x: 950, y: 100 },
-            data: { config: camera, setConfig: setCamera }
+            data: {
+                elements: [
+                    { type: 'camera', label: 'Camera', config: camera, icon: Camera }
+                ]
+            }
         }
     ];
 
     const initialEdges = [
-        { id: 'e1-2', source: 'scene-1', target: 'tel-1', animated: true },
-        { id: 'e2-3', source: 'tel-1', target: 'cam-1', animated: true },
+        { id: 'e1-2', source: 'layer-1', target: 'layer-2', animated: true },
+        { id: 'e2-3', source: 'layer-2', target: 'layer-3', animated: true },
     ];
 
     const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
     const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+
+    // Sync Edges with Telescope Config (Parallel Paths)
+    useEffect(() => {
+        const collectorCount = telescope.collectors ? telescope.collectors.length : 1;
+
+        setEdges(eds => eds.map(e => {
+            const sourceNode = nodes.find(n => n.id === e.source);
+            if (sourceNode && sourceNode.type === 'telescope') {
+                return {
+                    ...e,
+                    type: 'parallel',
+                    data: { ...e.data, pathCount: collectorCount }
+                };
+            }
+            return e;
+        }));
+    }, [telescope, nodes, setEdges]);
 
     // Undo/Redo Hook
     const { past, setPast, future, setFuture, takeSnapshot, canUndo, canRedo } = useUndoRedo(initialNodes, initialEdges);
@@ -185,55 +211,31 @@ export default function PipelineEditor({
 
     // Enforce 1-to-1 connections per handle and prevent self-loops
     const isValidConnection = useCallback((connection) => {
-        // Prevent self-loops
         return connection.source !== connection.target;
     }, []);
 
     const onConnect = useCallback((params) => {
         if (!reactFlowInstance) return;
-        registerChange(); // Snapshot
+        registerChange();
 
-        // Find source node to check if it supports multiple outputs (only Telescope does)
+        // Edge Type Logic based on Layer Content
         const sourceNode = reactFlowInstance.getNode(params.source);
-        const isMultiOutput = sourceNode?.type === 'telescope';
+        let edgeType = 'default';
+        let edgeData = { pathCount: 1 };
+
+        if (sourceNode && sourceNode.data.elements) {
+            const telescopeElem = sourceNode.data.elements.find(el => el.type === 'telescope');
+            if (telescopeElem) {
+                edgeType = 'parallel';
+                edgeData = { pathCount: telescopeElem.config.collectors ? telescopeElem.config.collectors.length : 1 };
+            }
+        }
 
         setEdges((eds) => {
-            // Enforce 1-to-1 strict rules
-            // 1. Every Target input can have only ONE connection (universally true for our nodes)
-            // 2. Non-Telescope Sources can have only ONE connection (Scene, Atmosphere)
-            // 3. Telescope Sources can have one connection per HANDLE
-
-            const filtered = eds.filter(e => {
-                // Check Target Collision
-                if (e.target === params.target) {
-                    return false; // Remove existing input link to this node, regardless of handle
-                }
-
-                // Check Source Collision
-                if (e.source === params.source) {
-                    if (isMultiOutput) {
-                        // For Telescope: Collision only if handles match
-                        // (Use loose match for robustness against null/undefined)
-                        const h1 = e.sourceHandle || null;
-                        const h2 = params.sourceHandle || null;
-
-                        // Strict Replacement:
-                        // 1. If handles match, replace.
-                        // 2. If existing edge has NO handle (legacy/bug), replace it to clean up.
-                        if (h1 === h2 || !h1) return false;
-                    } else {
-                        // For others (Scene, etc.): Collision if source node matches (Single Output)
-                        return false;
-                    }
-                }
-
-                return true;
-            });
-            return addEdge({ ...params, animated: true }, filtered);
+            const filtered = eds.filter(e => e.target !== params.target);
+            return addEdge({ ...params, animated: true, type: edgeType, data: edgeData }, filtered);
         });
     }, [setEdges, reactFlowInstance, registerChange]);
-
-    const edgeUpdateSuccessful = useRef(true);
 
     const onEdgeUpdateStart = useCallback(() => {
         edgeUpdateSuccessful.current = false;
@@ -241,262 +243,135 @@ export default function PipelineEditor({
 
     const onEdgeUpdate = useCallback((oldEdge, newConnection) => {
         edgeUpdateSuccessful.current = true;
-        registerChange(); // Snapshot
         setEdges((els) => updateEdge(oldEdge, newConnection, els));
-    }, [setEdges, registerChange]);
+    }, [setEdges]);
 
     const onEdgeUpdateEnd = useCallback((_, edge) => {
-        // If the update was not successful (e.g. dropped on background), 
-        // we DO NOT delete the edge anymore. It just snaps back.
+        if (!edgeUpdateSuccessful.current) {
+            setEdges((eds) => eds.filter((e) => e.id !== edge.id));
+        }
         edgeUpdateSuccessful.current = true;
-    }, []);
+    }, [setEdges]);
+
 
     const onDragOver = useCallback((event) => {
         event.preventDefault();
         event.dataTransfer.dropEffect = 'move';
     }, []);
 
-    const updateNodeConfig = useCallback((id, newConfig) => {
-        setNodes((nds) => nds.map((node) => {
-            if (node.id === id) {
-                return { ...node, data: { ...node.data, config: newConfig } };
-            }
-            return node;
-        }));
-    }, [setNodes]);
-
     const onDrop = useCallback(
         (event) => {
             event.preventDefault();
-            registerChange(); // Snapshot
+            registerChange();
 
             const type = event.dataTransfer.getData('application/reactflow');
-            if (typeof type === 'undefined' || !type) {
-                return;
-            }
+            if (typeof type === 'undefined' || !type) return;
+
+            const clientX = event.clientX;
+            const clientY = event.clientY;
 
             const position = reactFlowInstance.project({
-                x: event.clientX - reactFlowWrapper.current.getBoundingClientRect().left,
-                y: event.clientY - reactFlowWrapper.current.getBoundingClientRect().top,
+                x: clientX - reactFlowWrapper.current.getBoundingClientRect().left,
+                y: clientY - reactFlowWrapper.current.getBoundingClientRect().top,
             });
 
-            const nodeId = getId();
-            let data = {};
-            const setConfig = (c) => updateNodeConfig(nodeId, c);
+            // Check intersection with existing nodes
+            const hitBox = { x: position.x - 20, y: position.y - 20, width: 40, height: 40 };
+            const intersections = reactFlowInstance.getIntersectingNodes(hitBox);
 
-            // Defaults
-            if (type === 'scene') {
-                data = { stars, setStars, planets, setPlanets, zodiacal, setZodiacal };
-            } else if (type === 'atmosphere') {
-                data = { config: atmosphere, setConfig: setAtmosphere };
-            } else if (type === 'telescope') {
-                data = { config: telescope, setConfig: setTelescope };
-            } else if (type === 'camera') {
-                data = { config: camera, setConfig: setCamera };
+            // Define new element
+            // Icons already imported
+
+            let newElement = { type, config: {}, label: type, icon: Disc };
+
+            if (type === 'scene') newElement = { type, label: 'Scene', config: { stars, planets, zodiacal }, icon: Stars };
+            else if (type === 'atmosphere') newElement = { type, label: 'Atmosphere', config: atmosphere, icon: CloudFog };
+            else if (type === 'telescope') newElement = { type, label: 'Telescope', config: telescope, icon: Search };
+            else if (type === 'camera') newElement = { type, label: 'Camera', config: camera, icon: Camera };
+            else if (type === 'lens') newElement = { type, label: 'Lens', config: { focal_length: 1.0 }, icon: Disc, fields: [{ name: 'focal_length', type: 'number', label: 'Focal Length', step: 0.1 }] };
+            else if (type === 'beam_splitter') newElement = { type, label: 'Beam Splitter', config: { split_ratio: 0.5 }, icon: Divide, fields: [{ name: 'split_ratio', type: 'number', label: 'Split Ratio', step: 0.1 }] };
+            else if (type === 'coronagraph') newElement = { type, label: 'Coronagraph', config: { type: '4quadrants' }, icon: Disc, fields: [{ name: 'type', type: 'select', label: 'Mask Type', options: [{ value: '4quadrants', label: '4-Quadrants' }, { value: 'vortex', label: 'Vortex' }] }] };
+            else if (type === 'fiber_in') newElement = { type, label: 'Fiber Injection', config: { modes: 1 }, icon: Zap, fields: [{ name: 'modes', type: 'number', label: 'Modes', step: 1 }] };
+            else if (type === 'fiber_out') newElement = { type, label: 'Fiber Output', config: {}, icon: Zap, fields: [] };
+            else if (type === 'photonic') newElement = { type, label: 'Photonic Chip', config: { type: 'y_splitter', phase: 0.0 }, icon: Cpu, fields: [{ name: 'type', type: 'select', label: 'Component Type', options: [{ value: 'y_splitter', label: 'Y-Splitter' }, { value: 'tops', label: 'Phase Shifter' }, { value: 'mmi', label: 'MMI Coupler' }, { value: 'swap', label: 'Waveguide Crossing' }] }, { name: 'phase', type: 'number', label: 'Phase (rad)', step: 0.1 }] };
+
+
+            if (intersections.length > 0) {
+                // Add to existing Layer
+                const targetNode = intersections[0]; // Take top one
+                const newElements = [...(targetNode.data.elements || []), newElement];
+
+                setNodes((nds) => nds.map((n) => {
+                    if (n.id === targetNode.id) {
+                        return { ...n, data: { ...n.data, elements: newElements } };
+                    }
+                    return n;
+                }));
+            } else {
+                // Create New Layer Node
+                const nodeId = getId();
+                const newNode = {
+                    id: nodeId,
+                    type: 'layer',
+                    position,
+                    data: {
+                        elements: [newElement]
+
+                    }
+                };
+                setNodes((nds) => nds.concat(newNode));
             }
-            // New Types using GenericNode
-            else if (type === 'lens') {
-                data = {
-                    label: 'Lens', icon: Disc, isDark,
-                    config: { focal_length: 1.0 },
-                    fields: [{ name: 'focal_length', type: 'number', label: 'Focal Length (m)', step: 0.1 }],
-                    setConfig, hasInput: true, hasOutput: true
-                };
-            } else if (type === 'beam_splitter') {
-                data = {
-                    label: 'Beam Splitter', icon: Divide, isDark,
-                    config: { split_ratio: 0.5 },
-                    fields: [{ name: 'split_ratio', type: 'number', label: 'Split Ratio (0-1)', step: 0.1 }],
-                    setConfig, hasInput: true, hasOutput: true
-                };
-            } else if (type === 'coronagraph') {
-                data = {
-                    label: 'Coronagraph', icon: Disc, isDark,
-                    config: { type: '4quadrants' },
-                    fields: [{ name: 'type', type: 'select', label: 'Mask Type', options: [{ value: '4quadrants', label: '4-Quadrants' }, { value: 'vortex', label: 'Vortex' }] }],
-                    setConfig, hasInput: true, hasOutput: true
-                };
-            } else if (type === 'fiber_in') {
-                data = {
-                    label: 'Fiber Injection', icon: Zap, isDark,
-                    config: { modes: 1 },
-                    fields: [{ name: 'modes', type: 'number', label: 'Modes', step: 1 }],
-                    setConfig, hasInput: true, hasOutput: true
-                };
-            } else if (type === 'fiber_out') {
-                data = {
-                    label: 'Fiber Output', icon: Zap, isDark,
-                    config: {},
-                    fields: [],
-                    setConfig, hasInput: true, hasOutput: true
-                };
-            } else if (type === 'photonic') {
-                data = {
-                    label: 'Photonic Chip', icon: Cpu, isDark,
-                    config: { type: 'y_splitter', phase: 0.0 }, // default
-                    fields: [
-                        {
-                            name: 'type', type: 'select', label: 'Component Type', options: [
-                                { value: 'y_splitter', label: 'Y-Splitter' },
-                                { value: 'tops', label: 'Phase Shifter' },
-                                { value: 'mmi', label: 'MMI Coupler' },
-                                { value: 'swap', label: 'Waveguide Crossing' }
-                            ]
-                        },
-                        { name: 'phase', type: 'number', label: 'Phase (rad)', step: 0.1 }
-                    ],
-                    setConfig, hasInput: true, hasOutput: true
-                };
-            }
-
-            const newNode = {
-                id: nodeId,
-                type,
-                position,
-                data: data
-            };
-
-            setNodes((nds) => nds.concat(newNode));
         },
-        [reactFlowInstance, stars, planets, zodiacal, atmosphere, telescope, camera, setStars, setPlanets, setZodiacal, setAtmosphere, setTelescope, setCamera, setNodes, updateNodeConfig, isDark, registerChange]
+        [reactFlowInstance, registerChange, setNodes, stars, telescope, camera, atmosphere]
     );
 
     const getPipeline = () => {
-        // Advanced Traversal for Parallel Branches (Fan-Out)
-        // 1. Identify Start (Scene)
-        // 2. Traverse. If multiple outgoing edges to unvisited nodes -> Parallel Block
+        // Traversal Logic - Refactored for Layers
+        // We traverse Layers. For each Layer, we just append its Elements to the chain.
+        // Parallel branching logic now applies to LAYERS.
 
-        const sceneNode = nodes.find(n => n.type === 'scene');
-        if (!sceneNode) return [];
+        const startNodes = nodes.filter(n =>
+            n.data.elements && n.data.elements.some(el => el.type === 'scene')
+        );
+        const root = startNodes.length > 0 ? startNodes[0] : nodes[0]; // Fallback
 
-        let configList = [];
+        if (!root) return [];
+
         let visited = new Set();
 
-        // Recursive Helper
-        const traverse = (node) => {
-            if (visited.has(node.id)) return null;
-            visited.add(node.id);
+        const buildChain = (node) => {
+            // 1. Current Layer Elements
+            // We need to return a List of Configs.
+            const layerElements = node.data.elements.map(el => ({
+                type: el.type,
+                config: el.config,
+                metadata: { position: node.position }
+            }));
 
-            // Create Config
-            let layerType = node.type;
-            let layerConfig = {};
-            if (layerType === 'scene') layerConfig = { stars, planets, zodiacal };
-            else if (layerType === 'atmosphere') layerConfig = atmosphere;
-            else if (layerType === 'telescope') layerConfig = telescope;
-            else if (layerType === 'camera') layerConfig = camera;
-            else layerConfig = node.data.config;
-
-            const myConfig = { type: layerType, config: layerConfig, metadata: { position: node.position } };
-
-            // Find Next Nodes
+            // 2. Children
             const outEdges = edges.filter(e => e.source === node.id);
             const targets = outEdges
                 .map(e => nodes.find(n => n.id === e.target))
                 .filter(n => n && !visited.has(n.id));
 
-            // Deduplicate targets (just in case multiple edges point to same node)
-            const uniqueTargets = [...new Set(targets)];
+            targets.forEach(t => visited.add(t.id));
 
-            if (uniqueTargets.length === 0) {
-                return myConfig;
-            } else if (uniqueTargets.length === 1) {
-                // Linear
-                const next = traverse(uniqueTargets[0]);
-                if (next) return [myConfig, ... (Array.isArray(next) ? next : [next])]; // Flatten linear chain
-                return myConfig;
+            if (targets.length === 0) return [layerElements];
+            else if (targets.length === 1) {
+                // Linear connection to next Layer
+                return [layerElements, ...buildChain(targets[0])];
             } else {
-                // Branching / Parallel
-                // We return current node, followed by a List of parallel branches
-                // BUT: PipelineRequest structure is flat list of layers/lists.
-                // So: [Current, [Branch1, Branch2, ...]]
-                // Wait, if we return [A, [B, C]], this structure means A is followed by parallel B and C.
-
-                const branches = uniqueTargets.map(t => {
-                    // Traverse each branch independently
-                    // Note: If branches merge later, this simple tree approach duplicates or fails. 
-                    // Assuming Tree structure for now (Fan-Out Only).
-                    const branchResult = traverse(t);
-                    // Flatten branch result if it's a list (linear branch) -> [Node1, Node2]
-                    // If it's a single node -> Node
-                    return Array.isArray(branchResult) ? branchResult : [branchResult];
-                });
-
-                // Ideally we want to flatten the result into the main list if possible, but here we are returning structure.
-                // Problem: 'traverse' returns a chain.
-                // Let's change strategy: Linear accumulation with explicit 'Parallel Block' insertion.
-            }
-        };
-
-        // Iterative Strategy for simplicity and control
-        let queue = [sceneNode];
-        visited = new Set([sceneNode.id]);
-
-        // This is tricky because we need to construct the Nested JSON.
-        // Let's do a tailored recursion that returns the LIST structure expected by backend.
-
-        const buildChain = (node) => {
-            // 1. Build Payload for Current Node
-            let layerType = node.type;
-            let layerConfig = {};
-            if (layerType === 'scene') layerConfig = { stars, planets, zodiacal };
-            else if (layerType === 'atmosphere') layerConfig = atmosphere;
-            else if (layerType === 'telescope') layerConfig = telescope;
-            else if (layerType === 'camera') layerConfig = camera;
-            else layerConfig = node.data.config;
-
-            const currentItem = { type: layerType, config: layerConfig, metadata: { position: node.position } };
-
-            // 2. Find Children
-            const outEdges = edges.filter(e => e.source === node.id);
-            const targets = outEdges
-                .map(e => nodes.find(n => n.id === e.target))
-                .filter(n => n); // don't filter visited here for Graph logic, but for Tree yes.
-
-            // Filter targets that we haven't processed yet?
-            // For simple Fan-Out Pipeline (Tree):
-            const children = targets.filter(t => !visited.has(t.id));
-            children.forEach(c => visited.add(c.id));
-
-            if (children.length === 0) {
-                return [currentItem];
-            } else if (children.length === 1) {
-                // Sequence
-                return [currentItem, ...buildChain(children[0])];
-            } else {
-                // Parallel
-                // [Current, [Branch1, Branch2]]
-                const branches = children.map(c => {
-                    // Find edge to get sourceHandle
-                    const edge = edges.find(e => e.source === node.id && e.target === c.id);
-                    const sourceHandle = edge ? edge.sourceHandle : null;
-
-                    let res = buildChain(c);
-
-                    // Inject sourceHandle into the child's metadata (whether it's a single config or list)
-                    let targetNodeConf = null;
-                    if (Array.isArray(res)) {
-                        targetNodeConf = res[0];
-                    } else {
-                        targetNodeConf = res;
-                    }
-
-                    if (targetNodeConf && sourceHandle) {
-                        if (!targetNodeConf.metadata) targetNodeConf.metadata = {};
-                        targetNodeConf.metadata.sourceHandle = sourceHandle;
-                    }
-
-                    // Flatten if single element (common case: Telescope -> Cameras)
-                    if (Array.isArray(res) && res.length === 1) return res[0];
+                // Parallel Layers from this Layer
+                const branches = targets.map(t => {
+                    const res = buildChain(t);
                     return res;
                 });
-                return [currentItem, branches];
+                return [layerElements, branches];
             }
         };
 
-        visited.clear();
-        visited.add(sceneNode.id);
-        configList = buildChain(sceneNode);
-
+        visited.add(root.id);
+        const configList = buildChain(root);
         return configList;
     };
 
@@ -598,116 +473,93 @@ export default function PipelineEditor({
             if (!response.ok) throw new Error("Import failed");
 
             const result = await response.json();
-            // result is PipelineRequest { mode, layers }
-
-            // Rebuild State
             const layers = result.layers || [];
 
             const newNodes = [];
             const newEdges = [];
-            let xPos = 50;
-            let lastNodeId = null;
 
-            // Clear current selection/highlight if any (omitted)
-
-            // Process layers
-            // Recursive Rebuild
-            const processLayerList = (layerListObj, parentId, autoX) => {
-                const layerList = Array.isArray(layerListObj) ? layerListObj : [layerListObj];
-                let localX = autoX;
+            // Helper to recursively process layers
+            const processLayerList = (list, parentId, autoX) => {
+                const items = Array.isArray(list) ? list : [list];
+                let currentX = autoX;
                 let lastId = parentId;
 
-                layerList.forEach((item, idx) => {
+                items.forEach((item, idx) => {
                     if (Array.isArray(item)) {
-                        // Parallel Block! 
+                        // Parallel Block
                         const branches = item;
-                        let branchY = 100;
-                        if (lastId) {
-                            const pNode = newNodes.find(n => n.id === lastId);
-                            if (pNode) branchY = pNode.position.y - ((branches.length - 1) * 100 * 0.5);
-                        }
-
-                        branches.forEach((branch, bIdx) => {
-                            // Branch is a List of layers
-                            // Vertical offset for branches
-                            processLayerList(branch, lastId, localX);
+                        branches.forEach(branch => {
+                            processLayerList(branch, lastId, currentX);
                         });
-
+                        // X position doesn't increment for parallel branches typically, 
+                        // but logic needs review if they merge back. For now, simple recursion.
                     } else {
                         // Single Layer
                         const layer = item;
-                        const id = `node_imp_${newNodes.length}`;
+                        const id = "node_imp_" + newNodes.length;
 
-                        // Position Logic
-                        let position;
+                        let position = { x: currentX, y: 100 + (Math.random() * 50) };
                         if (layer.metadata && layer.metadata.position) {
                             position = layer.metadata.position;
-                            if (position.x >= localX) localX = position.x + 400;
+                            if (position.x >= currentX) currentX = position.x + 400;
                         } else {
-                            // Auto Layout
-                            position = { x: localX, y: 100 + (Math.random() * 50) };
                             const pNode = newNodes.find(n => n.id === parentId);
                             if (parentId && pNode) {
-                                position.y = pNode.position.y + ((idx - (layerList.length - 1) / 2) * 200);
-                                // Simple spacing if previous was branch parent? 
-                                // Actually for linear chain inside branch, use parent Y.
-                                // Only for the start of branch we need offset.
-                                // Let's refine:
-                                if (layerList.length > 1) {
-                                    // We are at start of parallel list? No.
-                                    // item is 'layer'. layerList is the branch array? No.
-                                    // If we are in processLayerList(branch), then layerList is the branch content.
-                                    // It's linear.
-                                    // Wait, processLayerList iterates linear list.
-                                }
+                                position.y = pNode.position.y;
                             }
-                            localX += 450;
+                            currentX += 450;
                         }
 
-                        let type = layer.type;
-                        let data = {};
+                        let data = { elements: [] };
+                        const type = layer.type;
+                        const conf = layer.config || {};
 
-                        // ... Config Mapping ...
+                        // Map to Elements
                         if (type === 'scene') {
-                            const conf = layer.config;
                             if (conf.stars) setStars(conf.stars);
                             if (conf.planets) setPlanets(conf.planets);
                             if (conf.zodiacal) setZodiacal(conf.zodiacal);
+                            data.elements.push({ type, label: 'Scene', config: { stars: conf.stars, planets: conf.planets, zodiacal: conf.zodiacal }, icon: Stars });
                         } else if (type === 'atmosphere') {
-                            setAtmosphere(layer.config);
+                            setAtmosphere(conf);
+                            data.elements.push({ type, label: 'Atmosphere', config: conf, icon: CloudFog });
                         } else if (type === 'telescope') {
-                            setTelescope(layer.config);
+                            setTelescope(conf);
+                            data.elements.push({ type, label: 'Telescope', config: conf, icon: Search });
                         } else if (type === 'camera') {
-                            setCamera(layer.config);
+                            setCamera(conf);
+                            data.elements.push({ type, label: 'Camera', config: conf, icon: Camera });
                         } else {
                             // Generics
-                            const conf = layer.config;
-                            const setConfig = (c) => updateNodeConfig(id, c);
-                            data = { config: conf, setConfig, hasInput: true, hasOutput: true, isDark };
-
-                            if (type === 'lens') data = { ...data, label: 'Lens', icon: Disc, fields: [{ name: 'focal_length', type: 'number', label: 'Focal Length', step: 0.1 }] };
-                            else if (type === 'beam_splitter') data = { ...data, label: 'Beam Splitter', icon: Divide, fields: [{ name: 'split_ratio', type: 'number', label: 'Split Ratio', step: 0.1 }] };
-                            else if (type === 'coronagraph') data = { ...data, label: 'Coronagraph', icon: Disc, fields: [{ name: 'type', type: 'select', label: 'Mask Type', options: [{ value: '4quadrants', label: '4-Quadrants' }, { value: 'vortex', label: 'Vortex' }] }] };
-                            else if (type === 'fiber_in') data = { ...data, label: 'Fiber Injection', icon: Zap, fields: [{ name: 'modes', type: 'number', label: 'Modes', step: 1 }] };
-                            else if (type === 'fiber_out') data = { ...data, label: 'Fiber Output', icon: Zap, fields: [] };
-                            else if (type === 'photonic') data = { ...data, label: 'Photonic Chip', icon: Cpu, fields: [{ name: 'type', type: 'select', label: 'Component Type', options: [{ value: 'y_splitter', label: 'Y-Splitter' }, { value: 'tops', label: 'Phase Shifter' }, { value: 'mmi', label: 'MMI Coupler' }, { value: 'swap', label: 'Waveguide Crossing' }] }, { name: 'phase', type: 'number', label: 'Phase (rad)', step: 0.1 }] };
+                            let element = { type, config: conf, label: type, icon: Disc };
+                            if (type === 'lens') element = { ...element, label: 'Lens', icon: Disc, fields: [{ name: 'focal_length', type: 'number', label: 'Focal Length', step: 0.1 }] };
+                            // Add more specific types as needed
+                            data.elements.push(element);
                         }
 
-                        newNodes.push({ id, type, position, data });
+                        newNodes.push({ id, type: 'layer', position, data });
 
                         if (parentId) {
                             const edge = {
-                                id: `e_${parentId}_${id}`,
+                                id: "e_" + parentId + "_" + id,
                                 source: parentId,
                                 target: id,
-                                animated: true
+                                animated: true,
+                                type: 'default',
+                                data: { pathCount: 1 }
                             };
-                            if (layer.metadata && layer.metadata.sourceHandle) {
-                                edge.sourceHandle = layer.metadata.sourceHandle;
+
+                            // Check for parallel edge based on parent being Telescope
+                            const pNode = newNodes.find(n => n.id === parentId);
+                            if (pNode && pNode.data.elements) {
+                                const tel = pNode.data.elements.find(el => el.type === 'telescope');
+                                if (tel) {
+                                    edge.type = 'parallel';
+                                    edge.data.pathCount = tel.config.collectors ? tel.config.collectors.length : 1;
+                                }
                             }
                             newEdges.push(edge);
                         }
-
                         lastId = id;
                     }
                 });
@@ -717,24 +569,22 @@ export default function PipelineEditor({
 
             setNodes(newNodes);
             setEdges(newEdges);
+            e.target.value = null; // Reset input
 
-            // Reset file input
-            e.target.value = null;
-
-        } catch (e) {
-            console.error(e);
-            alert("Import Failed: " + e.message);
+        } catch (err) {
+            console.error(err);
+            alert("Import Failed: " + err.message);
         }
     };
 
     return (
         <div className="flex h-full flex-col">
             {/* TOP BAR */}
-            <div className={`h-14 border-b flex items-center px-4 justify-between transition-colors ${isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+            <div className={"h-14 border-b flex items-center px-4 justify-between transition-colors " + (isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200')}>
                 <div className="flex items-center gap-4">
                     <button
                         onClick={onToggleSidebar}
-                        className={`p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors ${isDark ? 'text-slate-300' : 'text-slate-600'}`}
+                        className={"p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors " + (isDark ? 'text-slate-300' : 'text-slate-600')}
                         title="Toggle Sidebar"
                     >
                         <Menu className="w-5 h-5" />
@@ -808,7 +658,7 @@ export default function PipelineEditor({
                     <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-1"></div>
                     <button
                         onClick={onToggleTheme}
-                        className={`p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors ${isDark ? 'text-yellow-400' : 'text-slate-600'}`}
+                        className={"p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors " + (isDark ? 'text-yellow-400' : 'text-slate-600')}
                         title="Toggle Theme"
                     >
                         {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
@@ -839,6 +689,7 @@ export default function PipelineEditor({
                     onDrop={onDrop}
                     onDragOver={onDragOver}
                     nodeTypes={nodeTypes}
+                    edgeTypes={edgeTypes}
                     connectionLineType="smoothstep"
                     selectionOnDrag={interactionMode === 'select'}
                     panOnDrag={interactionMode === 'nav' || [1, 2]}
@@ -868,4 +719,3 @@ export default function PipelineEditor({
         </div>
     );
 }
-

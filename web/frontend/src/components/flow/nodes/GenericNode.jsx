@@ -1,9 +1,16 @@
 import React from 'react';
 import { Handle, Position, useReactFlow } from 'reactflow';
-import { Trash2, Settings } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
+import LayerVisualizer from './LayerVisualizer';
+import SignalVisualizer from './SignalVisualizer';
 
 export default function GenericNode({ id, data, selected }) {
     const { deleteElements } = useReactFlow();
+    const config = data.config || {};
+    const Icon = data.icon;
+
+    // Heuristic for capacity: 'modes' for fiber, or 1 default
+    const capacity = config.modes || 1;
 
     const handleChange = (field, value) => {
         const newConfig = { ...data.config, [field]: value };
@@ -11,24 +18,35 @@ export default function GenericNode({ id, data, selected }) {
     };
 
     return (
-        <div className={`rounded-lg border shadow-xl min-w-[200px] relative transition-all ${data.isDark ? 'bg-slate-800' : 'bg-white'} ${selected ? 'border-blue-500 ring-2 ring-blue-500 ring-opacity-50' : (data.isDark ? 'border-slate-700' : 'border-slate-200')}`}>
-            {/* Header */}
-            <div className={`px-4 py-2 border-b rounded-t-lg font-semibold flex items-center justify-between ${data.isDark ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-slate-200'} ${data.colorClass || 'text-blue-500'}`}>
-                <div className="flex items-center">
-                    {data.icon && <data.icon className="w-4 h-4 mr-2" />}
-                    {data.label || 'Component'}
+        <div className={`bg-white dark:bg-slate-800 rounded-lg border shadow-xl min-w-[280px] relative transition-colors duration-200 ${selected ? 'border-blue-500 ring-2 ring-blue-500 ring-opacity-50' : 'border-slate-200 dark:border-slate-700'}`}>
+            {data.hasInput && <Handle type="target" position={Position.Left} className="!bg-blue-500 !-left-4 !w-4 !h-4" />}
+
+            <div className="bg-slate-50 dark:bg-slate-900 px-4 py-3 border-b border-slate-200 dark:border-slate-800 rounded-t-lg flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                    <div className="p-1.5 bg-cyan-100 dark:bg-cyan-900/30 rounded-md text-cyan-600 dark:text-cyan-400">
+                        {Icon && <Icon className="w-4 h-4" />}
+                    </div>
+                    <div>
+                        <h3 className="font-semibold text-slate-800 dark:text-slate-200 text-sm">{data.label}</h3>
+                        <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Optical Layer</p>
+                    </div>
                 </div>
-                <button
-                    onClick={() => deleteElements({ nodes: [{ id }] })}
-                    className="p-1 rounded hover:opacity-80 transition-opacity text-slate-500 hover:text-red-500"
-                    title="Delete Node"
-                >
-                    <Trash2 className="w-4 h-4" />
-                </button>
+                <div className="flex gap-2">
+                    <LayerVisualizer type="generic" config={config} />
+                    <button
+                        onClick={() => deleteElements({ nodes: [{ id }] })}
+                        className="p-1 px-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-red-500 transition-colors"
+                        title="Delete Layer"
+                    >
+                        <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                </div>
             </div>
 
-            {/* Body */}
-            <div className={`p-4 space-y-3 nodrag ${data.isDark ? 'text-slate-200' : 'text-slate-700'}`}>
+            <div className="p-4 space-y-3 nodrag nowheel text-sm">
+
+                {data.hasInput && <SignalVisualizer capacity={capacity} />}
+
                 {data.fields && data.fields.map((field) => (
                     <div key={field.name} className="flex flex-col gap-1">
                         <label className="text-xs uppercase font-bold text-slate-500">{field.label}</label>

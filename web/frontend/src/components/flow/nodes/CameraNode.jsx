@@ -3,6 +3,7 @@ import { Handle, Position, useReactFlow } from 'reactflow';
 import { Camera, Trash2 } from 'lucide-react';
 
 import LayerVisualizer from './LayerVisualizer';
+import SignalVisualizer from './SignalVisualizer';
 
 export default function CameraNode({ id, data, selected }) {
     const { deleteElements } = useReactFlow();
@@ -10,22 +11,33 @@ export default function CameraNode({ id, data, selected }) {
     return (
         <div className={`bg-white dark:bg-slate-800 rounded-lg border shadow-xl min-w-[250px] relative transition-colors duration-200 ${selected ? 'border-blue-500 ring-2 ring-blue-500 ring-opacity-50' : 'border-slate-200 dark:border-slate-700'}`}>
             <Handle type="target" id="target" position={Position.Left} className="!bg-purple-500 !-left-4 !w-4 !h-4" />
-            <div className="bg-slate-50 dark:bg-slate-900 px-4 py-2 border-b border-slate-200 dark:border-slate-800 rounded-t-lg font-semibold text-pink-600 dark:text-pink-400 flex items-center justify-between">
-                <div className="flex items-center">
-                    <Camera className="w-4 h-4 mr-2" /> Camera / Detector
+
+            {/* Standardized Header */}
+            <div className="bg-slate-50 dark:bg-slate-900 px-4 py-3 border-b border-slate-200 dark:border-slate-800 rounded-t-lg flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                    <div className="p-1.5 bg-pink-100 dark:bg-pink-900/30 rounded-md text-pink-600 dark:text-pink-400">
+                        <Camera className="w-4 h-4" />
+                    </div>
+                    <div>
+                        <h3 className="font-semibold text-slate-800 dark:text-slate-200 text-sm">Camera / Detector</h3>
+                        <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Optical Layer</p>
+                    </div>
                 </div>
                 <div className="flex gap-2">
                     <LayerVisualizer type="camera" config={data.config} />
                     <button
                         onClick={() => deleteElements({ nodes: [{ id }] })}
-                        className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 hover:text-red-500 dark:hover:text-red-400 transition-colors"
-                        title="Delete Node"
+                        className="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-red-500 transition-colors"
+                        title="Delete Layer"
                     >
                         <Trash2 className="w-4 h-4" />
                     </button>
                 </div>
             </div>
-            <div className="p-4 space-y-3 nodrag text-sm">
+
+            <div className="p-4 space-y-3 nodrag nowheel text-sm">
+                <SignalVisualizer capacity={1} />
+
                 <div>
                     <label className="block text-slate-500 mb-1">Pixels</label>
                     <div className="flex gap-2">
