@@ -12,12 +12,35 @@ export default function TelescopeNode({ id, data, selected }) {
     const collectors = data.config.collectors || [];
 
     // Force update handles when collectors change
+    const nodeRef = React.useRef(null);
+    const prevHeight = React.useRef(0);
+
+    // Update handles whenever node size triggers a resize (e.g. adding inputs)
     React.useEffect(() => {
-        updateNodeInternals(id);
-    }, [id, updateNodeInternals, collectors.length, collectors]); // Deep dependency on collectors to catch ID changes
+        if (!nodeRef.current) return;
+
+        const observer = new ResizeObserver(() => {
+            // Check if height actually changed to avoid loop
+            if (nodeRef.current && Math.abs(nodeRef.current.offsetHeight - prevHeight.current) > 1) {
+                prevHeight.current = nodeRef.current.offsetHeight;
+                // Add immediate buffer + slight delay for safety
+                updateNodeInternals(id);
+                setTimeout(() => updateNodeInternals(id), 50);
+            }
+        });
+
+        observer.observe(nodeRef.current);
+        return () => observer.disconnect();
+    }, [id, updateNodeInternals]);
+
+    // Also force update on data change (collectors count)
+    React.useEffect(() => {
+        const t = setTimeout(() => updateNodeInternals(id), 20);
+        return () => clearTimeout(t);
+    }, [id, updateNodeInternals, collectors.length]);
 
     return (
-        <div className={`bg-white dark:bg-slate-800 rounded-lg border shadow-xl min-w-[350px] relative transition-all ${selected ? 'border-blue-500 ring-2 ring-blue-500 ring-opacity-50' : 'border-slate-200 dark:border-slate-700'}`}>
+        <div ref={nodeRef} className={`bg-white dark:bg-slate-800 rounded-lg border shadow-xl min-w-[350px] relative transition-colors duration-200 ${selected ? 'border-blue-500 ring-2 ring-blue-500 ring-opacity-50' : 'border-slate-200 dark:border-slate-700'}`}>
             <Handle type="target" position={Position.Left} className="!bg-cyan-500 !-left-4 !w-4 !h-4" />
 
             <div className="bg-slate-50 dark:bg-slate-900 px-4 py-2 border-b border-slate-200 dark:border-slate-800 rounded-t-lg font-semibold text-purple-600 dark:text-purple-400 flex items-center justify-between">

@@ -49,7 +49,8 @@ body {
     border: 2px solid #ffffff;
     box-shadow: 0 0 0 1px #94a3b8;
     /* slate-400 ring */
-    transition: all 0.2s;
+    /* transition: all 0.2s; <-- Causes lag in connection lines during resize */
+    transition: background-color 0.2s, border-color 0.2s, box-shadow 0.2s;
 }
 
 /* Dark Theme Handle Override */
