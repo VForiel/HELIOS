@@ -100,7 +100,11 @@ export default function TelescopeConfig({ config, setConfig }) {
                     <div key={index} className="bg-slate-50 dark:bg-slate-900/50 p-3 rounded border border-slate-200 dark:border-slate-800 text-sm">
                         <div className="flex justify-between items-center mb-2">
                             <span className="font-semibold text-slate-700 dark:text-slate-300">Collector #{index + 1}</span>
-                            <button onClick={() => removeCollector(index)} className="text-red-400 hover:text-red-300">
+                            <button
+                                onClick={() => removeCollector(index)}
+                                disabled={config.collectors.length <= 1}
+                                className={`text-red-400 hover:text-red-300 ${config.collectors.length <= 1 ? 'opacity-30 cursor-not-allowed' : ''}`}
+                            >
                                 <Trash2 className="w-3.5 h-3.5" />
                             </button>
                         </div>

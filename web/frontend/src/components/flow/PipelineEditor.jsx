@@ -844,6 +844,7 @@ export default function PipelineEditor({
                     panOnDrag={interactionMode === 'nav' || [1, 2]}
                     selectionMode="partial"
                     fitView
+                    minZoom={0.1}
                 >
                     <Controls>
                         <ControlButton
