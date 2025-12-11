@@ -23,26 +23,41 @@ export default function SignalVisualizer({ config, layout = 'horizontal', spacin
     if (layout === 'vertical') {
         const signals = [];
 
-        // Calculate Windows (Centered)
-        const signalStart = Math.floor((total - incoming) / 2);
-        const signalEnd = signalStart + incoming;
-        const capStart = Math.floor((total - capacity) / 2);
-        const capEnd = capStart + capacity;
+        // Strict Top-to-Bottom Ordering Logic
+        // 1. Active Signals match first (min(total signals, capacity))
+        // 2. Excess Signals match next (if signals > capacity) -> Error
+        // 3. Excess Capacity matches last (if capacity > signals) -> Passive
+
+        // We iterate 0..Total to render the slots.
+        // Total = max(incoming, capacity)
 
         for (let i = 0; i < total; i++) {
-            // Intersection Logic
-            const hasSignal = i >= signalStart && i < signalEnd;
-            const hasCapacity = i >= capStart && i < capEnd;
-
             let state = 'passive';
+
             if (isInput) {
-                if (hasSignal && hasCapacity) state = 'active';
-                else if (hasSignal && !hasCapacity) state = 'error';
-                else if (!hasSignal && hasCapacity) state = 'passive';
+                // Input Logic:
+                if (i < capacity && i < incoming) {
+                    state = 'active'; // Matched (Exists in both)
+                } else if (i >= capacity && i < incoming) {
+                    state = 'error'; // Overload (Exists in Incoming, not Capacity)
+                } else {
+                    state = 'passive'; // Unused (Exists in Capacity, not Incoming)
+                }
             } else {
-                if (hasSignal && hasCapacity) state = 'active';
-                else if (!hasSignal && hasCapacity) state = 'passive';
-                else state = 'active';
+                // Output Logic:
+                // Generally, if signal exists (incoming), it is propagated.
+                // But visualized as "matched" if within capacity?
+                if (i < capacity && i < incoming) {
+                    state = 'active';
+                } else if (i >= capacity && i < incoming) {
+                    state = 'active'; // Actually, purely signal driven for generic output?
+                    // If 4 signals -> 2 lenses -> 2 outputs.
+                    // outputCapacity = 2. outgoing = 2.
+                    // So total = 2. i=0,1 (active).
+                    // Overload implies input > capacity. The outputs are capped.
+                } else {
+                    state = 'passive';
+                }
             }
 
             signals.push(

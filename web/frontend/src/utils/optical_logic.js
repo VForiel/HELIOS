@@ -14,27 +14,57 @@ export const calculateNodeIO = (node) => {
         return { inputs: 0, outputs: 0, type: 'empty' };
     }
 
-    // Heuristic: The FIRST element often defines the layer's primary role
-    const telescope = elements.find(el => el.type === 'telescope');
-    if (telescope) {
-        const count = telescope.config?.collectors?.length || 1;
-        return { inputs: 0, outputs: count, type: 'source' };
+    // Heuristic: Sum capacities for valid element types
+    let totalInputs = 0;
+    let totalOutputs = 0;
+    let type = 'generic'; // Default
+
+    // Check for Sources (Telescopes)
+    const telescopes = elements.filter(el => el.type === 'telescope');
+    if (telescopes.length > 0) {
+        type = 'source';
+        totalOutputs = telescopes.reduce((acc, t) => acc + (t.config?.collectors?.length || 1), 0);
     }
 
-    const camera = elements.find(el => el.type === 'camera');
-    if (camera) {
-        return { inputs: 1, outputs: 0, type: 'sink' };
+    // Check for Sinks (Cameras)
+    const cameras = elements.filter(el => el.type === 'camera');
+    if (cameras.length > 0) {
+        if (type === 'source') type = 'transform'; // Mixed source/sink? unlikely but logic safe
+        else type = 'sink';
+        // Assume each camera handles 1 beam unless configured otherwise
+        totalInputs = cameras.reduce((acc, c) => acc + (c.config?.inputs || 1), 0);
     }
 
-    const fiber = elements.find(el => el.type === 'fiber_in');
-    if (fiber) {
-        const modes = fiber.config?.modes || 1;
-        return { inputs: modes, outputs: modes, type: 'transform' };
+    // Check for Fibers (Transform)
+    const fibers = elements.filter(el => el.type === 'fiber_in');
+    if (fibers.length > 0) {
+        if (type !== 'source' && type !== 'sink') type = 'transform';
+        const fiberCap = fibers.reduce((acc, f) => acc + (f.config?.modes || 1), 0);
+        totalInputs += fiberCap;
+        totalOutputs += fiberCap;
     }
 
-    // Generic Optical Elements (Lens, Mirror, etc.)
-    const count = elements.length;
-    return { inputs: count, outputs: count, type: 'generic' };
+    // Generic Elements (Mirrors, Splitters -> 1:1)
+    const generics = elements.filter(el => !['telescope', 'camera', 'fiber_in'].includes(el.type));
+    if (generics.length > 0) {
+        if (type === 'generic') {
+            totalInputs += generics.length;
+            totalOutputs += generics.length;
+        }
+        // If mixed with functional units, ignore generics for IO count ??
+        // For now, let's just add them if it's a generic layer. 
+        // Or strictly: if layer has Functional units, use those. If only Generics, use those.
+    }
+
+    // Fallback if mixed types kept 0 (e.g. source + generic)
+    if (type === 'source' && totalOutputs === 0) totalOutputs = 1;
+    if (type === 'sink' && totalInputs === 0) totalInputs = 1;
+    if (type === 'generic' && totalInputs === 0) {
+        totalInputs = elements.length || 0;
+        totalOutputs = elements.length || 0;
+    }
+
+    return { inputs: totalInputs, outputs: totalOutputs, type };
 };
 
 /**
