@@ -1,6 +1,6 @@
 import React from 'react';
 import { Handle, Position, useReactFlow } from 'reactflow';
-import { Layers, Trash2 } from 'lucide-react';
+import { Layers, Trash2, Eye, Stars, Search, Camera, Cpu, Disc, CloudFog } from 'lucide-react';
 import ElementRow from './ElementRow';
 import SignalVisualizer from './SignalVisualizer';
 
@@ -50,8 +50,58 @@ export default function LayerNode({ id, data, selected }) {
         incoming: io.outgoing || 0
     };
 
+    // Determine Layer Type and Style
+    const getLayerStyle = () => {
+        if (elements.some(el => el.type === 'scene' || el.type === 'atmosphere')) {
+            return {
+                bg: 'bg-blue-100 dark:bg-blue-900/30',
+                text: 'text-blue-600 dark:text-blue-400',
+                border: 'hover:border-blue-500',
+                title: 'Generation',
+                Icon: Stars
+            };
+        }
+        if (elements.some(el => el.type === 'telescope')) {
+            return {
+                bg: 'bg-cyan-100 dark:bg-cyan-900/30',
+                text: 'text-cyan-600 dark:text-cyan-400',
+                border: 'hover:border-cyan-500',
+                title: 'Sampling',
+                Icon: Search
+            };
+        }
+        if (elements.some(el => el.type === 'camera')) {
+            return {
+                bg: 'bg-pink-100 dark:bg-pink-900/30',
+                text: 'text-pink-600 dark:text-pink-400',
+                border: 'hover:border-pink-500',
+                title: 'Detection',
+                Icon: Camera
+            };
+        }
+        if (elements.some(el => ['fiber_in', 'fiber_out', 'photonic'].includes(el.type))) {
+            return {
+                bg: 'bg-amber-100 dark:bg-amber-900/30',
+                text: 'text-amber-600 dark:text-amber-400',
+                border: 'hover:border-amber-500',
+                title: 'Photonics',
+                Icon: Cpu
+            };
+        }
+        // Default Optical
+        return {
+            bg: 'bg-indigo-100 dark:bg-indigo-900/30',
+            text: 'text-indigo-600 dark:text-indigo-400',
+            border: 'hover:border-indigo-500',
+            title: 'Bulk Optics',
+            Icon: Disc
+        };
+    };
+
+    const style = getLayerStyle();
+
     return (
-        <div className={`bg-white dark:bg-slate-800 rounded-lg border shadow-xl min-w-[320px] relative transition-colors duration-200 group ${selected ? 'border-blue-500 ring-2 ring-blue-500 ring-opacity-50' : 'border-slate-200 dark:border-slate-700'}`}>
+        <div className={`bg-white dark:bg-slate-800 rounded-lg border shadow-xl min-w-[320px] relative transition-colors duration-200 group ${selected ? 'border-blue-500 ring-2 ring-blue-500 ring-opacity-50' : `border-slate-200 dark:border-slate-700 ${style.border}`}`}>
 
             {/* --------------------------------------------------------------------------------
                ABSOLUTE POSITIONED INTERFACE LAYERS (CENTERED)
@@ -94,42 +144,49 @@ export default function LayerNode({ id, data, selected }) {
             {/* Layer Header */}
             <div className="bg-slate-100 dark:bg-slate-950/50 px-4 py-3 border-b border-slate-200 dark:border-slate-800 rounded-t-lg flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                    <div className="p-1.5 bg-indigo-100 dark:bg-indigo-900/30 rounded-md text-indigo-600 dark:text-indigo-400">
-                        <Layers className="w-4 h-4" />
+                    <div className={`p-1.5 rounded-md ${style.bg} ${style.text}`}>
+                        <style.Icon className="w-4 h-4" />
                     </div>
                     <div>
-                        <h3 className="font-semibold text-slate-800 dark:text-slate-200 text-sm">Optical Layer</h3>
+                        <h3 className="font-semibold text-slate-800 dark:text-slate-200 text-sm">{style.title}</h3>
                         <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">
                             {elements.length} Elements | {io.incoming || 0} In / {io.outgoing || 0} Out
                         </p>
                     </div>
                 </div>
-                <button
-                    onClick={() => deleteElements({ nodes: [{ id }] })}
-                    className="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-red-500 transition-colors"
-                    title="Delete Layer"
-                >
-                    <Trash2 className="w-4 h-4" />
-                </button>
+
+                <div className="flex gap-1">
+                    <button
+                        onClick={() => deleteElements({ nodes: [{ id }] })}
+                        className="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-red-500 transition-colors"
+                        title="Delete Layer"
+                    >
+                        <Trash2 className="w-4 h-4" />
+                    </button>
+                </div>
             </div>
 
             {/* Elements List */}
             <div className="p-4 space-y-2 max-h-[600px] overflow-y-auto custom-scrollbar nodrag nowheel">
-                {elements.length === 0 && (
-                    <div className="text-center p-4 border border-dashed border-slate-300 dark:border-slate-700 rounded-lg text-slate-400 text-xs italic">
-                        Drop items here to add elements...
-                    </div>
-                )}
-                {elements.map((el, idx) => (
-                    <ElementRow
-                        key={idx}
-                        index={idx}
-                        element={el}
-                        onChange={handleElementChange}
-                        onRemove={handleRemoveElement}
-                    />
-                ))}
-            </div>
-        </div>
+                {
+                    elements.length === 0 && (
+                        <div className="text-center p-4 border border-dashed border-slate-300 dark:border-slate-700 rounded-lg text-slate-400 text-xs italic">
+                            Drop items here to add elements...
+                        </div>
+                    )
+                }
+                {
+                    elements.map((el, idx) => (
+                        <ElementRow
+                            key={idx}
+                            index={idx}
+                            element={el}
+                            onChange={handleElementChange}
+                            onRemove={handleRemoveElement}
+                        />
+                    ))
+                }
+            </div >
+        </div >
     );
 }

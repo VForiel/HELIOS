@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
 from helios.core.simulation import Wavefront, WavefrontArray
-from helios.core.context import Context
+from helios.core.pipeline import Pipeline
 from helios.components.scene import Scene, Star
 
 def test_wavefront_sources():
@@ -66,20 +66,20 @@ def test_wavefront_plot_limit():
         print(f"  subplots called with nrows={nrows}, ncols={ncols}")
         assert nrows == 3
 
-def test_context_sources():
-    print("Testing Context.get_input_wavefront sources...")
+def test_pipeline_sources():
+    print("Testing Pipeline.get_input_wavefront sources...")
     
-    # Create context with scene
-    ctx = Context()
+    # Create pipeline with scene
+    pipe = Pipeline()
     scene = Scene(distance=10*u.pc)
     star1 = Star(position=(0,0)*u.arcsec, magnitude=5, name="Alpha Centauri")
     star2 = Star(position=(1,1)*u.arcsec, magnitude=6, name="Beta Centauri")
     scene.add(star1)
     scene.add(star2)
-    ctx.add_layer(scene)
+    pipe.add_layer(scene)
     
     # Get wavefront
-    wf = ctx.get_input_wavefront(size=32, coherent_sources=True)
+    wf = pipe.get_input_wavefront(size=32, coherent_sources=True)
     
     print(f"  Wavefront sources: {wf.sources}")
     assert len(wf.sources) == 2
@@ -100,9 +100,9 @@ if __name__ == "__main__":
     test_wavefront_sources()
     test_wavefront_plot_limit()
     try:
-        test_context_sources()
+        test_pipeline_sources()
     except Exception as e:
-        print(f"  Context test failed (might be due to missing Scene implementation details): {e}")
+        print(f"  Pipeline test failed (might be due to missing Scene implementation details): {e}")
         import traceback
         traceback.print_exc()
     

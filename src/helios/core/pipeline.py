@@ -65,8 +65,8 @@ class Element:
         Descriptive name for this element
     layer : Layer
         Reference to the parent layer containing this element
-    context : Context
-        Shortcut to access the parent context (equivalent to self.layer.context)
+    pipeline : Pipeline
+        Shortcut to access the parent pipeline (equivalent to self.layer.pipeline)
     
     Examples
     --------
@@ -75,7 +75,7 @@ class Element:
     ...         super().__init__(name=name or "CustomElement")
     ...         self.parameter = parameter
     ...
-    ...     def process(self, wavefront, context):
+    ...     def process(self, wavefront, pipeline):
     ...         # Apply custom transformation
     ...         wavefront.field *= self.parameter
     ...         return wavefront
@@ -83,7 +83,7 @@ class Element:
     def __init__(self, name: Optional[str] = None):
         self.name = name
         self.layer: Optional['Layer'] = None
-        self.context: Optional['Context'] = None
+        self.pipeline: Optional['Pipeline'] = None
         self.num_inputs: int = 1  # Number of inputs this element consumes
         self.num_outputs: int = 1 # Number of outputs this element produces
         self.metadata: dict = {}  # Store for UI/Application specific data
@@ -236,6 +236,7 @@ class Element:
         elem.metadata = data.get("metadata", {})
         return elem
 
+
 class Layer:
     """
     Base class for all simulation layers (logical grouping of elements).
@@ -257,8 +258,8 @@ class Layer:
     ----------
     elements : list of Element
         Physical components contained in this layer
-    context : Context
-        Reference to the parent context managing this layer
+    pipeline : Pipeline
+        Reference to the parent pipeline managing this layer
     
     Examples
     --------
@@ -266,32 +267,80 @@ class Layer:
     ...     def __init__(self, name=None):
     ...         super().__init__(name=name or "CustomLayer")
     ...
-    ...     def process(self, wavefront, context):
+    ...     def process(self, wavefront, pipeline):
     ...         # Apply custom transformation
     ...         wavefront.field *= np.exp(1j * phase_pattern)
     ...         return wavefront
     
     See Also
     --------
-    Context : Orchestrates layer execution
+    Pipeline : Orchestrates layer execution
     Element : Physical components within layers
     """
     def __init__(self, name: Optional[str] = None):
         self.name = name
         self.elements: List[Element] = []
-        self.context: Optional['Context'] = None
+        self.pipeline: Optional['Pipeline'] = None
         self.metadata: dict = {} # Store for UI/Application specific data
         self.num_inputs: int = 1  # Number of inputs this layer consumes (if single layer)
-        # self.num_outputs is defined as class attribute to allow property override
+        
+        # Caching
+        self._cached_input: Any = None
+        self._cached_output: Any = None
     
     num_outputs: int = 1 # Default number of outputs
+
+    def invalidate_cache(self):
+        """
+        Invalidate the cache of this layer and trigger propagation to downstream layers.
+        """
+        self._cached_input = None
+        self._cached_output = None
+        if self.pipeline:
+            self.pipeline.invalidate_downstream_cache(self)
+
+    def get_input_wavefront(self) -> Any:
+        """
+        Retrieve the input wavefront for this layer, efficiently using cache or pulling from previous layer.
+        """
+        if self._cached_input is not None:
+            return self._cached_input
+            
+        if self.pipeline is None:
+            return None
+
+        # Logic to find previous output
+        prev_output = self.pipeline.get_previous_layer_output(self)
+        self._cached_input = prev_output
+        return prev_output
+
+    def get_output_wavefront(self) -> Any:
+        """
+        Retrieve the output wavefront of this layer, processing if not cached.
+        """
+        if self._cached_output is not None:
+            return self._cached_output
+        
+        # Pull input
+        input_wf = self.get_input_wavefront()
+        
+        # Process (Process is responsible for handling None inputs if strictly needed, 
+        # but generally get_input_wavefront should provide it)
+        # However, for GenerationLayer, input might be None or implicit.
+        
+        # If input is None and we are NOT a GenerationLayer, we might have an issue 
+        # unless the layer can generate data (Source).
+        
+        result = self.process(input_wf)
+        self._cached_output = result
+        return result
     
     def twin(self) -> 'Layer':
         """
         Create a twin copy of this layer.
         
         A twin is a deep copy of the layer that preserves the reference to its
-        parent context (if any) and potentially other shared resources.
+        parent pipeline (if any) and potentially other shared resources.
         
         Returns
         -------
@@ -299,7 +348,7 @@ class Layer:
             A new instance of the layer with identical attributes.
         """
         # Similar logic to Element.twin() if needed, but Layer usually doesn't have a 'parent' 
-        # in the same way Element has 'layer'. Layer has 'context'.
+        # in the same way Element has 'layer'. Layer has 'pipeline'.
         # However, the user asked for "elements" to have twin().
         # Since Layer is also used as a component (e.g. MMI inherits from Layer),
         # we should implement it here too or ensure MMI inherits from Element?
@@ -307,7 +356,7 @@ class Layer:
         # Let's check photonics.py.
         
         # If MMI inherits from Layer, then we need twin() on Layer.
-        # But Layer has 'context', not 'layer'.
+        # But Layer has 'pipeline', not 'layer'.
         # The user said "conservent leurs éléments parents".
         # If MMI is a Layer, does it have a parent?
         # In generate_photonics_uml.py:
@@ -322,7 +371,7 @@ class Layer:
         # def __init__(self, name=None):
         #     self.name = name
         #     self.elements = []
-        #     self.context = None
+        #     self.pipeline = None
         
         # It does NOT have self.layer.
         # But in generate_photonics_uml.py:
@@ -352,7 +401,7 @@ class Layer:
         """
         Add an element to this layer.
         
-        Automatically sets the element's layer and context references.
+        Automatically sets the element's layer and pipeline references.
         
         Parameters
         ----------
@@ -361,9 +410,9 @@ class Layer:
         """
         self.elements.append(element)
         element.layer = self
-        # Set context if the layer is already attached to a context
-        if self.context is not None:
-            element.context = self.context
+        # Set pipeline if the layer is already attached to a pipeline
+        if self.pipeline is not None:
+            element.pipeline = self.pipeline
 
     def description(self, indent: int = 0, full: bool = False) -> str:
         """
@@ -485,11 +534,54 @@ class Layer:
         layer.metadata = data.get("metadata", {})
         return layer
 
-class Context:
+# =============================================================================
+# LAYER TYPES
+# =============================================================================
+
+class GenerationLayer(Layer):
     """
-    Main simulation context managing layers and execution.
+    Layer generating the continuous electromagnetic field (Scene, Atmosphere).
+    Output: Single continuous Wavefront/Field.
+    """
+    pass
+
+class SamplingLayer(Layer):
+    """
+    Layer sampling the continuous field into discrete optical paths (TelescopeArray).
+    Input: Single continuous Wavefront/Field.
+    Output: Array of discrete Wavefronts (Optical Beams).
+    """
+    pass
+
+class OpticalLayer(Layer):
+    """
+    Layer propagating/modifying optical beams (Lenses, Mirrors, BeamSplitters).
+    Input: Optical Beam(s).
+    Output: Optical Beam(s).
+    """
+    pass
+
+class DetectionLayer(Layer):
+    """
+    Layer converting photons to digital data (Camera, Detector).
+    Input: Optical Beam(s).
+    Output: Data Array.
+    """
+    pass
+
+class DataLayer(Layer):
+    """
+    Layer processing digital data (Algorithms, Stackers).
+    Input: Data Array.
+    Output: Data Array.
+    """
+    pass
+
+class Pipeline:
+    """
+    Main simulation pipeline managing layers and execution.
     
-    The Context orchestrates the simulation pipeline by sequentially processing
+    The Pipeline orchestrates the simulation by sequentially processing
     layers. It maintains global simulation parameters and executes the observation
     workflow from scene generation through optical propagation to detector output.
     
@@ -499,8 +591,8 @@ class Context:
         Observation date/time for astronomical calculations
     declination : Quantity, optional
         Target declination for coordinate transformations
-    **kwargs : dict
-        Additional context parameters
+    kwargs : dict
+        Additional pipeline parameters
     
     Attributes
     ----------
@@ -509,35 +601,6 @@ class Context:
         lists of layers process in parallel (beam splitting)
     results : dict
         Dictionary to store intermediate or final results
-    
-    Examples
-    --------
-    Build a complete observation pipeline:
-    
-    >>> import helios
-    >>> from astropy import units as u
-    >>> 
-    >>> # Create scene
-    >>> scene = helios.Scene(distance=10*u.pc)
-    >>> scene.add(helios.Star(temperature=5700*u.K, magnitude=5))
-    >>> 
-    >>> # Create optical system (single telescope)
-    >>> telescope = helios.TelescopeArray(name="Observatory")
-    >>> telescope.add_collector(pupil=helios.Pupil.vlt(), position=(0,0), size=8*u.m)
-    >>> 
-    >>> # Create detector
-    >>> camera = helios.Camera(pixels=(512, 512))
-    >>> 
-    >>> # Build context and run
-    >>> ctx = Context()
-    >>> ctx.add_layer(scene)
-    >>> ctx.add_layer(telescope)
-    >>> ctx.add_layer(camera)
-    >>> image = ctx.observe()
-    
-    See Also
-    --------
-    Layer : Base class for all simulation components
     """
     def __init__(self, date: Any = None, declination: Any = None, layers: Optional[List[Union[Layer, List[Layer]]]] = None, **kwargs):
         self.date = date
@@ -550,6 +613,74 @@ class Context:
             for layer in layers:
                 self.add_layer(layer)
 
+    def invalidate_downstream_cache(self, start_layer: Layer):
+        """
+        Invalidate cache for all layers downstream of the given layer.
+        """
+        start_idx = -1
+        # Find index
+        for i, l_item in enumerate(self.layers):
+            if isinstance(l_item, list):
+                if start_layer in l_item:
+                    start_idx = i
+                    break
+            else:
+                if l_item is start_layer:
+                    start_idx = i
+                    break
+        
+        if start_idx == -1:
+            return 
+            
+        # Invalidate all subsequent layers
+        for i in range(start_idx + 1, len(self.layers)):
+            l_item = self.layers[i]
+            if isinstance(l_item, list):
+                for sub_l in l_item:
+                    if sub_l:
+                        # Clear cache effectively
+                        sub_l._cached_input = None
+                        sub_l._cached_output = None
+            else:
+                l_item._cached_input = None
+                l_item._cached_output = None
+
+    def get_previous_layer_output(self, current_layer: Layer) -> Any:
+        """
+        Get the output from the layer immediately preceding the current_layer.
+        """
+        curr_idx = -1
+        for i, l_item in enumerate(self.layers):
+            if isinstance(l_item, list):
+                if current_layer in l_item:
+                    curr_idx = i
+                    break
+            else:
+                if l_item is current_layer:
+                    curr_idx = i
+                    break
+        
+        if curr_idx <= 0:
+            return None # No previous layer
+            
+        prev_item = self.layers[curr_idx - 1]
+        
+        # If previous is a list (Parallel), we need to handle merging or specific routing
+        # For simplicity in this logic, we assume we want the output of that "stage".
+        # If the current layer is inside a parallel block, getting input is complex (routing).
+        # We rely on existing logic where "Parallel blocks" usually output a flat list or specific struct.
+        
+        # Simplification: If previous is single layer, call get_output_wavefront
+        if not isinstance(prev_item, list):
+            return prev_item.get_output_wavefront()
+            
+        # If previous is parallel, we collect outputs
+        outputs = []
+        for sub in prev_item:
+            if sub:
+                outputs.append(sub.get_output_wavefront())
+        return outputs
+
     def add_layer(self, layer: Union[Layer, List[Layer]]):
         """
         Add a layer or a list of parallel layers to the simulation.
@@ -557,7 +688,7 @@ class Context:
         Layers are executed in the order they are added. To create parallel
         processing (e.g., beam splitting), pass a list of layers.
         
-        Automatically sets the layer's context reference and propagates to elements.
+        Automatically sets the layer's pipeline reference and propagates to elements.
         
         Parameters
         ----------
@@ -569,38 +700,38 @@ class Context:
         --------
         Sequential layers:
         
-        >>> ctx.add_layer(scene)
-        >>> ctx.add_layer(atmosphere)
-        >>> ctx.add_layer(camera)
+        >>> pipe.add_layer(scene)
+        >>> pipe.add_layer(atmosphere)
+        >>> pipe.add_layer(camera)
         
         Parallel layers (beam splitting):
         
-        >>> ctx.add_layer(beam_splitter)
-        >>> ctx.add_layer([camera1, camera2])  # Both receive split beams
+        >>> pipe.add_layer(beam_splitter)
+        >>> pipe.add_layer([camera1, camera2])  # Both receive split beams
         """
         self.layers.append(layer)
         
-        # Set context reference for layer(s)
+        # Set pipeline reference for layer(s)
         if isinstance(layer, list):
             for l in layer:
                 if l is not None:
-                    if l.context is not None and l.context is not self:
+                    if l.pipeline is not None and l.pipeline is not self:
                         import warnings
-                        warnings.warn(f"Layer {l} is being moved from Context {l.context} to {self}.")
-                    l.context = self
+                        warnings.warn(f"Layer {l} is being moved from Pipeline {l.pipeline} to {self}.")
+                    l.pipeline = self
                     # Propagate to elements if layer has them
                     if hasattr(l, 'elements') and l.elements:
                         for element in l.elements:
-                            element.context = self
+                            element.pipeline = self
         else:
-            if layer.context is not None and layer.context is not self:
+            if layer.pipeline is not None and layer.pipeline is not self:
                 import warnings
-                warnings.warn(f"Layer {layer} is being moved from Context {layer.context} to {self}.")
-            layer.context = self
+                warnings.warn(f"Layer {layer} is being moved from Pipeline {layer.pipeline} to {self}.")
+            layer.pipeline = self
             # Propagate to elements if layer has them
             if hasattr(layer, 'elements') and layer.elements:
                 for element in layer.elements:
-                    element.context = self
+                    element.pipeline = self
 
     def description(self, full: bool = False) -> str:
         """
@@ -614,26 +745,26 @@ class Context:
         Returns
         -------
         str
-            Formatted description of all layers and elements in the context
+            Formatted description of all layers and elements in the pipeline
         
         Examples
         --------
-        >>> ctx = Context()
-        >>> ctx.add_layer(scene)
-        >>> ctx.add_layer(telescope)
-        >>> ctx.add_layer(camera)
-        >>> print(ctx.description())
-        HELIOS Simulation Context
+        >>> pipe = Pipeline()
+        >>> pipe.add_layer(scene)
+        >>> pipe.add_layer(telescope)
+        >>> pipe.add_layer(camera)
+        >>> print(pipe.description())
+        HELIOS Simulation Pipeline
         ========================
         Layer 1: Scene
         Layer 2: TelescopeArray
         >>>   └─ Collector 1
         Layer 3: Camera
         
-        >>> print(ctx.description(full=True))
-        HELIOS Simulation Context
+        >>> print(pipe.description(full=True))
+        HELIOS Simulation Pipeline
         ========================
-        Context Parameters:
+        Pipeline Parameters:
         >>>   • date: 2025-01-01
         >>>   • declination: 10.0 deg
         
@@ -644,18 +775,18 @@ class Context:
         >>>     • magnitude: 5.0
         ...
         """
-        lines = ["HELIOS Simulation Context", "=" * 50, ""]
+        lines = ["HELIOS Simulation Pipeline", "=" * 50, ""]
         
-        # Add context parameters if full mode
+        # Add pipeline parameters if full mode
         if full:
-            ctx_params = []
+            pipe_params = []
             if self.date is not None:
-                ctx_params.append(f"  • date: {self.date}")
+                pipe_params.append(f"  • date: {self.date}")
             if self.declination is not None:
-                ctx_params.append(f"  • declination: {self.declination}")
-            if ctx_params:
-                lines.append("Context Parameters:")
-                lines.extend(ctx_params)
+                pipe_params.append(f"  • declination: {self.declination}")
+            if pipe_params:
+                lines.append("Pipeline Parameters:")
+                lines.extend(pipe_params)
                 lines.append("")
         
         for i, layer_item in enumerate(self.layers, 1):
@@ -678,7 +809,7 @@ class Context:
 
     def to_dict(self) -> dict:
         """
-        Serialize complete context to dictionary.
+        Serialize complete pipeline to dictionary.
         
         Returns
         -------
@@ -704,16 +835,16 @@ class Context:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> 'Context':
+    def from_dict(cls, data: dict) -> 'Pipeline':
         """
-        Reconstruct context from dictionary.
+        Reconstruct pipeline from dictionary.
         """
-        # Basic context params
+        # Basic pipeline params
         date = data.get("date")
         declination = deserialize_value(data.get("declination"))
         kwargs = deserialize_value(data.get("kwargs", {}))
         
-        ctx = cls(date=date, declination=declination, **kwargs)
+        pipe = cls(date=date, declination=declination, **kwargs)
         
         # Reconstruct layers
         from ..components import scene, atmosphere, collector, detectors
@@ -1334,6 +1465,54 @@ class Context:
                 else:
                     current_ports = 1
 
+        # Strict Type Validation
+        for i in range(len(self.layers) - 1):
+            curr = self.layers[i]
+            next_l = self.layers[i+1]
+            
+            # Helper to get type(s)
+            def get_types(item):
+                if isinstance(item, list):
+                    return {type(sub) for sub in item if sub}
+                return {type(item)}
+            
+            curr_types = get_types(curr)
+            next_types = get_types(next_l)
+            
+            # Check transitions
+            for t_curr in curr_types:
+                for t_next in next_types:
+                    # Generation -> Generation (OK)
+                    # Generation -> Sampling (OK)
+                    # Sampling -> Optical (OK)
+                    # Optical -> Optical (OK)
+                    # Optical -> Detection (OK)
+                    # Detection -> Data (OK)
+                    # Data -> Data (OK)
+                    
+                    is_valid = False
+                    
+                    if issubclass(t_curr, GenerationLayer):
+                        if issubclass(t_next, (GenerationLayer, SamplingLayer)): is_valid = True
+                    elif issubclass(t_curr, SamplingLayer):
+                        if issubclass(t_next, (OpticalLayer, DetectionLayer)): is_valid = True
+                    elif issubclass(t_curr, OpticalLayer):
+                        if issubclass(t_next, (OpticalLayer, DetectionLayer)): is_valid = True
+                    elif issubclass(t_curr, DetectionLayer):
+                        if issubclass(t_next, DataLayer): is_valid = True
+                    elif issubclass(t_curr, DataLayer):
+                        if issubclass(t_next, DataLayer): is_valid = True
+                    # Fallback for legacy generic Layer
+                    elif t_curr == Layer or t_next == Layer:
+                         is_valid = True
+                    # Fallback if users haven't updated their classes yet
+                    else:
+                         is_valid = True
+                    
+                    if not is_valid:
+                         print(f"Warning: Invalid architecture transition from {t_curr.__name__} to {t_next.__name__}")
+
+
     def plot_uml_diagram(self, figsize: Tuple[float, float] = (16, 10), 
                          layer_spacing: float = 2.0,
                          save_path: Optional[str] = None,
@@ -1344,6 +1523,12 @@ class Context:
         This function creates a visual representation of the simulation pipeline,
         showing all layers from scene (left) to camera (right). Beam splitters
         create parallel paths that are displayed vertically.
+
+        This visualization is particularly useful for:
+        - **Documentation**: Quickly document complex optical systems
+        - **Debugging**: Verify pipeline structure before running simulations
+        - **Communication**: Share system designs with collaborators
+        - **Teaching**: Explain optical concepts with clear visual diagrams
         
         Parameters
         ----------
@@ -1353,7 +1538,6 @@ class Context:
             Horizontal distance between layers. Default: 2.0
         save_path : str, optional
             If provided, save the figure to this path
-        
         return_type : str, optional
             Type of return value:
             - 'figure': Return matplotlib Figure object (default)
@@ -1367,27 +1551,61 @@ class Context:
             - 'figure': The matplotlib Figure object
             - 'image': RGB numpy array of shape (H, W, 3) with values in [0, 255]
             - 'both': Tuple of (figure, image_array)
+
+        Notes
+        -----
+        **Visual Features:**
+        
+        - **Left-to-Right Layout**: Diagrams are laid out from left (scene) to right (detector), 
+          matching the physical light propagation path.
+        - **Schematic Icons**: Each component is represented by a schematic icon:
+            - **Scene**: Star with planets
+            - **Telescope**: Circular aperture with spider vanes
+            - **Atmosphere**: Wavy turbulence patterns
+            - **Adaptive Optics**: Deformable mirror with actuators
+            - **Coronagraph**: Focal plane mask
+            - **Beam Splitter**: Diagonal mirror splitting beam
+            - **Fibers**: Input/output coupling
+            - **Photonics**: Integrated waveguide circuits
+            - **Camera**: Detector array with pixels
+            - **Interferometer**: Multiple telescopes with combiner
+        - **Parallel Paths**: When beam splitters create multiple paths, they are displayed vertically.
+        - **Component Labels**: Each component is labeled with its class name and custom name (if provided).
+        - **Signal Flow**: Red arrows show the signal flow between components.
         
         Examples
         --------
-        >>> ctx = Context()
-        >>> ctx.add_layer(scene)
-        >>> ctx.add_layer(telescope)
-        >>> ctx.add_layer(BeamSplitter())
-        >>> ctx.add_layer([camera1, camera2])
-        >>> fig = ctx.plot_uml_diagram()
+        >>> import helios
+        >>> from astropy import units as u
+        >>> import matplotlib.pyplot as plt
+        
+        >>> # Create a simple pipeline
+        >>> scene = helios.Scene(distance=10*u.pc)
+        >>> scene.add(helios.Star(temperature=5700*u.K, magnitude=5))
+        >>> telescope = helios.TelescopeArray(name="VLT")
+        >>> telescope.add_collector(pupil=helios.Pupil.vlt(), position=(0, 0), size=8*u.m)
+        >>> camera = helios.Camera(pixels=(512, 512))
+        
+        >>> # Build pipeline
+        >>> pipeline = helios.Pipeline()
+        >>> pipeline.add_layer(scene)
+        >>> pipeline.add_layer(telescope)
+        >>> pipeline.add_layer(camera)
+        
+        >>> # Generate diagram
+        >>> fig = pipeline.plot_uml_diagram()
         >>> plt.show()
         
-        Notes
-        -----
-        The diagram displays:
-        - Each layer with its schematic icon (from assets/)
-        - Layer names as labels
-        - Arrows showing signal flow
-        - Parallel paths for beam splitting
-        
-        The coordinate system is left-to-right (scene → detector) with parallel
-        paths displayed vertically when beam splitting occurs.
+        >>> # Or save to file
+        >>> pipeline.plot_uml_diagram(save_path='my_optical_system.png')
+
+        >>> # Create dual-channel system with BeamSplitter
+        >>> pipeline = helios.Pipeline()
+        >>> pipeline.add_layer(scene)
+        >>> pipeline.add_layer(telescope)
+        >>> pipeline.add_layer(helios.BeamSplitter(cutoff=0.5))
+        >>> pipeline.add_layer([camera, camera])  # Parallel paths shown vertically
+        >>> fig = pipeline.plot_uml_diagram()
         """
         # Validate architecture first
         self.validate_architecture()
@@ -2193,26 +2411,26 @@ class Context:
         )
         ax.add_patch(arrow)
 
-def test_context_initialization():
-    ctx = Context(date="2025-01-01", declination=10)
-    assert ctx.date == "2025-01-01"
-    assert ctx.declination == 10
-    assert len(ctx.layers) == 0
+def test_pipeline_initialization():
+    pipe = Pipeline(date="2025-01-01", declination=10)
+    assert pipe.date == "2025-01-01"
+    assert pipe.declination == 10
+    assert len(pipe.layers) == 0
 
-def test_context_add_layer():
-    ctx = Context()
+def test_pipeline_add_layer():
+    pipe = Pipeline()
     class MockLayer(Layer):
-        def process(self, wf, ctx): return "processed"
+        def process(self, wf, pipe): return "processed"
     
     l1 = MockLayer()
-    ctx.add_layer(l1)
-    assert len(ctx.layers) == 1
-    assert ctx.layers[0] == l1
+    pipe.add_layer(l1)
+    assert len(pipe.layers) == 1
+    assert pipe.layers[0] == l1
 
 if __name__ == "__main__":
     import pytest
     # Run internal tests
     # pytest.main([__file__])
-    test_context_initialization()
-    test_context_add_layer()
-    print("Context tests passed.")
+    test_pipeline_initialization()
+    test_pipeline_add_layer()
+    print("Pipeline tests passed.")

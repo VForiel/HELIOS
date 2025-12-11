@@ -9,12 +9,12 @@ from astropy import units as u
 from typing import Tuple, List, Union, Optional
 import matplotlib.pyplot as _plt
 
-from ..core.context import Element, Context, serialize_value, deserialize_value
+from ..core.pipeline import Element, Layer, GenerationLayer, Pipeline, serialize_value, deserialize_value
 from ..core.simulation import Wavefront, WavefrontArray
 from .collector import TelescopeArray
 
 
-class Atmosphere(Element):
+class Atmosphere(GenerationLayer):
     """Kolmogorov atmosphere layer producing chromatic phase screens with frozen-flow turbulence.
 
     The atmosphere introduces optical path difference (OPD) errors that are chromatic - 
@@ -314,18 +314,18 @@ class Atmosphere(Element):
 
         # 1. Check for downstream TelescopeArray to optimize
         target_collectors = []
-        if self.context is not None and hasattr(self.context, 'layers'):
+        if self.pipeline is not None and hasattr(self.pipeline, 'layers'):
             # Find this atmosphere layer index
             my_index = -1
-            for i, layer in enumerate(self.context.layers):
+            for i, layer in enumerate(self.pipeline.layers):
                 if layer is self:
                     my_index = i
                     break
             
             # Look for next TelescopeArray
             if my_index != -1:
-                for i in range(my_index + 1, len(self.context.layers)):
-                    layer = self.context.layers[i]
+                for i in range(my_index + 1, len(self.pipeline.layers)):
+                    layer = self.pipeline.layers[i]
                     if type(layer).__name__ == 'TelescopeArray':
                         target_collectors = layer.collectors
                         break
@@ -347,9 +347,9 @@ class Atmosphere(Element):
         except Exception:
             return wavefront
 
-        # Get observation time from context or default to t=0
-        if self.context is not None and hasattr(self.context, 'time'):
-            time = self.context.time
+        # Get observation time from pipeline or default to t=0
+        if self.pipeline is not None and hasattr(self.pipeline, 'time'):
+            time = self.pipeline.time
         else:
             time = 0.0 * u.s
         
@@ -379,8 +379,8 @@ class Atmosphere(Element):
             N_in = wavefront.shape[0]
         
         # Get time
-        if self.context is not None and hasattr(self.context, 'time'):
-            time = self.context.time
+        if self.pipeline is not None and hasattr(self.pipeline, 'time'):
+            time = self.pipeline.time
         else:
             time = 0.0 * u.s
         time_s = time.to(u.s).value if hasattr(time, 'to') else float(time)

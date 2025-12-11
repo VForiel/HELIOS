@@ -51,7 +51,7 @@ def test_pipeline():
     # Build Context
     # We need a source layer to start. Let's make a dummy source layer
     class Source(helios.core.context.Layer):
-        def process(self, wf, ctx):
+        def process(self, wf, ctx=None):
             return wf_in
             
     ctx.add_layer(Source(name="Source"))

@@ -10,7 +10,7 @@ HELIOS uses a **layered pipeline architecture** where light propagates sequentia
 
 ```{mermaid}
 flowchart LR
-    subgraph Context["Context (Orchestrator)"]
+    subgraph Pipeline["Pipeline (Orchestrator)"]
         observe["observe()"]
     end
     
@@ -57,25 +57,25 @@ flowchart LR
     Photonics --> |Coupled Light| Camera
     Camera --> |ndarray| Result["Final Image"]
     
-    Context -.-> |orchestrates| Scene
-    Context -.-> |orchestrates| TelescopeGroup
-    Context -.-> |orchestrates| Optics
-    Context -.-> |orchestrates| Photonics
-    Context -.-> |orchestrates| Detectors
+    Pipeline -.-> |orchestrates| Scene
+    Pipeline -.-> |orchestrates| TelescopeGroup
+    Pipeline -.-> |orchestrates| Optics
+    Pipeline -.-> |orchestrates| Photonics
+    Pipeline -.-> |orchestrates| Detectors
     
     style Scene fill:#fff4e6
     style TelescopeGroup fill:#e1f5fe
     style Optics fill:#e3f2fd
     style Photonics fill:#f3e5f5
     style Detectors fill:#e8f5e9
-    style Context fill:#fce4ec
+    style Pipeline fill:#fce4ec
     style Result fill:#ffeb3b
 ```
 
 **Key Concepts:**
 - **Sequential Processing**: Solid arrows show the wavefront propagation path
 - **Parallel Processing**: Multiple branches after BeamSplitter
-- **Context Orchestration**: Dotted lines show the Context managing all layers
+- **Pipeline Orchestration**: Dotted lines show the Pipeline managing all layers
 - **Terminal Layer**: Camera produces final numpy array output
 
 ## Features
@@ -92,7 +92,7 @@ flowchart LR
 
 api/index
 contribute
-architecture_uml
+architecture
 ```
 
 ## Quick Start
@@ -114,11 +114,11 @@ telescope.add_collector(pupil=pupil, position=(0, 0), size=8*u.m)
 # telescope.add_collector(pupil=pupil, position=(47, 0), size=8*u.m)
 # telescope.is_interferometric()  # Returns True if multiple baselines
 
-# Setup context and run
-context = helios.Context()
-context.add_layer(scene)
-context.add_layer(telescope)
-context.add_layer(helios.Camera(pixels=(1024, 1024)))
+# Setup pipeline and run
+pipeline = helios.Pipeline()
+pipeline.add_layer(scene)
+pipeline.add_layer(telescope)
+pipeline.add_layer(helios.Camera(pixels=(1024, 1024)))
 
-image = context.observe()
+image = pipeline.observe()
 ```

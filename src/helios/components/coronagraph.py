@@ -8,11 +8,11 @@ from astropy import units as u
 from typing import Optional
 import matplotlib.pyplot as _plt
 
-from ..core.context import Element, Context
+from ..core.pipeline import Element, Layer, OpticalLayer, Pipeline
 from ..core.simulation import Wavefront
 
 
-class Coronagraph(Element):
+class Coronagraph(OpticalLayer):
     """Coronagraph focal-plane mask layer.
     
     Applies phase and/or amplitude masks in the focal plane to suppress
@@ -55,13 +55,15 @@ class Coronagraph(Element):
         # Optional physical diameter (focal-plane mask scale reference)
         self.diameter = diameter if diameter is None else diameter.to(u.m)
 
-    def process(self, wavefront: Wavefront, auto_magnify: Optional[bool] = None) -> Wavefront:
+    def process(self, wavefront: Wavefront, context: Optional['Context'] = None, auto_magnify: Optional[bool] = None) -> Wavefront:
         """Apply coronagraph mask to wavefront.
         
         Parameters
         ----------
         wavefront : Wavefront
             Input wavefront (pupil plane)
+        context : Context, optional
+            The simulation context (unused in Coronagraph but required by Layer protocol).
         
         Returns
         -------
@@ -75,6 +77,11 @@ class Coronagraph(Element):
         2. Multiply by focal-plane mask (phase and/or amplitude)
         3. Inverse FFT → back to pupil/image plane
         """
+        # Backwards compatibility: if context is passed as boolean, treat it as auto_magnify
+        if isinstance(context, bool) and auto_magnify is None:
+            auto_magnify = context
+            context = None
+
         # Auto-magnify/crop behavior if physical diameter is provided
         if self.diameter is not None:
             wf_size = wavefront.width if isinstance(wavefront.width, u.Quantity) else wavefront.width * u.m

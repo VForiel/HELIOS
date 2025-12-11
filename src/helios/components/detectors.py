@@ -1,11 +1,11 @@
 import numpy as np
 from typing import Tuple, Optional, Any
 from astropy import units as u
-from ..core.context import Element, Context, serialize_value, deserialize_value
+from ..core.pipeline import Element, Layer, DetectionLayer, Pipeline, serialize_value, deserialize_value
 from ..core.simulation import Wavefront, WavefrontArray
 import matplotlib.pyplot as plt
 
-class Camera(Element):
+class Camera(DetectionLayer):
     __slots__ = (
         "pixels",
         "dark_current",
@@ -66,13 +66,13 @@ class Camera(Element):
     ...                 integration_time=10*u.s)
     >>> 
     >>> # Acquire raw image (with signal + dark + noise)
-    >>> raw = camera.get_raw_image(wavefront, context)
+    >>> raw = camera.get_raw_image(wavefront, pipeline)
     >>> 
     >>> # Get dark frame only
     >>> dark = camera.get_dark()
     >>> 
     >>> # Get reduced image (signal with dark subtracted)
-    >>> reduced = camera.get_image(wavefront, context)
+    >>> reduced = camera.get_image(wavefront, pipeline)
     """
     def __init__(self, pixels: Tuple[int, int] = (1024, 1024), 
                  dark_current: u.Quantity = 0.01*u.electron/u.s, 
@@ -223,7 +223,7 @@ class Camera(Element):
         Examples
         --------
         >>> camera = Camera(pixels=(512, 512), integration_time=10*u.s)
-        >>> raw = camera.get_raw_image(wavefront, context)
+        >>> raw = camera.get_raw_image(wavefront, pipeline)
         >>> print(f"Raw image range: [{raw.min():.1f}, {raw.max():.1f}] e-")
         """
         # 1. Signal from wavefront (if provided)
@@ -372,18 +372,18 @@ class Camera(Element):
         Examples
         --------
         >>> camera = Camera(pixels=(256, 256), integration_time=60*u.s)
-        >>> context.add_layer(camera) # Add the camera to the desired context
+        >>> pipeline.add_layer(camera) # Add the camera to the desired pipeline
         >>> 
         >>> # Get reduced image (recommended for science)
-        >>> reduced = camera.get_image(wavefront, context)
+        >>> reduced = camera.get_image(wavefront, pipeline)
         """
         # Automatic path simulation if wavefront is None
-        if wavefront is None and self.context is not None:
-             # Try to propagate from context
+        if wavefront is None and self.pipeline is not None:
+             # Try to propagate from pipeline
              try:
-                 # We look for 'propagate_until' method which we added to Context
-                 if hasattr(self.context, 'propagate_until'):
-                    wavefront = self.context.propagate_until(self)
+                 # We look for 'propagate_until' method which we added to Pipeline
+                 if hasattr(self.pipeline, 'propagate_until'):
+                    wavefront = self.pipeline.propagate_until(self)
              except Exception as e:
                  print(f"Camera path simulation failed: {e}")
                  # Fallthrough to None (dark frame)
@@ -401,11 +401,11 @@ class Camera(Element):
         
         return reduced_image
 
-    def process(self, wavefront: Wavefront) -> np.ndarray:
+    def process(self, wavefront: Wavefront, pipeline: Optional['Pipeline'] = None) -> np.ndarray:
         """
         Process wavefront and return reduced detector image.
         
-        This is the Layer/Element interface method called by Context.observe().
+        This is the Layer/Element interface method called by Pipeline.observe().
         By default, it returns a dark-subtracted (reduced) image.
         
         For raw images or dark frames, use get_raw_image() or get_dark() directly.
@@ -426,7 +426,8 @@ class Camera(Element):
              ax: Optional[plt.Axes] = None,
              show: bool = True,
              title: Optional[str] = None,
-             log_scale: bool = False) -> plt.Axes:
+             log_scale: bool = False,
+             debug: bool = False) -> plt.Axes:
         """
         Visualize the camera detector output.
         
@@ -445,6 +446,8 @@ class Camera(Element):
             Custom title for the plot.
         log_scale : bool, optional
             If True, plot intensity in log scale (log10). Default: False
+        debug : bool, optional
+            If True, suppress plt.show() and save plot to debug file. Default: False
             
         Returns
         -------
@@ -456,6 +459,8 @@ class Camera(Element):
         
         if ax is None:
             fig, ax = plt.subplots(figsize=(8, 8))
+        else:
+            fig = ax.figure
         
         # Prepare data for plotting
         plot_data = image
@@ -487,8 +492,28 @@ class Camera(Element):
             
             ax.set_title(f"{base_title} - {', '.join(extra)}")
             
+        if debug:
+            show = False
+            
         if show:
             plt.show()
+            
+        if debug:
+            print(f"DEBUG Plot Camera: {self.name} {title if title else ''}")
+            print(f"  Image shape: {image.shape}")
+            print(f"  Range: {image.min():.2f} to {image.max():.2f}")
+            try:
+                import os
+                import time
+                os.makedirs("tests/generated", exist_ok=True)
+                timestamp = int(time.time() * 1000)
+                filename = f"tests/generated/plot_camera_{timestamp}.png"
+                fig.savefig(filename)
+                print(f"  Saved plot to {filename}")
+            except Exception as e:
+                print(f"  Failed to save debug plot: {e}")
+            if ax is None: # Only close if we created the figure
+                plt.close(fig)
             
         return ax
     

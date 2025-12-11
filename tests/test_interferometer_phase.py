@@ -1,7 +1,7 @@
 import numpy as np
 import astropy.units as u
 import matplotlib.pyplot as plt
-from helios.core.context import Context, Element
+from helios.core.pipeline import Pipeline, Element
 from helios.components.collector import TelescopeArray, Collector
 from helios.components.scene import Scene, Star
 
@@ -10,7 +10,7 @@ from helios.components.pupil import Pupil
 def test_interferometer_phase_generation():
     print("Testing Interferometer Phase Generation (Piston + Tilt)...")
     
-    # 1. Setup Context with an off-axis source
+    # 1. Setup Pipeline with an off-axis source
     # Source at theta_x = 1 arcsec, theta_y = 0
     theta_x = 1.0 * u.arcsec
     theta_y = 0.0 * u.arcsec
@@ -20,11 +20,11 @@ def test_interferometer_phase_generation():
     scene = Scene()
     scene.add(star)
     
-    # Context parameters
+    # Pipeline parameters
     npix = 128
     diameter = 1.0 * u.m # Collector diameter
     
-    ctx = Context(layers=[scene], wavelength=wavelength, npix=npix, diameter=diameter)
+    pipe = Pipeline(layers=[scene], wavelength=wavelength, npix=npix, diameter=diameter)
     
     # 2. Setup TelescopeArray with 2 collectors
     # Baseline B = 100m along x-axis
@@ -41,7 +41,7 @@ def test_interferometer_phase_generation():
     
     # 3. Process (should trigger get_input_wavefront with collectors)
     # Passing None as wavefront to trigger generation
-    wf_array = ta.process(None, ctx)
+    wf_array = ta.process(None, pipe)
     
     # 4. Verifications
     

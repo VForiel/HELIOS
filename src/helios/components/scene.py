@@ -3,7 +3,7 @@ from astropy import units as u
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 from typing import Optional, Tuple, Any
-from ..core.context import Layer, Element, Context, serialize_value, deserialize_value
+from ..core.pipeline import Layer, GenerationLayer, Element, Pipeline, serialize_value, deserialize_value
 from ..core.simulation import Wavefront
 from astropy import constants as const
 
@@ -498,7 +498,7 @@ class Zodiacal(CelestialBody):
             temperature = 270 * u.K
         return modified_blackbody(wavelengths if wavelengths is not None else None, temperature, **kwargs)
 
-class Scene(Layer):
+class Scene(GenerationLayer):
     """
     Represents the astronomical scene containing stars, planets, zodiacal light, etc.
     
@@ -638,8 +638,8 @@ class Scene(Layer):
         """
         # If wavefront is None, generate it using the context
         if wavefront is None:
-            if self.context is not None:
-                return self.context.get_input_wavefront()
+            if self.pipeline is not None:
+                return self.pipeline.get_input_wavefront()
             return None
         
         # Calculate total flux scaling

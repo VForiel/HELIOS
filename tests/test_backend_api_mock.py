@@ -8,10 +8,10 @@ import numpy as np
 sys.path.append(os.path.abspath("d:/HELIOS"))
 
 from web.backend.app import (
-    export_context_file, import_context_file, 
+    export_pipeline_file, import_pipeline_file, 
     PipelineRequest, LayerConfig, ScenePayload, TelescopePayload
 )
-from helios.core.context import Context
+from helios.core.pipeline import Pipeline
 
 def test_backend_api():
     print("Testing Backend API Endpoints...")
@@ -36,7 +36,7 @@ def test_backend_api():
     )
     
     # Call export endpoint
-    response = export_context_file(req)
+    response = export_pipeline_file(req)
     content = response.body
     json_str = content.decode('utf-8')
     data = json.loads(json_str)
@@ -48,7 +48,7 @@ def test_backend_api():
     # 2. Testing Import
     print("\n2. Testing Import...")
     # Feed back the data we just exported
-    result_pipeline = import_context_file(data)
+    result_pipeline = import_pipeline_file(data)
     
     print("Imported Pipeline Layers:", len(result_pipeline.layers))
     assert len(result_pipeline.layers) == len(req.layers)

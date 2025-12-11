@@ -557,7 +557,8 @@ class Wavefront(u.Quantity):
 
     def plot(self, title: Optional[str] = None, figsize: Optional[tuple] = None, 
              show: bool = True, log_scale: bool = True, stack_method: Optional[Callable] = None,
-             max_plots: int = 5, fov: Optional[u.Quantity] = None, angular_coordinates: bool = False):
+             max_plots: int = 5, fov: Optional[u.Quantity] = None, angular_coordinates: bool = False,
+             debug: bool = False):
         """
         Plot the wavefront amplitude and phase side by side.
         
@@ -579,6 +580,8 @@ class Wavefront(u.Quantity):
             Field of view to display (e.g., 2*u.arcsec). If None, shows the full array.
         angular_coordinates : bool, optional
             If True and pixel_angle is available, use angular coordinates for axes. Default False.
+        debug : bool, optional
+            If True, saves plots to 'tests/generated/' instead of displaying them. Default False.
             
         Returns
         -------
@@ -710,8 +713,27 @@ class Wavefront(u.Quantity):
             
         plt.tight_layout()
         
+        if debug:
+            show = False
+            
         if show:
             plt.show()
+            
+        if debug:
+            print(f"DEBUG Plot: {title if title else 'Wavefront'}")
+            print(f"  Shape: {self.shape}")
+            print(f"  Wavelength: {self.wavelength}")
+            try:
+                import os
+                import time
+                os.makedirs("tests/generated", exist_ok=True)
+                timestamp = int(time.time() * 1000)
+                filename = f"tests/generated/plot_wf_{timestamp}.png"
+                fig.savefig(filename)
+                print(f"  Saved plot to {filename}")
+            except Exception as e:
+                print(f"  Failed to save debug plot: {e}")
+            plt.close(fig)
             
         return fig, axes
 
@@ -940,7 +962,7 @@ class WavefrontArray:
         
     def plot(self, title: Optional[str] = None, show: bool = True, log_scale: bool = True, 
              stack_method: Optional[Callable] = None, fov: Optional[u.Quantity] = None,
-             angular_coordinates: bool = False):
+             angular_coordinates: bool = False, debug: bool = False):
         """
         Plot all wavefronts in the array (Amplitude and Phase).
         
@@ -1157,8 +1179,26 @@ class WavefrontArray:
         if title:
             fig.suptitle(title)
         plt.tight_layout()
+        if debug:
+            show = False
+            
         if show:
             plt.show()
+            
+        if debug:
+            print(f"DEBUG Plot Array: {title if title else 'WavefrontArray'}")
+            print(f"  Count: {len(self)}")
+            try:
+                import os
+                import time
+                os.makedirs("tests/generated", exist_ok=True)
+                timestamp = int(time.time() * 1000)
+                filename = f"tests/generated/plot_wf_array_{timestamp}.png"
+                fig.savefig(filename)
+                print(f"  Saved plot to {filename}")
+            except Exception as e:
+                print(f"  Failed to save debug plot: {e}")
+            plt.close(fig)
             
         return fig, axes
 

@@ -1,12 +1,82 @@
-# Architecture
+# HELIOS Core Architecture
 
-Ce document présente l'architecture détaillée du package HELIOS sous forme de diagramme UML de classes, montrant toutes les classes, leurs attributs, méthodes et interactions.
+HELIOS uses a **Layered Architecture** with a **Pull-Based Execution Model** to simulate optical pipelines.
 
-## Vue d'ensemble de l'architecture
+## 1. Layer Types
+The simulation pipeline is structured into 5 strict types of layers, representing the physical flow of information.
 
-HELIOS est organisé en deux modules principaux :
-- **`core`** : Classes de base définissant la structure de simulation
-- **`components`** : Composants optiques et astronomiques spécifiques
+### 🔷 GenerationLayer (Field Definition)
+*   **Role**: Defines the continuous electromagnetic field (The "World").
+*   **Input**: None (or previous Generation layer).
+*   **Output**: Full continuous Wavefront/Field.
+*   **Constraint**: Unique path (Single Link).
+*   **Components**: `Scene`, `Atmosphere`.
+
+### 🔶 SamplingLayer (Field Discrete Sampling)
+*   **Role**: Interfaces the continuous world with the discrete instrument. Samples the field at specific aperture positions.
+*   **Input**: `GenerationLayer` (The Field).
+*   **Output**: Array of discrete Wavefronts (Optical Beams).
+*   **Constraint**: 1 Input (Field) -> N Outputs (Beams). Use this for broadcasting.
+*   **Components**: `TelescopeArray`.
+
+### 🟣 OpticalLayer (Beam Propagation)
+*   **Role**: Transports and modifies optical beams within the instrument.
+*   **Input**: Optical Beam(s).
+*   **Output**: Optical Beam(s).
+*   **Constraint**: Can be 1-to-1, N-to-N, or N-to-M (Beam Splitters).
+*   **Components**: `Lens`, `Mirror`, `BeamSplitter`, `Fiber`, `Coronagraph`.
+
+### 🔴 DetectionLayer (Photon-to-Data)
+*   **Role**: Converts optical energy into digital data. The "Sink" of the optical simulation.
+*   **Input**: Optical Beam(s).
+*   **Output**: Data Array (Pixels).
+*   **Components**: `Camera`, `Detector`.
+
+### ⚪ DataLayer (Post-Processing)
+*   **Role**: Processes digital data after acquisition.
+*   **Input**: Data Array.
+*   **Output**: Data Array.
+*   **Components**: `ImageStacker`, `NullingCombiner` (Algorithm).
+
+---
+
+## 2. Pull Model (Lazy Evaluation)
+HELIOS does not "push" photons from the start. Instead, the final detector "pulls" the information it needs.
+
+### Logic Flow
+1.  User calls `pipeline.observe()` (or `Camera.get_output()`).
+2.  `Camera` asks: "Do I have an input?" -> No.
+3.  `Camera` calls `previous_layer.get_output_wavefront()`.
+4.  Recursively, this climbs back up to the `Scene`.
+5.  `Scene` generates the initial field and returns it.
+6.  Each layer processes the data on the way back down.
+
+### Why?
+*   **Efficiency**: We only calculate what is connected to the detector.
+*   **State Inspection**: Since every layer computes its output on demand, we can inspect the state *between* any two layers by asking the previous one for its output.
+
+## 3. Caching & Invalidation
+To optimise performance, every layer has a **Cache**:
+*   `_cached_input`: usage internal
+*   `_cached_output`: result of the last process()
+
+### Invalidation Strategy
+If a parameter changes in a Layer (e.g., changing Telescope diameter):
+1.  **Local**: The layer invalidates its own cache.
+2.  **Propagation**: The Pipeline is notified and invalidates **ALL downstream layers**.
+3.  **Result**: The next `observe()` will re-compute only the dirty part of the pipeline.
+
+---
+
+# Detailed Class Architecture
+
+This section presents the detailed architecture of the HELIOS package in the form of a UML class diagram, showing all classes, their attributes, methods, and interactions.
+
+## Architecture Overview
+
+HELIOS is organized into two main modules:
+- **`core`**: Base classes defining the simulation structure
+- **`components`**: Specific optical and astronomical components
 
 ```{mermaid}
 classDiagram
@@ -26,26 +96,26 @@ classDiagram
         <<abstract>>
         +str name
         +Layer layer
-        +Context context
+        +Pipeline pipeline
         +__init__(name)
         +description(indent, full) str
         +_get_detailed_attributes() dict
-        +process(wavefront, context)* Wavefront
+        +process(wavefront, pipeline)* Wavefront
     }
     
     class Layer {
         <<abstract>>
         +str name
         +List~Element~ elements
-        +Context context
+        +Pipeline pipeline
         +__init__(name)
         +add_element(element)
         +description(indent, full) str
         +_get_detailed_attributes() dict
-        +process(wavefront, context)* Wavefront
+        +process(wavefront, pipeline)* Wavefront
     }
     
-    class Context {
+    class Pipeline {
         +List layers
         +Any date
         +Any declination
@@ -63,13 +133,13 @@ classDiagram
     }
     
     %% Relationships - Core
-    Context "1" *-- "0..*" Layer : contains
+    Pipeline "1" *-- "0..*" Layer : contains
     Layer "1" *-- "0..*" Element : contains
     Element ..> Wavefront : processes
     Layer ..> Wavefront : processes
     Element --> Layer : belongs to
-    Element --> Context : references
-    Layer --> Context : belongs to
+    Element --> Pipeline : references
+    Layer --> Pipeline : belongs to
     
     %% ============================================
     %% SCENE COMPONENTS - Celestial Objects
@@ -79,7 +149,7 @@ classDiagram
         <<abstract>>
         +Tuple position
         +__init__(position, name, **kwargs)
-        +process(wavefront, context) Wavefront
+        +process(wavefront, pipeline) Wavefront
         +sed(wavelengths, **kwargs) Tuple
         +flux_at(wavelength, **kwargs) Quantity
         +plot_sed(wavelengths, ax, label, color, **kwargs)
@@ -140,7 +210,7 @@ classDiagram
         +add_local_zodi(**kwargs) LocalZodi
         +add_exo_zodi(**kwargs) ExoZodi
         +plot(ax, unit, center_on_star, **kwargs)
-        +process(wavefront, context) Wavefront
+        +process(wavefront, pipeline) Wavefront
         +_get_detailed_attributes() dict
     }
     
@@ -186,7 +256,7 @@ classDiagram
         +Quantity size
         +dict metadata
         +__init__(pupil, position, size, name, **metadata)
-        +process(wavefront, context) Wavefront
+        +process(wavefront, pipeline) Wavefront
         +_get_detailed_attributes() dict
     }
     
@@ -228,7 +298,7 @@ classDiagram
         +__init__(rms, wind_speed, wind_direction, seed, **kwargs)
         +_generate_frozen_screen(N, oversample) ndarray
         +_extract_screen_at_time(time, N) ndarray
-        +process(wavefront, context) Wavefront
+        +process(wavefront, pipeline) Wavefront
         +plot_screen_animation(collectors, wavelength, **kwargs)
         +plot_animation(collectors, wavelength, **kwargs)
     }
@@ -240,7 +310,7 @@ classDiagram
         +noll_to_nm(j)$ Tuple
         +_radial_polynomial(n, m, r) ndarray
         +_zernike_nm(n, m, rho, theta) ndarray
-        +process(wavefront, context) Wavefront
+        +process(wavefront, pipeline) Wavefront
     }
     
     %% Relationships - Atmosphere
@@ -254,7 +324,7 @@ classDiagram
     class Coronagraph {
         +str phase_mask
         +__init__(phase_mask, name)
-        +process(wavefront, context) Wavefront
+        +process(wavefront, pipeline) Wavefront
         +mask_array(npix, kind, charge, lam, diameter, fov) ndarray
         +plot_mask(npix, kind, charge, ax, **kwargs)
         +image_from_scene(scene_array, soft, oversample, **kwargs) ndarray
@@ -278,10 +348,10 @@ classDiagram
         +Quantity thermal_background
         +Quantity thermal_background_temp
         +__init__(pixels, dark_current, read_noise, **kwargs)
-        +get_raw_image(wavefront, context) ndarray
+        +get_raw_image(wavefront, pipeline) ndarray
         +get_dark() ndarray
-        +get_image(wavefront, context, subtract_dark) ndarray
-        +process(wavefront, context) ndarray
+        +get_image(wavefront, pipeline, subtract_dark) ndarray
+        +process(wavefront, pipeline) ndarray
         +_get_detailed_attributes() dict
     }
     
@@ -295,7 +365,7 @@ classDiagram
     class BeamSplitter {
         +float cutoff
         +__init__(cutoff, name)
-        +process(wavefront, context) List~Wavefront~
+        +process(wavefront, pipeline) List~Wavefront~
         +_get_detailed_attributes() dict
     }
     
@@ -309,12 +379,12 @@ classDiagram
     class FiberIn {
         +int modes
         +__init__(modes, **kwargs)
-        +process(wavefront, context) Wavefront
+        +process(wavefront, pipeline) Wavefront
     }
     
     class FiberOut {
         +__init__(**kwargs)
-        +process(wavefront, context) Wavefront
+        +process(wavefront, pipeline) Wavefront
     }
     
     %% Relationships - Fibers
@@ -331,19 +401,19 @@ classDiagram
         +List~Layer~ layers
         +__init__(inputs, lambda0, **kwargs)
         +add_layer(layer)
-        +process(wavefronts, context) List~Wavefront~
+        +process(wavefronts, pipeline) List~Wavefront~
     }
     
     class TOPS {
         +Union on_paths
         +__init__(on_paths)
-        +process(wavefronts, context) List~Wavefront~
+        +process(wavefronts, pipeline) List~Wavefront~
     }
     
     class MMI {
         +ndarray matrix
         +__init__(matrix)
-        +process(wavefronts, context) List~Wavefront~
+        +process(wavefronts, pipeline) List~Wavefront~
     }
     
     %% Relationships - Photonics
@@ -353,119 +423,119 @@ classDiagram
     PhotonicChip "1" *-- "0..*" Layer : contains
 ```
 
-## Description des modules
+## Module Descriptions
 
-### Module `core`
+### `core` Module
 
 #### `Wavefront`
-Représente le champ électromagnétique complexe (amplitude et phase) à une longueur d'onde donnée. C'est l'objet principal qui circule à travers la chaîne de simulation.
+Represents the complex electromagnetic field (amplitude and phase) at a given wavelength. It is the main object that flows through the simulation chain.
 
-**Attributs clés :**
-- `wavelength` : Longueur d'onde de la lumière
-- `field` : Tableau 2D complexe représentant l'amplitude et la phase
-- `pixel_scale` : Échelle physique par pixel
+**Key Attributes:**
+- `wavelength`: Light wavelength
+- `field`: Complex 2D array representing amplitude and phase
+- `pixel_scale`: Physical scale per pixel
 
 #### `Element`
-Classe de base abstraite pour tous les composants physiques individuels. Chaque élément peut traiter un front d'onde indépendamment.
+Abstract base class for all individual physical components. Each element can process a wavefront independently.
 
-**Méthodes clés :**
-- `process(wavefront, context)` : Méthode abstraite à implémenter par les sous-classes
-- `description()` : Génère une description textuelle de l'élément
+**Key Methods:**
+- `process(wavefront, pipeline)`: Abstract method to be implemented by subclasses
+- `description()`: Generates a text description of the element
 
 #### `Layer`
-Classe de base abstraite pour les groupes logiques d'éléments. Une couche peut contenir plusieurs éléments qui traitent les fronts d'onde en parallèle.
+Abstract base class for logical groups of elements. A layer can contain multiple elements that process wavefronts in parallel.
 
-**Méthodes clés :**
-- `add_element(element)` : Ajoute un élément à la couche
-- `process(wavefront, context)` : Traite le front d'onde à travers tous les éléments
+**Key Methods:**
+- `add_element(element)`: Adds an element to the layer
+- `process(wavefront, pipeline)`: Processes the wavefront through all elements
 
-#### `Context`
-Orchestrateur principal de la simulation. Gère la séquence de couches et l'exécution de l'observation.
+#### `Pipeline`
+Main simulation orchestrator. Manages the sequence of layers and the execution of the observation.
 
-**Méthodes clés :**
-- `add_layer(layer)` : Ajoute une couche à la simulation
-- `observe(wavelength, size)` : Exécute la simulation complète
-- `plot_architecture()` : Visualise l'architecture de la simulation
+**Key Methods:**
+- `add_layer(layer)`: Adds a layer to the simulation
+- `observe(wavelength, size)`: Executes the full simulation
+- `plot_architecture()`: Visualizes the simulation architecture
 
-### Module `components`
+### `components` Module
 
-#### Scène astronomique
+#### Astronomical Scene
 
-**`Scene`** : Couche contenant tous les objets célestes
-- Gère la distance au système stellaire
-- Contient des étoiles, planètes, et lumière zodiacale
+**`Scene`**: Layer containing all celestial objects
+- Manages distance to the star system
+- Contains stars, planets, and zodiacal light
 
-**`CelestialBody`** : Classe de base pour tous les objets célestes
-- `sed()` : Calcule la distribution spectrale d'énergie
-- `flux_at()` : Calcule le flux à une longueur d'onde spécifique
+**`CelestialBody`**: Base class for all celestial objects
+- `sed()`: Calculates Spectral Energy Distribution
+- `flux_at()`: Calculates flux at a specific wavelength
 
-**`Star`** : Étoile avec spectre de corps noir
-- Température, magnitude, masse
+**`Star`**: Star with blackbody spectrum
+- Temperature, magnitude, mass
 
-**`Planet`** : Planète avec émission thermique et réflexion stellaire
-- Masse, rayon, température, albédo
-- Calcul automatique de la réflexion de la lumière stellaire
+**`Planet`**: Planet with thermal emission and stellar reflection
+- Mass, radius, temperature, albedo
+- Automatic calculation of stellar light reflection
 
-**`ZodiacalLight`**, **`LocalZodi`**, **`ExoZodi`** : Lumière zodiacale (locale et exo-zodiacale)
+**`ZodiacalLight`**, **`LocalZodi`**, **`ExoZodi`**: Zodiacal light (local and exo-zodiacal)
 
-#### Collecteurs de lumière
+#### Light Collectors
 
-**`Pupil`** : Géométrie d'ouverture optique
-- Construction par primitives (disques, hexagones, araignées)
-- Calcul de patron de diffraction
-- Presets : JWST, VLT, ELT
+**`Pupil`**: Optical aperture geometry
+- Construction via primitives (disks, hexagons, spiders)
+- Diffraction pattern calculation
+- Presets: JWST, VLT, ELT
 
-**`Collector`** : Télescope individuel
-- Associe une pupille à une position spatiale
-- Applique le masque de pupille au front d'onde
+**`Collector`**: Individual telescope
+- Associates a pupil with a spatial position
+- Applies the pupil mask to the wavefront
 
-**`TelescopeArray`** : Réseau de télescopes
-- Gestion de configurations interférométriques
-- Presets : VLTI, LIFE
+**`TelescopeArray`**: Telescope array
+- Interferometric configuration management
+- Presets: VLTI, LIFE
 
-#### Atmosphère et optique adaptative
+#### Atmosphere and Adaptive Optics
 
-**`Atmosphere`** : Turbulence atmosphérique de Kolmogorov
-- Écrans de phase avec évolution temporelle (frozen-flow)
-- Paramètres : RMS, vitesse du vent, échelles interne/externe
+**`Atmosphere`**: Kolmogorov atmospheric turbulence
+- Phase screens with temporal evolution (frozen-flow)
+- Parameters: RMS, wind speed, inner/outer scales
 
-**`AdaptiveOptics`** : Correction par optique adaptative
-- Correction basée sur les polynômes de Zernike
-- Coefficients de Zernike (n,m) ou indices de Noll
+**`AdaptiveOptics`**: Adaptive optics correction
+- Correction based on Zernike polynomials
+- Zernike coefficients (n,m) or Noll indices
 
-#### Imagerie à haut contraste
+#### High Contrast Imaging
 
-**`Coronagraph`** : Masques coronographiques
-- Types : 4 quadrants, vortex, Lyot
-- Suppression de la lumière stellaire sur l'axe
+**`Coronagraph`**: Coronagraphic masks
+- Types: 4 quadrants, vortex, Lyot
+- On-axis starlight suppression
 
-#### Détection
+#### Detection
 
-**`Camera`** : Détecteur avec bruit réaliste
-- Courant d'obscurité, bruit de lecture
-- Fond thermique, efficacité quantique
-- Méthodes : `get_raw_image()`, `get_dark()`, `get_image()`
+**`Camera`**: Detector with realistic noise
+- Dark current, read noise
+- Thermal background, quantum efficiency
+- Methods: `get_raw_image()`, `get_dark()`, `get_image()`
 
-#### Division de faisceau
+#### Beam Splitting
 
-**`BeamSplitter`** : Diviseur de faisceau optique
-- Divise un front d'onde en plusieurs chemins
-- Paramètre de transmission/réflexion
+**`BeamSplitter`**: Optical beam splitter
+- Splits a wavefront into multiple paths
+- Transmission/reflection parameter
 
-#### Photonique intégrée
+#### Integrated Photonics
 
-**`FiberIn`** / **`FiberOut`** : Couplage fibré
-- Entrée/sortie de fibres optiques
-- Modes simples ou multiples
+**`FiberIn`** / **`FiberOut`**: Fiber coupling
+- Optical fiber input/output
+- Single or multiple modes
 
-**`PhotonicChip`** : Circuit photonique intégré
-- Contient des couches de composants photoniques
-- **`TOPS`** : Déphaseur thermo-optique
-- **`MMI`** : Coupleur multi-mode (matrice de couplage)
+**`PhotonicChip`**: Integrated photonic circuit
+- Contains layers of photonic components
+- **`TOPS`**: Thermo-optic phase shifter
+- **`MMI`**: Multi-mode interference coupler (coupling matrix)
 
-## Relations et flux de données
+## Relationships and Data Flow
 
-### Hiérarchie d'héritage
+### Inheritance Hierarchy
 
 ```
 Element (abstract)
@@ -494,32 +564,32 @@ Layer (abstract)
 
 ### Composition
 
-- **Context** contient des **Layers**
-- **Layer** contient des **Elements**
-- **Scene** contient des **CelestialBodies**
-- **TelescopeArray** contient des **Collectors**
-- **Collector** contient un **Pupil**
-- **PhotonicChip** contient des **Layers** photoniques
+- **Pipeline** contains **Layers**
+- **Layer** contains **Elements**
+- **Scene** contains **CelestialBodies**
+- **TelescopeArray** contains **Collectors**
+- **Collector** contains a **Pupil**
+- **PhotonicChip** contains photonic **Layers**
 
-### Flux de traitement
+### Processing Flow
 
-1. **Context.observe()** initialise un **Wavefront**
-2. Le **Wavefront** passe séquentiellement à travers chaque **Layer**
-3. Chaque **Layer** applique ses **Elements** au **Wavefront**
-4. Le résultat final est retourné (image, intensité, etc.)
+1. **Pipeline.observe()** initializes a **Wavefront**
+2. The **Wavefront** passes sequentially through each **Layer**
+3. Each **Layer** applies its **Elements** to the **Wavefront**
+4. The final result is returned (image, intensity, etc.)
 
-### Exemple de chaîne typique
+### Typical Chain Example
 
 ```
 Scene → TelescopeArray → Atmosphere → AdaptiveOptics → Coronagraph → Camera
 ```
 
-Chaque composant transforme le front d'onde selon ses propriétés physiques, permettant une simulation end-to-end réaliste d'observations astronomiques.
+Each component transforms the wavefront according to its physical properties, enabling realistic end-to-end simulation of astronomical observations.
 
-## Notes d'implémentation
+## Implementation Notes
 
-- Les classes abstraites (`Element`, `Layer`) définissent l'interface commune
-- Toutes les classes héritant de `Element` ou `Layer` doivent implémenter `process()`
-- Les références bidirectionnelles (`Element.layer`, `Layer.context`) permettent l'accès au contexte global
-- Les méthodes `_get_detailed_attributes()` permettent la génération de descriptions détaillées
-- Les méthodes statiques (marquées `$`) sont des factory methods pour créer des configurations prédéfinies
+- Abstract classes (`Element`, `Layer`) define the common interface
+- All classes inheriting from `Element` or `Layer` must implement `process()`
+- Bidirectional references (`Element.layer`, `Layer.pipeline`) allow access to the global pipeline
+- `_get_detailed_attributes()` methods allow generation of detailed descriptions
+- Static methods (marked `$`) are factory methods for creating predefined configurations

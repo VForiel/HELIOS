@@ -431,3 +431,4 @@ Scope:
 - ❌ Don't skip the agent modification log
 -- ❌ Don't modify notebook cells without validating the changes execute correctly
 - ❌ Don't preserve legacy compatibility during development — refactor globally and update all call sites
+- ❌ Don't run series of terminal commands sequentially (e.g., multiple tests). Create a script in `scripts/` that executes them and run that script instead.

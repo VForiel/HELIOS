@@ -264,20 +264,20 @@ def create_photonic(config: PhotonicPayload):
         return photonics.Swap(mapping=mapping, name=config.name)
     return None
 
-def create_camera(config: CameraPayload, context):
-    # Camera needs pixel scale. We can try to infer from context or defaults.
+def create_camera(config: CameraPayload, pipeline):
+    # Camera needs pixel scale. We can try to infer from pipeline or defaults.
     # The previous logic calculated FOV from scene planets.
     # But now Scene and Camera are decoupled in the list.
     # We need to peek at the Scene layer if possible, or use a default FOV.
     
-    # We can try to find the Scene layer in the context history?
-    # Context layers are stored.
+    # We can try to find the Scene layer in the pipeline history?
+    # Pipeline layers are stored.
     
     # Heuristic: FOV = 2 arcsec default.
     fov = 2.0
     
     # Try to find planets in existing scene layers
-    for layer in context.layers:
+    for layer in pipeline.layers:
         if isinstance(layer, helios.Scene):
             # Inspect elements
             # Accessing private or internal lists might be needed depending on Scene implementation
@@ -630,8 +630,8 @@ def camera_to_payload(cam: helios.Camera) -> CameraPayload:
 
 # --- Endpoint ---
 
-@app.post("/api/context/export_file")
-def export_context_file(request: PipelineRequest):
+@app.post("/api/pipeline/export_file")
+def export_pipeline_file(request: PipelineRequest):
     """Export current pipeline configuration as a library-compatible JSON context file."""
     try:
         print(f"DEBUG EXPORT: Layers Count = {len(request.layers)}")
@@ -644,8 +644,8 @@ def export_context_file(request: PipelineRequest):
             else:
                 print(f"    Val: {item}")
 
-        # 1. Build Context from request
-        context = helios.Context()
+        # 1. Build Pipeline from request
+        pipeline = helios.Pipeline()
         for item in request.layers:
             if isinstance(item, list):
                 # Parallel branch
@@ -657,7 +657,7 @@ def export_context_file(request: PipelineRequest):
                     if sub_conf.type == 'scene': layer_obj = create_scene(ScenePayload(**get_config_dict(sub_conf.config)))
                     elif sub_conf.type == 'atmosphere': layer_obj = create_atmosphere(AtmospherePayload(**get_config_dict(sub_conf.config)))
                     elif sub_conf.type == 'telescope': layer_obj = create_telescope(TelescopePayload(**get_config_dict(sub_conf.config)))
-                    elif sub_conf.type == 'camera': layer_obj = create_camera(CameraPayload(**get_config_dict(sub_conf.config)), context)
+                    elif sub_conf.type == 'camera': layer_obj = create_camera(CameraPayload(**get_config_dict(sub_conf.config)), pipeline)
                     elif sub_conf.type == 'lens': layer_obj = create_lens(LensPayload(**get_config_dict(sub_conf.config)))
                     elif sub_conf.type == 'beam_splitter': layer_obj = create_beam_splitter(BeamSplitterPayload(**get_config_dict(sub_conf.config)))
                     elif sub_conf.type == 'coronagraph': layer_obj = create_coronagraph(CoronagraphPayload(**get_config_dict(sub_conf.config)))
@@ -668,7 +668,7 @@ def export_context_file(request: PipelineRequest):
                     if layer_obj:
                         layer_obj.metadata = sub_conf.metadata
                         parallel_layers.append(layer_obj)
-                context.add_layer(parallel_layers)
+                pipeline.add_layer(parallel_layers)
             else:
                 # Single layer
                 layer_conf = item
@@ -684,7 +684,7 @@ def export_context_file(request: PipelineRequest):
                      layer_obj = create_telescope(data)
                 elif layer_conf.type == 'camera':
                      data = CameraPayload(**get_config_dict(layer_conf.config))
-                     layer_obj = create_camera(data, context)
+                     layer_obj = create_camera(data, pipeline)
                 elif layer_conf.type == 'lens':
                      data = LensPayload(**get_config_dict(layer_conf.config))
                      layer_obj = create_lens(data)
@@ -777,17 +777,17 @@ def _help_convert(layer):
     return l_type, l_config
 
 @app.post("/api/context/import_file")
-def import_context_file(file_data: Dict[str, Any]):
+def import_pipeline_file(file_data: Dict[str, Any]):
     """Import a library JSON context file and convert it to pipeline configuration."""
     try:
         # file_data is the JSON dict parsed by FastAPI from body
-        # 1. Load Context
-        context = helios.Context.from_dict(file_data)
+        # 1. Load Pipeline
+        pipeline = helios.Pipeline.from_dict(file_data)
         
         # 2. Convert to PipelineRequest layers
         layers_config = []
         
-        for layer in context.layers:
+        for layer in pipeline.layers:
              if isinstance(layer, list):
                  # Parallel branch
                  sub_layers = []
@@ -812,7 +812,7 @@ def import_context_file(file_data: Dict[str, Any]):
 @app.post("/api/simulate")
 def run_pipeline(request: PipelineRequest):
     try:
-        context = helios.Context()
+        pipeline = helios.Pipeline()
         
         for layer_conf in request.layers:
             layer_obj = None
@@ -851,7 +851,7 @@ def run_pipeline(request: PipelineRequest):
                     data = CameraPayload(**layer_conf.config)
                 else:
                     data = layer_conf.config
-                layer_obj = create_camera(data, context)
+                layer_obj = create_camera(data, pipeline)
             
             elif layer_conf.type == 'lens':
                 data = LensPayload(**get_config_dict(layer_conf.config))
@@ -873,15 +873,15 @@ def run_pipeline(request: PipelineRequest):
                 layer_obj = create_photonic(data)
             
             if layer_obj:
-                context.add_layer(layer_obj)
+                pipeline.add_layer(layer_obj)
             
 
 
         # Run Observation
         # Wavelength? Handled by camera or observe parameters.
-        # previous code: context.observe()
+        # previous code: pipeline.observe()
         
-        result = context.observe()
+        result = pipeline.observe()
         
         image_data = result
         if hasattr(result, 'value'): 
@@ -1120,3 +1120,163 @@ else:
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8001)
+@app.post("/api/inspect_node")
+def inspect_node(request: PipelineRequest, target_index: int = 0):
+    """
+    Inspect the output wavefront of a specific layer in the pipeline.
+    Reconstructs the context statelessly and uses the Pull Model to retrieve
+    the specific layer's output.
+    """
+    try:
+        # 1. Build Context (same logic as run_pipeline)
+        context = helios.Context()
+        
+        # Flattened list of layers for indexing logic match with frontend
+        # The frontend likely sends a linear list. If it sends nested lists (parallel),
+        # we need to be careful about "target_index".
+        # Assuming linear sequence for now or that target_index refers to the top-level list index.
+        
+        # We need to rebuild the context exactly as run_pipeline does to ensure connections work.
+        flat_layers = [] 
+        
+        for layer_conf in request.layers:
+            # Similar creation logic to run_pipeline
+            # We can refactor `run_pipeline` creation logic into a helper `build_context`
+            # to avoid code duplication, but for safety I will duplicate/adapt here.
+            
+            layer_obj = None
+            if layer_conf.type == 'scene':
+                 layer_obj = create_scene(ScenePayload(**get_config_dict(layer_conf.config)))
+            elif layer_conf.type == 'atmosphere':
+                 layer_obj = create_atmosphere(AtmospherePayload(**get_config_dict(layer_conf.config)))
+            elif layer_conf.type == 'telescope':
+                 layer_obj = create_telescope(TelescopePayload(**get_config_dict(layer_conf.config)))
+            elif layer_conf.type == 'camera':
+                 layer_obj = create_camera(CameraPayload(**get_config_dict(layer_conf.config)), context)
+            elif layer_conf.type == 'lens':
+                 layer_obj = create_lens(LensPayload(**get_config_dict(layer_conf.config)))
+            elif layer_conf.type == 'beam_splitter':
+                 layer_obj = create_beam_splitter(BeamSplitterPayload(**get_config_dict(layer_conf.config)))
+            elif layer_conf.type == 'coronagraph':
+                 layer_obj = create_coronagraph(CoronagraphPayload(**get_config_dict(layer_conf.config)))
+            elif layer_conf.type == 'fiber_in':
+                 layer_obj = create_fiber(FiberPayload(**get_config_dict(layer_conf.config)), is_input=True)
+            elif layer_conf.type == 'fiber_out':
+                 layer_obj = create_fiber(FiberPayload(**get_config_dict(layer_conf.config)), is_input=False)
+            elif layer_conf.type == 'photonic':
+                 layer_obj = create_photonic(PhotonicPayload(**get_config_dict(layer_conf.config)))
+            
+            if layer_obj:
+                # Add metadata if present
+                if layer_conf.metadata:
+                    layer_obj.metadata = layer_conf.metadata
+                context.add_layer(layer_obj)
+                flat_layers.append(layer_obj)
+
+        if not 0 <= target_index < len(flat_layers):
+             raise HTTPException(status_code=400, detail=f"Target index {target_index} out of range (0-{len(flat_layers)-1})")
+
+        target_layer = flat_layers[target_index]
+        print(f"Inspecting Layer {target_index}: {target_layer.name} ({type(target_layer).__name__})")
+
+        # 2. Get Output Wavefront (Triggers Pull)
+        # We use the new Layer architecture method!
+        if hasattr(target_layer, 'get_output_wavefront'):
+             # This automatically pulls from upstream!
+             output = target_layer.get_output_wavefront()
+        else:
+             # Fallback? Should not happen if all inherit from Layer
+             output = None
+        
+        # 3. Visualize Output
+        buf = io.BytesIO()
+        
+        if output is None:
+             # Maybe it's a layer that produces no output or failed?
+             fig, ax = plt.subplots(figsize=(4,1))
+             ax.text(0.5, 0.5, "No Wavefront Data Available", ha='center')
+             ax.axis('off')
+             fig.savefig(buf, format='png')
+             plt.close(fig)
+        
+        elif isinstance(output, helios.Wavefront) or isinstance(output, helios.WavefrontArray):
+             # Plot Wavefront
+             # Wavefront.plot() usually creates a figure.
+             # We want to force it to a buffer.
+             # Check if Wavefront has a `plot` method that accepts `show=False`.
+             
+             # If WavefrontArray, we might have multiple. Plot the first or intensity sum?
+             # For inspection, let's plot intensity.
+             
+             try:
+                 # Attempt to use built-in plot if available and robust
+                 # Or manually plot intensity
+                 if isinstance(output, helios.WavefrontArray):
+                     # Flatten/Stack for visualization
+                     # Just plot the first one for now or grid?
+                     # A simple grid of intensities is nice.
+                     n = len(output)
+                     if n == 1:
+                         data = np.abs(output[0].value)**2
+                     else:
+                         # Sum of intensities (incoherent sum approximation for viewing)
+                         # OR plot grid.
+                         # Let's do max projection or sum.
+                         data = np.sum([np.abs(w.value)**2 for w in output], axis=0) # Sum
+                 else:
+                     data = np.abs(output.value)**2
+                     # Handle Multi-spectral/source (nsource, npix, npix)
+                     if data.ndim == 3:
+                         data = np.sum(data, axis=0)
+                 
+                 # Normalize
+                 if data.max() > 0:
+                     data = data / data.max()
+                     data = np.power(data, 0.5) # Gamma correction
+                 
+                 plt.figure(figsize=(6, 6), dpi=100)
+                 plt.imshow(data, cmap='inferno', origin='lower')
+                 plt.colorbar(label='Normalized Intensity')
+                 plt.title(f"Output of {target_layer.name}")
+                 plt.tight_layout()
+                 plt.savefig(buf, format='png')
+                 plt.close()
+
+             except Exception as plot_err:
+                 print(f"Plotting error: {plot_err}")
+                 import traceback
+                 traceback.print_exc()
+                 fig, ax = plt.subplots()
+                 ax.text(0.5, 0.5, f"Plot Error: {plot_err}")
+                 fig.savefig(buf, format='png')
+                 plt.close(fig)
+
+        elif isinstance(output, np.ndarray):
+             # Data Layer output (e.g. Camera image)
+             plt.figure(figsize=(6, 6))
+             
+             disp = output
+             if disp.max() > 0:
+                 disp = disp / disp.max()
+                 disp = np.power(disp, 0.5)
+
+             plt.imshow(disp, cmap='gray', origin='lower')
+             plt.title(f"Data Output: {target_layer.name}")
+             plt.axis('off')
+             plt.savefig(buf, format='png')
+             plt.close()
+             
+        else:
+             # Unknown type
+             fig, ax = plt.subplots()
+             ax.text(0.5, 0.5, f"Unknown Output Type: {type(output)}")
+             fig.savefig(buf, format='png')
+             plt.close(fig)
+
+        buf.seek(0)
+        return Response(content=buf.getvalue(), media_type="image/png")
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))

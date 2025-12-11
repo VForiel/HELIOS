@@ -2,11 +2,11 @@ import numpy as np
 from typing import Optional, Tuple, Any
 from astropy import units as u
 
-from ..core.context import Element, Context
+from ..core.pipeline import Element, Layer, OpticalLayer, Pipeline
 from ..core.simulation import Wavefront, WavefrontArray
 
 
-class Lens(Element):
+class Lens(OpticalLayer):
     """
     Thin lens element applying a quadratic phase to the pupil plane field.
 
@@ -74,7 +74,7 @@ class Lens(Element):
         wf._last_focal_length_m = self.focal_length_m
         return wf
 
-    def process(self, wavefront: Any) -> Any:
+    def process(self, wavefront: Any, context: Optional['Context'] = None) -> Any:
         """
         Apply the thin lens phase to a `Wavefront` or each channel in a `WavefrontArray`.
 

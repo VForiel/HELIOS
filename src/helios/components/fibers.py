@@ -3,11 +3,12 @@
 This module provides FiberIn and FiberOut classes for modeling single-mode
 and multi-mode fiber coupling in photonic integrated circuits.
 """
-from ..core.context import Element, Context
+from typing import Optional
+from ..core.pipeline import Element, Pipeline, OpticalLayer
 from ..core.simulation import Wavefront
 
 
-class FiberIn(Element):
+class FiberIn(OpticalLayer):
     """Fiber input coupler.
     
     Models coupling of light from free-space optics into optical fiber(s).
@@ -33,13 +34,15 @@ class FiberIn(Element):
         super().__init__(name=name)
         self.num_inputs = 1
     
-    def process(self, wavefront: Wavefront) -> Wavefront:
+    def process(self, wavefront: Wavefront, context: Optional['Context'] = None) -> Wavefront:
         """Couple wavefront into fiber.
         
         Parameters
         ----------
         wavefront : Wavefront
             Input free-space wavefront
+        context : Context, optional
+            Simulation context.
         
         Returns
         -------
@@ -58,7 +61,7 @@ class FiberIn(Element):
         return wavefront
 
 
-class FiberOut(Element):
+class FiberOut(OpticalLayer):
     """Fiber output coupler.
     
     Models light exiting from optical fiber back into free-space optics.
@@ -76,13 +79,15 @@ class FiberOut(Element):
         super().__init__(name=name)
         self.num_inputs = 1
 
-    def process(self, wavefront: Wavefront) -> Wavefront:
+    def process(self, wavefront: Wavefront, context: Optional['Context'] = None) -> Wavefront:
         """Output light from fiber.
         
         Parameters
         ----------
         wavefront : Wavefront
             Input fiber-guided wavefront
+        context : Context, optional
+            Simulation context.
         
         Returns
         -------

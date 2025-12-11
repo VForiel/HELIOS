@@ -16,7 +16,7 @@ import 'reactflow/dist/style.css';
 import TelescopeNode from './nodes/TelescopeNode';
 import CameraNode from './nodes/CameraNode';
 import GenericNode from './nodes/GenericNode';
-import { Menu, Sun, Moon, Heart, Github, Book, Download, Upload, Cpu, Disc, Divide, GitFork, Zap, Activity, Hand, MousePointer2, Stars, Search, Camera, CloudFog } from 'lucide-react';
+import { Menu, Sun, Moon, Heart, Github, Book, Download, Upload, Cpu, Disc, Divide, GitFork, Zap, Activity, Hand, MousePointer2, Stars, Search, Camera, CloudFog, X } from 'lucide-react';
 
 import LayerNode from './nodes/LayerNode';
 import ParallelEdge from './edges/ParallelEdge';
@@ -69,6 +69,10 @@ export default function PipelineEditor({
     const [reactFlowInstance, setReactFlowInstance] = useState(null);
     const [clipboard, setClipboard] = useState(null);
     const [interactionMode, setInteractionMode] = useState('nav'); // 'nav' | 'select'
+
+    // Inspect Modal State
+    const [inspectData, setInspectData] = useState(null); // { image: blobUrl, title: string }
+    const [inspectLoading, setInspectLoading] = useState(false);
 
     // Initial Nodes (Layers)
     const initialNodes = [
@@ -256,23 +260,245 @@ export default function PipelineEditor({
         setNodes(nds => nds.map(n => ({ ...n, selected: false })).concat(newNodes));
     }, [clipboard, registerChange, setNodes]);
 
-    // Update node data when props change
+
+
+    // Inspect Logic
+    const handleInspect = async (nodeId) => {
+        try {
+            setInspectLoading(true);
+            setInspectData(null);
+
+            // 1. Get Linear Pipeline
+            const pipeline = getPipeline();
+
+            // 2. Find Index of Node in Linear Pipeline
+            // We need to trace which "linear index" corresponds to this nodeId.
+            // Simplified Assumption: The order in getPipeline() matches the topological order.
+            // But complex branching makes this tricky.
+            // BETTER APPROACH:
+            // Send the node ID to backend? But backend doesn't know our graph IDs.
+            // Refined Logic:
+            // The getPipeline() returns a nested list structure for parallel branches.
+            // The backend flattens this. 
+            // We need to match the flattening logic to find the index.
+
+            // For now, let's just find the index of the node in the `nodes` array? No, that's arbitrary.
+            // Let's rely on the fact that `getPipeline` traverses from Root.
+            // We need to find "Where is this node in the flattened execution list?"
+
+            // Let's implement a quick helper to flatten and find index.
+            let targetIndex = -1;
+            let currentIndex = 0;
+
+            const traverseAndFind = (list) => {
+                // Using the same logic as backend's "flat_layers.append(layer_obj)"
+                // Backend iterates: for layer_conf in request.layers:
+                // if nested? Backend currently iterates top level.
+
+                // Wait, backend `request.layers` is `List[LayerConfig]`.
+                // `getPipeline` returns a list where items can be arrays (parallel).
+                // Does backend support nested lists in `PipelineRequest`?
+                // Checking app.py... `class PipelineRequest(BaseModel): layers: List[LayerConfig]`
+                // And `LayerConfig` has `type`, `config`. 
+                // If `getPipeline` returns nested arrays, Pydantic might fail or flatten it if configured?
+                // Let's check `getPipeline` output structure again.
+                // It returns `[layerElements, branches]`.
+                // This seems to NOT match `List[LayerConfig]` directly if strict.
+
+                // Assuming the current backend `run_pipeline` iterates flatly, 
+                // `getPipeline` likely generates a flat list for linear cases,
+                // but for parallel?
+                // The backend flat_layers used in `inspect_node` iterates `request.layers` directly.
+
+                // Let's assume we flatten the pipeline before sending.
+                // We will send a Flattened version where parallel branches are serialized sequentially?
+                // Or we just send the linear path UP TO the target node?
+                // "Inspet Node" implies inspecting the state AT that node.
+
+                // Simple Robust Strategy:
+                // 1. Find the path from Root to Target Node.
+                // 2. Construct a pipeline of just that path.
+                // 3. Send that to `/api/simulate` (or inspect endpoint) and get the LAST layer's output.
+                // This avoids index confusion and handles branching implicitly by just picking one path.
+                // BUT, if it's a combiner node, it needs all inputs.
+
+                // Revised Strategy:
+                // 1. Serialize the FULL graph to a flat list (Topological Sort).
+                // 2. Find the index of the target node in that sort.
+                // 3. Send flat list + index to backend.
+
+                // Implementation of Topological Sort / Flattening:
+                // We reuse `getPipeline` but we need to know which item in the result corresponds to our `nodeId`.
+
+                // HACK for now: Flatten the graph based on visual position or edge traversal?
+                // `getPipeline` seems to try to build a structure.
+                // Let's just traverse and count.
+
+            };
+
+            // Hacky Index Finding based on `getPipeline` recursion order:
+            // We will modify `getPipeline` or traverse its result?
+            // Since `getPipeline` returns config objects, we lose the ID.
+
+            // Let's just try to map IDs to the output of getPipeline.
+            // We will re-run the `buildChain` logic but keep IDs.
+
+            const startNodes = nodes.filter(n =>
+                n.data.elements && n.data.elements.some(el => el.type === 'scene')
+            );
+            const root = startNodes.length > 0 ? startNodes[0] : nodes[0];
+
+            if (!root) throw new Error("No Scene Found");
+
+            let flatList = [];
+            let visited = new Set();
+            let foundIndex = -1;
+
+            const traverse = (node) => {
+                if (!node) return;
+                visited.add(node.id);
+
+                // Add this layer to list
+                if (node.id === nodeId) {
+                    foundIndex = flatList.length;
+                }
+                flatList.push(node); // Placeholder
+
+                const outEdges = edges.filter(e => e.source === node.id);
+                if (outEdges.length > 0) {
+                    // If multiple, which one first?
+                    // Depth first
+                    const nextNodes = outEdges.map(e => nodes.find(n => n.id === e.target)).filter(n => n && !visited.has(n.id));
+                    nextNodes.forEach(traverse);
+                }
+            };
+
+            traverse(root);
+
+            if (foundIndex === -1) {
+                // Maybe node is disconnected? 
+                // Or maybe it IS the root? (Included in logic)
+                console.warn("Target node not found in traversal", nodeId);
+                // Fallback if disconnected: just inspect it alone? (Won't verify inputs)
+                return;
+            }
+
+            targetIndex = foundIndex;
+            const finalPipeline = getPipeline(); // This needs to match the traversal order!
+            // `getPipeline` currently handles branching by returning nested arrays?
+            // If the backend expects a flat list, we should FLATTEN `finalPipeline` similarly.
+
+            const flatPipelineConfig = finalPipeline.flat(Infinity);
+            // Note: `getPipeline` builds `[layerElements]`. layerElements is a list of dicts.
+            // So `flat(Infinity)` will give a list of dicts (elements).
+            // This assumes 1 Node = 1 Layer = 1 Element in backend?
+            // Backend `inspect_node` iterates layers.
+            // `LayerNode` has `elements` (array). 
+            // When we flattened, did we preserve the "Node = Layer" grouping?
+            // `getPipeline` logic: `return [layerElements, ...]`
+            // layerElements is `[{type, config}, {type, config}]`.
+            // So one Node can trigger MULTIPLE backend layers.
+
+            // We need to count ELEMENTS, not Nodes.
+            // Recalculate index based on elements count.
+
+            let elementIndex = 0;
+            let targetElementIndex = -1;
+            visited = new Set();
+
+            const traverseElements = (node) => {
+                if (!node) return;
+                visited.add(node.id);
+
+                const nodeElements = node.data.elements || [];
+                if (node.id === nodeId) {
+                    // We want the output of the WHOLE node (last element in it)
+                    // So index is current + length - 1
+                    targetElementIndex = elementIndex + nodeElements.length - 1;
+                }
+
+                elementIndex += nodeElements.length;
+
+                const outEdges = edges.filter(e => e.source === node.id);
+                if (outEdges.length > 0) {
+                    // Sorting to ensure deterministic order matching `getPipeline`
+                    // `getPipeline` filters: `targets = outEdges.map...`
+                    // It uses default edge sort? `edges` array order.
+                    const nextNodes = outEdges
+                        .map(e => nodes.find(n => n.id === e.target))
+                        .filter(n => n && !visited.has(n.id));
+                    nextNodes.forEach(traverseElements);
+                }
+            };
+
+            traverseElements(root);
+
+            console.log(`Inspect: Node ${nodeId} -> Element Index ${targetElementIndex}`);
+
+            // Send request
+            const payload = { mode: 'pipeline', layers: flatPipelineConfig };
+            const response = await fetch(`/api/inspect_node?target_index=${targetElementIndex}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) throw new Error("Inspection Failed");
+
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+
+            setInspectData({
+                image: url,
+                title: `Node Inspection`
+            });
+
+        } catch (e) {
+            console.error(e);
+            alert("Inspection Error: " + e.message);
+        } finally {
+            setInspectLoading(false);
+        }
+    };
+
+    // Inject handleInspect into nodes
+    useEffect(() => {
+        setNodes((nds) => nds.map(node => {
+            // Avoid infinite loop by checking if func already set? 
+            // React state updates might be safe, but best to be careful.
+            // We just overwrite it.
+            return { ...node, data: { ...node.data, onInspect: handleInspect } };
+        }));
+    }, [nodes.length]); // Updating on structure change mostly. Or just once? 
+    // Ideally we pass it in `initialNodes` or via `onNodesChange` interception.
+    // But `setNodes` inside `useEffect` with dependency on `nodes` is DANGEROUS (loop).
+    // Let's use a ref or memoized nodes?
+    // BETTER: The `nodes` state in `PipelineEditor` is source of truth.
+    // We should update the data there ONCE or pass it via context?
+    // For now, let's update it in the `useMemo` block where we update other data.
+
+    // --> Moving this logic to line 260-275 block.
+
+    // Update node data when props change + Inspect Handler
     useMemo(() => {
         setNodes((nds) =>
             nds.map((node) => {
+                let newData = { ...node.data, onInspect: handleInspect };
                 if (node.type === 'scene') {
-                    node.data = { stars, setStars, planets, setPlanets, zodiacal, setZodiacal };
+                    newData = { ...newData, stars, setStars, planets, setPlanets, zodiacal, setZodiacal };
                 } else if (node.type === 'atmosphere') {
-                    node.data = { config: atmosphere, setConfig: setAtmosphere };
+                    newData = { ...newData, config: atmosphere, setConfig: setAtmosphere };
                 } else if (node.type === 'telescope') {
-                    node.data = { config: telescope, setConfig: setTelescope };
+                    newData = { ...newData, config: telescope, setConfig: setTelescope };
                 } else if (node.type === 'camera') {
-                    node.data = { config: camera, setConfig: setCamera };
+                    newData = { ...newData, config: camera, setConfig: setCamera };
                 }
-                return node;
+                return { ...node, data: newData };
             })
         );
-    }, [stars, planets, zodiacal, atmosphere, telescope, camera, setNodes]);
+    }, [stars, planets, zodiacal, atmosphere, telescope, camera, setNodes]); // Added handleInspect implicitly via closure
+
+
 
 
     // Enforce 1-to-1 connections per handle and prevent self-loops
@@ -453,7 +679,7 @@ export default function PipelineEditor({
             const payload = { mode: 'pipeline', layers: pipeline };
             console.log("Export Payload:", JSON.stringify(payload, null, 2));
 
-            const response = await fetch('/api/context/export_file', {
+            const response = await fetch('/api/pipeline/export_file', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
@@ -465,7 +691,7 @@ export default function PipelineEditor({
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = "helios_context.json";
+            a.download = "helios_pipeline.json";
             document.body.appendChild(a);
             a.click();
 
@@ -530,7 +756,7 @@ export default function PipelineEditor({
             const text = await file.text();
             const jsonData = JSON.parse(text);
 
-            const response = await fetch('/api/context/import_file', {
+            const response = await fetch('/api/pipeline/import_file', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(jsonData)
@@ -708,7 +934,7 @@ export default function PipelineEditor({
                     <button
                         onClick={handleImportClick}
                         className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400"
-                        title="Import Context"
+                        title="Import Pipeline"
                     >
                         <Upload className="w-5 h-5" />
                     </button>
@@ -716,7 +942,7 @@ export default function PipelineEditor({
                     <button
                         onClick={handleExport}
                         className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400"
-                        title="Export Context"
+                        title="Export Pipeline"
                     >
                         <Download className="w-5 h-5" />
                     </button>
@@ -781,6 +1007,32 @@ export default function PipelineEditor({
                     </Controls>
                     <Background color={isDark ? "#1e293b" : "#e2e8f0"} gap={16} />
                 </ReactFlow>
+
+                {/* INSPECT MODAL */}
+                {(inspectLoading || inspectData) && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                        <div className="bg-white dark:bg-slate-800 rounded-lg shadow-2xl border border-slate-200 dark:border-slate-700 p-4 max-w-2xl w-full mx-4 flex flex-col gap-4 relative">
+                            <button
+                                onClick={() => { setInspectData(null); setInspectLoading(false); }}
+                                className="absolute top-2 right-2 p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                            >
+                                <X className="w-5 h-5 text-slate-500" />
+                            </button>
+
+                            <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">
+                                {inspectLoading ? "Inspecting Layer..." : inspectData?.title || "Inspection Result"}
+                            </h2>
+
+                            <div className="min-h-[300px] flex items-center justify-center bg-slate-50 dark:bg-slate-900 rounded border border-slate-200 dark:border-slate-700 overflow-hidden">
+                                {inspectLoading ? (
+                                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                                ) : (
+                                    <img src={inspectData.image} alt="Inspection" className="max-h-[500px] object-contain" />
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
         </div >
     );

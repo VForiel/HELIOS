@@ -3,17 +3,16 @@ import numpy as np
 import os
 import json
 from astropy import units as u
-from helios.core.context import Context
 from helios.components.scene import Scene, Star, Planet
 from helios.components.atmosphere import Atmosphere
 from helios.components.collector import TelescopeArray, Pupil
-from helios.components.detectors import Camera
+from helios.core.pipeline import Pipeline
 
 def test_serialization():
-    print("Testing Context Serialization...")
+    print("Testing Pipeline Serialization...")
     
-    # 1. Create a full Context
-    ctx = Context(date="2025-01-01T00:00:00", declination=-20*u.deg)
+    # 1. Create a full Pipeline
+    pipe = Pipeline(date="2025-01-01T00:00:00", declination=-20*u.deg)
     
     # Scene
     scene = Scene(name="Test System", distance=10*u.pc)
@@ -22,27 +21,27 @@ def test_serialization():
                    position=(1.0*u.au, 0*u.au), temperature=300*u.K, albedo=0.3)
     scene.add(star)
     scene.add(planet)
-    ctx.add_layer(scene)
+    pipe.add_layer(scene)
     
     # Atmosphere
     atm = Atmosphere(rms=100*u.nm, wind_speed=(5*u.m/u.s, 2*u.m/u.s), seed=42)
-    ctx.add_layer(atm)
+    pipe.add_layer(atm)
     
     # Telescope
     vlti = TelescopeArray.vlti(uts=True) # 4 collectors
-    ctx.add_layer(vlti)
+    pipe.add_layer(vlti)
     
     # Camera
     cam = Camera(pixels=(256, 256), read_noise=5*u.electron, dark_current=0.1*u.electron/u.s)
-    ctx.add_layer(cam)
+    pipe.add_layer(cam)
     
-    print("\nOriginal Context created.")
-    print(f"Layers: {[type(l).__name__ for l in ctx.layers]}")
+    print("\nOriginal Pipeline created.")
+    print(f"Layers: {[type(l).__name__ for l in pipe.layers]}")
     
     # 2. Save to JSON
-    filename = "test_context.json"
-    ctx.save(filename)
-    print(f"\nContext saved to {filename}")
+    filename = "test_pipeline.json"
+    pipe.save(filename)
+    print(f"\nPipeline saved to {filename}")
     
     # Check file exists
     if os.path.exists(filename):
@@ -53,18 +52,18 @@ def test_serialization():
             # print("Layers data:", [l.get('type') for l in data.get('layers', [])])
     
     # 3. Load from JSON
-    print("\nLoading Context...")
-    loaded_ctx = Context.load(filename)
-    print("Context loaded.")
+    print("\nLoading Pipeline...")
+    loaded_pipe = Pipeline.load(filename)
+    print("Pipeline loaded.")
     
     # 4. Verify
-    print("\nVerifying Loaded Context...")
+    print("\nVerifying Loaded Pipeline...")
     
     # Check Layers
-    assert len(loaded_ctx.layers) == len(ctx.layers), f"Layer count mismatch: {len(loaded_ctx.layers)} vs {len(ctx.layers)}"
+    assert len(loaded_pipe.layers) == len(pipe.layers), f"Layer count mismatch: {len(loaded_pipe.layers)} vs {len(pipe.layers)}"
     
     # Scene
-    l_scene = loaded_ctx.layers[0]
+    l_scene = loaded_pipe.layers[0]
     assert isinstance(l_scene, Scene)
     assert l_scene.name == scene.name
     # Check elements (Star, Planet)

@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../s
 from helios.core.simulation import Wavefront, WavefrontArray
 from helios.components.collector import TelescopeArray
 from helios.components.pupil import Pupil
-from helios.core.context import Context
+from helios.core.pipeline import Pipeline
 
 def test_wavefront_array_plot_layout():
     print("Testing WavefrontArray.plot layout...")
@@ -69,8 +69,8 @@ def test_telescope_array_phase_shift():
     wf.source_directions = np.array([[theta_x, 0.0]]) * u.rad
     
     # Process
-    ctx = Context()
-    wa = ta.process(wf, ctx)
+    pipe = Pipeline()
+    wa = ta.process(wf, pipe)
     
     # Check phase of output wavefronts
     # Collector 1: (0,0) -> phase shift 0
@@ -88,7 +88,7 @@ def test_telescope_array_phase_shift():
     wf_test = Wavefront(wavelength=1*u.um, size=1*u.m, npix=32, samples=1)
     wf_test.source_directions = np.array([[theta_x_test, 0.0]]) * u.rad
     
-    wa_test = ta.process(wf_test, ctx)
+    wa_test = ta.process(wf_test, pipe)
     
     # Get central phase (field is ones initially)
     # Collector 1

@@ -13,7 +13,7 @@ from astropy import units as u
 from typing import Tuple, Optional, Any, Union
 import matplotlib.pyplot as _plt
 
-from ..core.context import Layer, Element, Context, serialize_value, deserialize_value
+from ..core.pipeline import Layer, SamplingLayer, Element, Pipeline, serialize_value, deserialize_value
 from ..core.simulation import Wavefront, WavefrontArray
 from .pupil import Pupil
 
@@ -122,7 +122,7 @@ class Collector(Element):
         
         return cls(pupil=pupil, position=pos_raw, size=size, name=name, **metadata)
     
-    def process(self, wavefront: Wavefront, auto_magnify: Optional[bool] = None) -> Any:
+    def process(self, wavefront: Wavefront, pipeline: Optional['Pipeline'] = None, auto_magnify: Optional[bool] = None) -> Any:
         """
         Process the wavefront through this collector's pupil.
         
@@ -133,6 +133,8 @@ class Collector(Element):
         ----------
         wavefront : Wavefront
             Input wavefront to process.
+        pipeline : Pipeline, optional
+            The simulation pipeline (unused in Collector but required by Layer protocol).
         auto_magnify : bool, optional
             If True, resize wavefront to match collector size.
             If False, crop wavefront to collector size.
@@ -143,6 +145,10 @@ class Collector(Element):
         wavefront : Wavefront
             Wavefront with pupil mask applied and pixel scale updated.
         """
+        # Backwards compatibility: if pipeline is passed as boolean, treat it as auto_magnify
+        if isinstance(pipeline, bool) and auto_magnify is None:
+            auto_magnify = pipeline
+            pipeline = None
         
         # Handle auto_magnify logic
         if self.size is not None:
@@ -210,7 +216,7 @@ class Collector(Element):
         return attrs
 
 
-class TelescopeArray(Layer):
+class TelescopeArray(SamplingLayer):
     """Array of one or more telescopes with pupil geometries and spatial positioning.
     
     This class unifies single-telescope and interferometric observations by managing
@@ -284,7 +290,7 @@ class TelescopeArray(Layer):
         return data
 
     @classmethod
-    def from_dict(cls, data: dict, context: Optional[Context] = None) -> 'TelescopeArray':
+    def from_dict(cls, data: dict, pipeline: Optional[Pipeline] = None) -> 'TelescopeArray':
         name = data.get("name")
         latitude = deserialize_value(data.get("latitude"))
         longitude = deserialize_value(data.get("longitude"))
@@ -692,7 +698,7 @@ class TelescopeArray(Layer):
         
         return ax
     
-    def process(self, wavefront: Any) -> Any:
+    def process(self, wavefront: Any, pipeline: Optional['Pipeline'] = None) -> Any:
         """Apply telescope array aperture mask to wavefront.
         
         This method overrides the default Layer.process() to implement custom
@@ -715,20 +721,26 @@ class TelescopeArray(Layer):
         ----------
         wavefront : Wavefront or WavefrontArray or List[Wavefront]
             Input wavefront(s) to process.
+        pipeline : Pipeline, optional
+            Simulation pipeline.
         
         Returns
         -------
         wavefront : WavefrontArray
             Wavefronts with aperture mask applied (one per collector).
         """
+        # If pipeline provided, use it (or update self.pipeline)
+        pipe = pipeline if pipeline is not None else self.pipeline
 
         # Check for list/WavefrontArray input
         is_list_input = isinstance(wavefront, list) or (hasattr(wavefront, '__iter__') and not hasattr(wavefront, 'field'))
         
         if not is_list_input:
-            # If no input provided, generate input wavefronts from context
+            # If no input provided, generate input wavefronts from pipeline
             if wavefront is None:
-                wf_generated = self.context.get_input_wavefront(collectors=self.elements)
+                if pipe is None:
+                    raise ValueError("Pipeline required to generate input wavefront if none provided")
+                wf_generated = pipe.get_input_wavefront(collectors=self.elements)
                 # wf_generated is WavefrontArray; convert to list
                 wf_list = [wf_generated[i] for i in range(len(self.elements))]
             else:
@@ -776,10 +788,10 @@ class TelescopeArray(Layer):
                         phasor = np.exp(1j * (piston + tilt))
                         wf[s] *= phasor
                 
-                # Phase shift is now handled in Context.get_input_wavefront if collectors were passed.
+                # Phase shift is now handled in Pipeline.get_input_wavefront if collectors were passed.
                 # If a generic wavefront was passed, we assume it's already correct or we might need
                 # to re-implement piston here if needed for external wavefronts.
-                # But for now, we assume Context handles it.
+                # But for now, we assume Pipeline handles it.
                 
                 # Apply collector pupil
                 wf_processed = collector.process(wf)

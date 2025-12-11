@@ -4,7 +4,7 @@ HELIOS provides automatic UML-style diagram generation for visualizing complete 
 
 ## Overview
 
-The `Context.plot_uml_diagram()` method generates a visual representation of your optical setup, displaying all layers from scene (left) to detector (right). This is particularly useful for:
+The `Pipeline.plot_uml_diagram()` method generates a visual representation of your optical setup, displaying all layers from scene (left) to detector (right). This is particularly useful for:
 
 - **Documentation**: Quickly document complex optical systems
 - **Debugging**: Verify pipeline structure before running simulations
@@ -27,18 +27,18 @@ telescope.add_collector(pupil=helios.Pupil.vlt(), position=(0, 0), size=8*u.m)
 
 camera = helios.Camera(pixels=(512, 512))
 
-# Build context
-ctx = helios.Context()
-ctx.add_layer(scene)
-ctx.add_layer(telescope)
-ctx.add_layer(camera)
+# Build pipeline
+pipeline = helios.Pipeline()
+pipeline.add_layer(scene)
+pipeline.add_layer(telescope)
+pipeline.add_layer(camera)
 
 # Generate diagram
-fig = ctx.plot_uml_diagram()
+fig = pipeline.plot_uml_diagram()
 plt.show()
 
 # Or save to file
-ctx.plot_uml_diagram(save_path='my_optical_system.png')
+pipeline.plot_uml_diagram(save_path='my_optical_system.png')
 ```
 
 ## Features
@@ -67,13 +67,13 @@ When beam splitters create multiple paths, they are displayed vertically:
 
 ```python
 # Create dual-channel system
-ctx = helios.Context()
-ctx.add_layer(scene)
-ctx.add_layer(telescope)
-ctx.add_layer(helios.BeamSplitter(cutoff=0.5))
-ctx.add_layer([camera1, camera2])  # Parallel paths shown vertically
+pipeline = helios.Pipeline()
+pipeline.add_layer(scene)
+pipeline.add_layer(telescope)
+pipeline.add_layer(helios.BeamSplitter(cutoff=0.5))
+pipeline.add_layer([camera1, camera2])  # Parallel paths shown vertically
 
-fig = ctx.plot_uml_diagram()
+fig = pipeline.plot_uml_diagram()
 plt.show()
 ```
 
@@ -114,15 +114,15 @@ coronagraph = helios.Coronagraph(phase_mask='4quadrants')
 camera = helios.Camera(pixels=(1024, 1024))
 
 # Build and visualize
-ctx = helios.Context()
-ctx.add_layer(scene)
-ctx.add_layer(atmosphere)
-ctx.add_layer(telescope)
-ctx.add_layer(ao)
-ctx.add_layer(coronagraph)
-ctx.add_layer(camera)
+pipeline = helios.Pipeline()
+pipeline.add_layer(scene)
+pipeline.add_layer(atmosphere)
+pipeline.add_layer(telescope)
+pipeline.add_layer(ao)
+pipeline.add_layer(coronagraph)
+pipeline.add_layer(camera)
 
-fig = ctx.plot_uml_diagram(figsize=(18, 8))
+fig = pipeline.plot_uml_diagram(figsize=(18, 8))
 plt.savefig('exoplanet_system.png', dpi=300)
 plt.show()
 ```
@@ -143,12 +143,12 @@ interferometer.add_collector(pupil=helios.Pupil.vlt(), position=(30*u.m, 52*u.m)
 
 camera = helios.Camera(pixels=(256, 256))
 
-ctx = helios.Context()
-ctx.add_layer(scene)
-ctx.add_layer(interferometer)
-ctx.add_layer(camera)
+pipeline = helios.Pipeline()
+pipeline.add_layer(scene)
+pipeline.add_layer(interferometer)
+pipeline.add_layer(camera)
 
-fig = ctx.plot_uml_diagram()
+fig = pipeline.plot_uml_diagram()
 plt.show()
 ```
 
@@ -171,15 +171,15 @@ fiber_out = helios.FiberOut(mode_field_diameter=10*u.um)
 # Detector
 camera = helios.Camera(pixels=(512, 512))
 
-ctx = helios.Context()
-ctx.add_layer(scene)
-ctx.add_layer(telescope)
-ctx.add_layer(fiber_in)
-ctx.add_layer(photonic_chip)
-ctx.add_layer(fiber_out)
-ctx.add_layer(camera)
+pipeline = helios.Pipeline()
+pipeline.add_layer(scene)
+pipeline.add_layer(telescope)
+pipeline.add_layer(fiber_in)
+pipeline.add_layer(photonic_chip)
+pipeline.add_layer(fiber_out)
+pipeline.add_layer(camera)
 
-fig = ctx.plot_uml_diagram(figsize=(16, 8))
+fig = pipeline.plot_uml_diagram(figsize=(16, 8))
 plt.show()
 ```
 
@@ -191,10 +191,10 @@ Adjust the figure size for different layouts:
 
 ```python
 # Wide layout for many components
-fig = ctx.plot_uml_diagram(figsize=(20, 8))
+fig = pipeline.plot_uml_diagram(figsize=(20, 8))
 
 # Tall layout for many parallel paths
-fig = ctx.plot_uml_diagram(figsize=(12, 14))
+fig = pipeline.plot_uml_diagram(figsize=(12, 14))
 ```
 
 ### Layer Spacing
@@ -203,10 +203,10 @@ Control horizontal distance between components:
 
 ```python
 # Compact layout
-fig = ctx.plot_uml_diagram(layer_spacing=1.5)
+fig = pipeline.plot_uml_diagram(layer_spacing=1.5)
 
 # Spread out layout
-fig = ctx.plot_uml_diagram(layer_spacing=3.0)
+fig = pipeline.plot_uml_diagram(layer_spacing=3.0)
 ```
 
 ### Saving Output
@@ -215,10 +215,10 @@ Save diagrams in various formats:
 
 ```python
 # PNG for presentations
-ctx.plot_uml_diagram(save_path='system.png')
+pipeline.plot_uml_diagram(save_path='system.png')
 
 # High-resolution for publications
-fig = ctx.plot_uml_diagram()
+fig = pipeline.plot_uml_diagram()
 fig.savefig('system_hires.png', dpi=300, bbox_inches='tight')
 
 # PDF for vector graphics
@@ -227,7 +227,7 @@ fig.savefig('system.pdf', bbox_inches='tight')
 
 ## API Reference
 
-### `Context.plot_uml_diagram()`
+### `Pipeline.plot_uml_diagram()`
 
 ```python
 def plot_uml_diagram(
@@ -258,13 +258,13 @@ def plot_uml_diagram(
 
 ```python
 # Basic usage
-fig = ctx.plot_uml_diagram()
+fig = pipeline.plot_uml_diagram()
 
 # Custom size and spacing
-fig = ctx.plot_uml_diagram(figsize=(18, 10), layer_spacing=2.5)
+fig = pipeline.plot_uml_diagram(figsize=(18, 10), layer_spacing=2.5)
 
 # Auto-save
-ctx.plot_uml_diagram(save_path='my_system.png')
+pipeline.plot_uml_diagram(save_path='my_system.png')
 ```
 
 ## Technical Details
@@ -313,7 +313,7 @@ Include diagrams in your documentation:
 
 ```python
 # Generate diagram for README
-ctx.plot_uml_diagram(save_path='docs/system_diagram.png')
+pipeline.plot_uml_diagram(save_path='docs/system_diagram.png')
 ```
 
 ### 4. Verify Before Simulation
@@ -322,11 +322,11 @@ Always check the diagram before running expensive simulations:
 
 ```python
 # Quick visual check
-ctx.plot_uml_diagram()
+pipeline.plot_uml_diagram()
 plt.show()
 
 # If correct, run simulation
-result = ctx.observe()
+result = pipeline.observe()
 ```
 
 ## Limitations
@@ -347,5 +347,5 @@ Planned improvements include:
 
 ## See Also
 
-- [Context API Documentation](api/core.md)
-- [Component Gallery](api/components/index.md)
+- [Pipeline API Documentation](core.md)
+- [Component Gallery](components/index.md)

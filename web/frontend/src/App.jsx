@@ -100,31 +100,30 @@ function App() {
                     <div className={`${isSidebarOpen ? 'w-64 translate-x-0' : 'w-0 -translate-x-full opacity-0'} transition-all duration-300 ease-in-out flex-shrink-0 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col h-full z-20 shadow-xl overflow-hidden`}>
                         {/* Sidebar Header removed as it is now in Top Bar */}
                         <div className="p-4 space-y-2 min-w-[256px] mt-4 overflow-y-auto custom-scrollbar flex-1 pb-20">
-                            {/* Core */}
-                            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Core</div>
+                            
+                            {/* Generation */}
+                            <div className="text-xs font-bold text-blue-500 uppercase tracking-wider mb-2">Generation</div>
                             <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-blue-500 transition-colors flex items-center"
                                 onDragStart={(event) => onDragStart(event, 'scene')} draggable>
                                 <div className="w-3 h-3 rounded-full bg-blue-500 mr-3"></div>
                                 <span className="text-slate-700 dark:text-slate-200 text-sm">Scene Source</span>
                             </div>
-                            <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-cyan-500 transition-colors flex items-center"
+                            <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-blue-500 transition-colors flex items-center"
                                 onDragStart={(event) => onDragStart(event, 'atmosphere')} draggable>
-                                <div className="w-3 h-3 rounded-full bg-cyan-500 mr-3"></div>
+                                <div className="w-3 h-3 rounded-full bg-blue-500 mr-3"></div>
                                 <span className="text-slate-700 dark:text-slate-200 text-sm">Atmosphere</span>
                             </div>
-                            <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-purple-500 transition-colors flex items-center"
+
+                            {/* Sampling */}
+                            <div className="text-xs font-bold text-cyan-500 uppercase tracking-wider mb-2 mt-6">Sampling</div>
+                            <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-cyan-500 transition-colors flex items-center"
                                 onDragStart={(event) => onDragStart(event, 'telescope')} draggable>
-                                <div className="w-3 h-3 rounded-full bg-purple-500 mr-3"></div>
+                                <div className="w-3 h-3 rounded-full bg-cyan-500 mr-3"></div>
                                 <span className="text-slate-700 dark:text-slate-200 text-sm">Telescope</span>
                             </div>
-                            <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-pink-500 transition-colors flex items-center"
-                                onDragStart={(event) => onDragStart(event, 'camera')} draggable>
-                                <div className="w-3 h-3 rounded-full bg-pink-500 mr-3"></div>
-                                <span className="text-slate-700 dark:text-slate-200 text-sm">Camera</span>
-                            </div>
 
-                            {/* Optics */}
-                            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 mt-6">Optics</div>
+                            {/* Bulk Optics */}
+                            <div className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-2 mt-6">Bulk Optics</div>
                             <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-indigo-500 transition-colors flex items-center"
                                 onDragStart={(event) => onDragStart(event, 'lens')} draggable>
                                 <div className="w-3 h-3 rounded-full bg-indigo-500 mr-3"></div>
@@ -142,21 +141,29 @@ function App() {
                             </div>
 
                             {/* Photonics */}
-                            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 mt-6">Photonics</div>
-                            <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-emerald-500 transition-colors flex items-center"
+                            <div className="text-xs font-bold text-amber-500 uppercase tracking-wider mb-2 mt-6">Photonics</div>
+                            <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-amber-500 transition-colors flex items-center"
                                 onDragStart={(event) => onDragStart(event, 'fiber_in')} draggable>
-                                <div className="w-3 h-3 rounded-full bg-emerald-500 mr-3"></div>
+                                <div className="w-3 h-3 rounded-full bg-amber-500 mr-3"></div>
                                 <span className="text-slate-700 dark:text-slate-200 text-sm">Fiber Input</span>
                             </div>
-                            <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-emerald-500 transition-colors flex items-center"
+                            <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-amber-500 transition-colors flex items-center"
                                 onDragStart={(event) => onDragStart(event, 'fiber_out')} draggable>
-                                <div className="w-3 h-3 rounded-full bg-emerald-500 mr-3"></div>
+                                <div className="w-3 h-3 rounded-full bg-amber-500 mr-3"></div>
                                 <span className="text-slate-700 dark:text-slate-200 text-sm">Fiber Output</span>
                             </div>
                             <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-amber-500 transition-colors flex items-center"
                                 onDragStart={(event) => onDragStart(event, 'photonic')} draggable>
                                 <div className="w-3 h-3 rounded-full bg-amber-500 mr-3"></div>
                                 <span className="text-slate-700 dark:text-slate-200 text-sm">Photonic Chip</span>
+                            </div>
+
+                            {/* Detection */}
+                            <div className="text-xs font-bold text-pink-500 uppercase tracking-wider mb-2 mt-6">Detection</div>
+                            <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-pink-500 transition-colors flex items-center"
+                                onDragStart={(event) => onDragStart(event, 'camera')} draggable>
+                                <div className="w-3 h-3 rounded-full bg-pink-500 mr-3"></div>
+                                <span className="text-slate-700 dark:text-slate-200 text-sm">Camera</span>
                             </div>
                         </div>
 

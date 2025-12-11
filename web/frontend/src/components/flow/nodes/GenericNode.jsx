@@ -1,6 +1,6 @@
 import React from 'react';
 import { Handle, Position, useReactFlow } from 'reactflow';
-import { Trash2 } from 'lucide-react';
+import { Trash2, Eye } from 'lucide-react';
 import LayerVisualizer from './LayerVisualizer';
 import SignalVisualizer from './SignalVisualizer';
 
@@ -33,6 +33,15 @@ export default function GenericNode({ id, data, selected }) {
                 </div>
                 <div className="flex gap-2">
                     <LayerVisualizer type="generic" config={config} />
+                    {data.onInspect && (
+                        <button
+                            onClick={() => data.onInspect(id)}
+                            className="p-1 px-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-blue-500 transition-colors"
+                            title="Inspect Wavefront"
+                        >
+                            <Eye className="w-3.5 h-3.5" />
+                        </button>
+                    )}
                     <button
                         onClick={() => deleteElements({ nodes: [{ id }] })}
                         className="p-1 px-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-red-500 transition-colors"

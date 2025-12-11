@@ -14,5 +14,5 @@ uml_diagrams
 
 ## Quick Links
 
-- {doc}`core` - Core simulation framework (Context, Layer, Wavefront)
+- {doc}`core` - Core simulation framework (Pipeline, Layer, Wavefront)
 - {doc}`components/index` - All simulation components (Scene, Optics, Detectors, Photonics)
