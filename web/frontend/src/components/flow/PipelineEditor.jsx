@@ -113,46 +113,73 @@ export default function PipelineEditor({
     const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
 
     // Sync Edges with Telescope Config (Parallel Paths)
+    // Sync Edges and Calculate IO (Global Propagation)
+    // This effect runs whenever nodes or edges structure changes to ensure consistency
     useEffect(() => {
-        // We rely on the NODE data as the source of truth, not the 'telescope' prop,
-        // because the user edits the configuration inside the Node (ElementRow).
-        /* console.log('[PipelineEditor] Syncing edges with node configurations...'); */
+        import('../../utils/optical_logic').then(({ propagateSignals }) => {
+            const { nodes: newNodes, edges: newEdges } = propagateSignals(nodes, edges);
 
-        setEdges(eds => eds.map(e => {
-            const sourceNode = nodes.find(n => n.id === e.source);
+            // Check for differences to avoid infinite loop
+            let nodesChanged = false;
+            let edgesChanged = false;
 
-            // Find telescope element in the source node
-            const telescopeElement = sourceNode?.data?.elements?.find(el => el.type === 'telescope');
-
-            if (telescopeElement) {
-                // effective count from the Node's config
-                const startCount = telescopeElement.config?.collectors?.length || 1;
-
-                // Only update if pathCount actually changed to avoid infinite loop / unnecessary renders
-                if (e.data?.pathCount !== startCount || e.type !== 'parallel') {
-                    console.log(`[PipelineEditor] Updating edge ${e.id} to parallel with pathCount ${startCount}`);
-                    return {
-                        ...e,
-                        type: 'parallel',
-                        data: { ...e.data, pathCount: startCount }
-                    };
+            // Simple diffing logic 
+            const updatedEdges = newEdges.map((ne, i) => {
+                const old = edges.find(e => e.id === ne.id);
+                if (!old || (old.data?.pathCount !== ne.data.pathCount)) {
+                    edgesChanged = true;
+                    return ne; // Use new edge
                 }
+                return old; // Keep old reference
+            });
+            // If length changed (e.g. edge added/removed outside this logic), setEdges triggers anyway. 
+            // We focus on data updates here.
+
+            const updatedNodes = newNodes.map((nn, i) => {
+                const old = nodes.find(n => n.id === nn.id);
+                // Compare IO state
+                const newIO = nn.data.io;
+                const oldIO = old?.data?.io;
+
+                // Deep comparison for IO object
+                if (!oldIO || JSON.stringify(oldIO) !== JSON.stringify(newIO)) {
+                    nodesChanged = true;
+                    return nn;
+                }
+                return old;
+            });
+
+            if (edgesChanged) {
+                console.log('[PipelineEditor] Propagating signals: Edges updated.');
+                setEdges(updatedEdges);
             }
-            return e;
-        }));
-    }, [nodes, setEdges]);
+
+            if (nodesChanged) {
+                console.log('[PipelineEditor] Propagating signals: Nodes IO updated.');
+                setNodes(updatedNodes);
+            }
+        });
+    }, [
+        // Dependencies to trigger recalculation
+        nodes.map(n => JSON.stringify(n.data.elements)).join(','),
+        edges.map(e => e.source + e.target).join(','),
+        setNodes,
+        setEdges
+    ]);
+
+
 
     // OLD LOGIC COMMENTED OUT
     /* 
     useEffect(() => {
         const collectorCount = telescope.collectors ? telescope.collectors.length : 1;
         console.log('[PipelineEditor] Telescope update detected. Collectors:', collectorCount);
-
+    
         setEdges(eds => eds.map(e => {
             const sourceNode = nodes.find(n => n.id === e.source);
             // Check if source node is a layer containing a telescope element
             const hasTelescope = sourceNode?.data?.elements?.some(el => el.type === 'telescope');
-
+    
             if (hasTelescope) {
                 console.log(`[PipelineEditor] Checking edge ${e.id} from telescope source. Current pathCount: ${e.data?.pathCount}, Target: ${collectorCount}`);
                 if (e.data?.pathCount !== collectorCount || e.type !== 'parallel') {

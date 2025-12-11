@@ -14,25 +14,37 @@ export default function ParallelEdge({
     data
 }) {
     const pathCount = data?.pathCount || 1;
+
+    // Geometry Data from Logic
+    // If not present (e.g. initial load), default to centered bundle
+    const sourceTotal = data?.sourceCapacity || pathCount;
+    const targetTotal = data?.targetCapacity || pathCount;
+
     const paths = [];
 
     // Bundle settings
-    const spacing = 15; // Increased pixels between lines for visibility
+    const spacing = 15;
 
     for (let i = 0; i < pathCount; i++) {
-        // Calculate offset to center the bundle
-        const offset = (i - (pathCount - 1) / 2) * spacing;
+        // Calculate Active Indices (Centered Logic)
+        // We select the "Middle" ports of the Source and Target to connect
+        // Source Index: Starting from (Total - PathCount) / 2
+        // Target Index: Starting from (Total - PathCount) / 2
 
-        // We offset verticaly for Left/Right handles (most common)
-        // If handles are Top/Bottom, we'd offset horizontally. 
-        // Assuming Left/Right for now as per our Node designs.
+        // We use Math.floor to bias towards Top/Left in odd mismatches, consistent with 0.5 logic usually
+        const sourceIndex = i + Math.floor((sourceTotal - pathCount) / 2);
+        const targetIndex = i + Math.floor((targetTotal - pathCount) / 2);
+
+        // Calculate Offsets
+        const sourceOffset = (sourceIndex - (sourceTotal - 1) / 2) * spacing;
+        const targetOffset = (targetIndex - (targetTotal - 1) / 2) * spacing;
 
         const [edgePath] = getBezierPath({
             sourceX,
-            sourceY: sourceY + offset,
+            sourceY: sourceY + sourceOffset,
             sourcePosition,
             targetX,
-            targetY: targetY + offset,
+            targetY: targetY + targetOffset, // Use calculated target Y
             targetPosition,
         });
 

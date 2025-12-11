@@ -9,6 +9,7 @@ export default function LayerNode({ id, data, selected }) {
 
     // Data.elements is the list of items [ { type, config, label, icon... }, ... ]
     const elements = data.elements || [];
+    const io = data.io || { incoming: 0, capacity: 0, outgoing: 0, status: 'unknown' };
 
     const handleElementChange = (index, newElement) => {
         const newElements = [...elements];
@@ -16,6 +17,7 @@ export default function LayerNode({ id, data, selected }) {
 
         setNodes((nds) => nds.map((node) => {
             if (node.id === id) {
+                // Keep IO but update elements to trigger useEffect recalculation
                 return { ...node, data: { ...node.data, elements: newElements } };
             }
             return node;
@@ -32,24 +34,62 @@ export default function LayerNode({ id, data, selected }) {
         }));
     };
 
-    // Calculate Capacity
-    // User logic: "Signal match" should reflect the number of elements in the layer vs incoming signals.
-    // If we have 1 Camera and 4 Telescopes, we want to show 1 / 4.
-    // So capacity should be the number of elements.
-    // EXCEPT for specific optical components like Fiber Injection which have their own 'modes' or capacity.
+    // Input Port Props
+    const inputPortCount = Math.max(io.incoming || 0, io.capacity || 0);
+    const paramsInput = {
+        total: inputPortCount,
+        capacity: io.capacity || 0,
+        incoming: io.incoming || 0
+    };
 
-    // Default capacity is the number of elements in the layer
-    let capacity = elements.length;
-
-    const firstElem = elements[0];
-    if (firstElem && firstElem.type === 'fiber_in') {
-        // Fiber injection is a special case where capacity is defined by internal modes
-        capacity = firstElem.config?.modes || 1;
-    }
+    // Output Port Props
+    const outputTotal = io.outputCapacity || io.outgoing || 0;
+    const paramsOutput = {
+        total: outputTotal,
+        capacity: outputTotal,
+        incoming: io.outgoing || 0
+    };
 
     return (
         <div className={`bg-white dark:bg-slate-800 rounded-lg border shadow-xl min-w-[320px] relative transition-colors duration-200 ${selected ? 'border-blue-500 ring-2 ring-blue-500 ring-opacity-50' : 'border-slate-200 dark:border-slate-700'}`}>
-            <Handle type="target" position={Position.Left} className="!bg-blue-500 !-left-4 !w-4 !h-4" />
+
+            {/* --------------------------------------------------------------------------------
+               ABSOLUTE POSITIONED INTERFACE LAYERS (CENTERED)
+               Moved out of flow to ensure they are always vertically centered on the block.
+            --------------------------------------------------------------------------------- */}
+
+            {/* Input Interface (Left) */}
+            {/* Main Clickable Handle: Moved further out (-left-7) and styled distinctly */}
+            {/* We wrap Handle in a div to enforce center positioning relative to the Node Block */}
+            {/* Input Interface (Left) */}
+            <div className="absolute top-1/2 -left-7 -translate-y-1/2 z-50">
+                <Handle
+                    type="target"
+                    position={Position.Left}
+                    className="!static !w-auto !h-auto !min-w-[24px] !min-h-[24px] !p-1 !rounded-md !border-2 !border-slate-300 dark:!border-slate-600 !bg-slate-100 dark:!bg-slate-900 hover:!border-blue-500 hover:!bg-blue-50 dark:hover:!bg-slate-800 transition-colors flex items-center justify-center"
+                    title="Input Connection"
+                    style={{ transform: 'none' }}
+                >
+                    <SignalVisualizer config={paramsInput} layout="vertical" spacing={15} isInput={true} />
+                </Handle>
+            </div>
+
+            {/* Output Interface (Right) */}
+            <div className="absolute top-1/2 -right-7 -translate-y-1/2 z-50">
+                <Handle
+                    type="source"
+                    position={Position.Right}
+                    className="!static !w-auto !h-auto !min-w-[24px] !min-h-[24px] !p-1 !rounded-md !border-2 !border-slate-300 dark:!border-slate-600 !bg-slate-100 dark:!bg-slate-900 hover:!border-purple-500 hover:!bg-purple-50 dark:hover:!bg-slate-800 transition-colors flex items-center justify-center"
+                    title="Output Connection"
+                    style={{ transform: 'none' }}
+                >
+                    <SignalVisualizer config={paramsOutput} layout="vertical" spacing={15} isInput={false} />
+                </Handle>
+            </div>
+
+            {/* --------------------------------------------------------------------------------
+               NODE CONTENT
+            --------------------------------------------------------------------------------- */}
 
             {/* Layer Header */}
             <div className="bg-slate-100 dark:bg-slate-950/50 px-4 py-3 border-b border-slate-200 dark:border-slate-800 rounded-t-lg flex items-center justify-between">
@@ -59,7 +99,9 @@ export default function LayerNode({ id, data, selected }) {
                     </div>
                     <div>
                         <h3 className="font-semibold text-slate-800 dark:text-slate-200 text-sm">Optical Layer</h3>
-                        <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">{elements.length} Elements</p>
+                        <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">
+                            {elements.length} Elements | {io.incoming || 0} In / {io.outgoing || 0} Out
+                        </p>
                     </div>
                 </div>
                 <button
@@ -71,13 +113,8 @@ export default function LayerNode({ id, data, selected }) {
                 </button>
             </div>
 
-            {/* Signal Visualizer (Input into the Layer) */}
-            <div className="px-4 pt-4 pb-2">
-                <SignalVisualizer capacity={capacity} />
-            </div>
-
             {/* Elements List */}
-            <div className="p-4 pt-0 space-y-2 max-h-[600px] overflow-y-auto custom-scrollbar nodrag nowheel">
+            <div className="p-4 space-y-2 max-h-[600px] overflow-y-auto custom-scrollbar nodrag nowheel">
                 {elements.length === 0 && (
                     <div className="text-center p-4 border border-dashed border-slate-300 dark:border-slate-700 rounded-lg text-slate-400 text-xs italic">
                         Drop items here to add elements...
@@ -93,8 +130,6 @@ export default function LayerNode({ id, data, selected }) {
                     />
                 ))}
             </div>
-
-            <Handle type="source" position={Position.Right} className="!bg-purple-500 !-right-4 !w-4 !h-4" />
         </div>
     );
 }
