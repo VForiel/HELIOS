@@ -32,15 +32,19 @@ export default function LayerNode({ id, data, selected }) {
         }));
     };
 
-    // Calculate Capacity based on first element? Or Sum?
-    // User logic: "The layer has elements". The signal enters the layer.
-    // Usually the first element determines the "Input Capacity" (e.g. Fiber Injection).
-    // Let's take the first element's capacity heuristic.
+    // Calculate Capacity
+    // User logic: "Signal match" should reflect the number of elements in the layer vs incoming signals.
+    // If we have 1 Camera and 4 Telescopes, we want to show 1 / 4.
+    // So capacity should be the number of elements.
+    // EXCEPT for specific optical components like Fiber Injection which have their own 'modes' or capacity.
+
+    // Default capacity is the number of elements in the layer
+    let capacity = elements.length;
+
     const firstElem = elements[0];
-    let capacity = 1;
-    if (firstElem) {
-        if (firstElem.config && firstElem.config.modes) capacity = firstElem.config.modes;
-        // else default 1
+    if (firstElem && firstElem.type === 'fiber_in') {
+        // Fiber injection is a special case where capacity is defined by internal modes
+        capacity = firstElem.config?.modes || 1;
     }
 
     return (

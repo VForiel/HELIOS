@@ -17,7 +17,7 @@ export default function ParallelEdge({
     const paths = [];
 
     // Bundle settings
-    const spacing = 6; // pixels between lines
+    const spacing = 15; // Increased pixels between lines for visibility
 
     for (let i = 0; i < pathCount; i++) {
         // Calculate offset to center the bundle
@@ -40,7 +40,13 @@ export default function ParallelEdge({
             <path
                 key={i}
                 id={`${id}_${i}`}
-                style={{ ...style, strokeWidth: 1.5 }}
+                style={{
+                    ...style,
+                    strokeWidth: 1.5,
+                    // Force consistent animation timing for all paths
+                    animationDelay: '0s',
+                    animationDuration: '1s'
+                }}
                 className="react-flow__edge-path stroke-slate-400 dark:stroke-slate-500 hover:stroke-blue-500 transition-colors"
                 d={edgePath}
                 markerEnd={markerEnd}

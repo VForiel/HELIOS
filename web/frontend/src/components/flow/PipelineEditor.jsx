@@ -114,20 +114,59 @@ export default function PipelineEditor({
 
     // Sync Edges with Telescope Config (Parallel Paths)
     useEffect(() => {
-        const collectorCount = telescope.collectors ? telescope.collectors.length : 1;
+        // We rely on the NODE data as the source of truth, not the 'telescope' prop,
+        // because the user edits the configuration inside the Node (ElementRow).
+        /* console.log('[PipelineEditor] Syncing edges with node configurations...'); */
 
         setEdges(eds => eds.map(e => {
             const sourceNode = nodes.find(n => n.id === e.source);
-            if (sourceNode && sourceNode.type === 'telescope') {
-                return {
-                    ...e,
-                    type: 'parallel',
-                    data: { ...e.data, pathCount: collectorCount }
-                };
+
+            // Find telescope element in the source node
+            const telescopeElement = sourceNode?.data?.elements?.find(el => el.type === 'telescope');
+
+            if (telescopeElement) {
+                // effective count from the Node's config
+                const startCount = telescopeElement.config?.collectors?.length || 1;
+
+                // Only update if pathCount actually changed to avoid infinite loop / unnecessary renders
+                if (e.data?.pathCount !== startCount || e.type !== 'parallel') {
+                    console.log(`[PipelineEditor] Updating edge ${e.id} to parallel with pathCount ${startCount}`);
+                    return {
+                        ...e,
+                        type: 'parallel',
+                        data: { ...e.data, pathCount: startCount }
+                    };
+                }
             }
             return e;
         }));
-    }, [telescope, nodes, setEdges]);
+    }, [nodes, setEdges]);
+
+    // OLD LOGIC COMMENTED OUT
+    /* 
+    useEffect(() => {
+        const collectorCount = telescope.collectors ? telescope.collectors.length : 1;
+        console.log('[PipelineEditor] Telescope update detected. Collectors:', collectorCount);
+
+        setEdges(eds => eds.map(e => {
+            const sourceNode = nodes.find(n => n.id === e.source);
+            // Check if source node is a layer containing a telescope element
+            const hasTelescope = sourceNode?.data?.elements?.some(el => el.type === 'telescope');
+
+            if (hasTelescope) {
+                console.log(`[PipelineEditor] Checking edge ${e.id} from telescope source. Current pathCount: ${e.data?.pathCount}, Target: ${collectorCount}`);
+                if (e.data?.pathCount !== collectorCount || e.type !== 'parallel') {
+                    console.log(`[PipelineEditor] Updating edge ${e.id} to parallel with pathCount ${collectorCount}`);
+                    return {
+                        ...e,
+                        type: 'parallel',
+                        data: { ...e.data, pathCount: collectorCount }
+                    };
+                }
+            }
+            return e;
+        }));
+    }, [telescope.collectors, nodes, setEdges]); */
 
     // Undo/Redo Hook
     const { past, setPast, future, setFuture, takeSnapshot, canUndo, canRedo } = useUndoRedo(initialNodes, initialEdges);
@@ -716,6 +755,6 @@ export default function PipelineEditor({
                     <Background color={isDark ? "#1e293b" : "#e2e8f0"} gap={16} />
                 </ReactFlow>
             </div>
-        </div>
+        </div >
     );
 }

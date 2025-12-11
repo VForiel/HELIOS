@@ -2,25 +2,28 @@ import React, { useMemo } from 'react';
 import { useNodeId, useEdges, Position } from 'reactflow';
 import { Circle, Disc } from 'lucide-react';
 
-export default function SignalVisualizer({ capacity = 1 }) {
+export default function SignalVisualizer({ capacity = null }) {
     const nodeId = useNodeId();
     const edges = useEdges();
 
-    // Calculate incoming signal count
+    // Calculate incoming signal count - Sum of ALL targeting edges
     const incomingCount = useMemo(() => {
-        const edge = edges.find(e => e.target === nodeId);
-        if (!edge) return 0;
-        return edge.data?.pathCount || 1;
+        return edges
+            .filter(e => e.target === nodeId)
+            .reduce((acc, e) => acc + (e.data?.pathCount || 1), 0);
     }, [edges, nodeId]);
 
     if (incomingCount === 0) return null;
+
+    // Determine effective capacity (null means unlimited/vectorized)
+    const effectiveCapacity = capacity === null ? incomingCount : capacity;
 
     // Generate indicators
     const signals = [];
     const maxDotLimit = 16; // Avoid rendering too many dots
 
     for (let i = 0; i < Math.min(incomingCount, maxDotLimit); i++) {
-        const isActive = i < capacity;
+        const isActive = i < effectiveCapacity;
         signals.push(
             <div key={i} title={isActive ? `Active Input ${i + 1}` : `Input ${i + 1} (Unused)`}>
                 {isActive ? (
@@ -40,7 +43,7 @@ export default function SignalVisualizer({ capacity = 1 }) {
         <div className="flex flex-col gap-1 mb-3 px-1">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex justify-between">
                 <span>Signal Match</span>
-                <span>{Math.min(incomingCount, capacity)} / {incomingCount}</span>
+                <span>{Math.min(incomingCount, effectiveCapacity)} / {incomingCount}</span>
             </span>
             <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 dark:bg-slate-900/50 rounded border border-slate-100 dark:border-slate-800">
                 {signals}
