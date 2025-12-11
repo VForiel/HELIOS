@@ -19,17 +19,27 @@ export const calculateNodeIO = (node) => {
     let totalOutputs = 0;
     let type = 'generic'; // Default
 
-    // Check for Sources (Telescopes)
+    // Check for Scene (Source)
+    const scenes = elements.filter(el => el.type === 'scene');
+    if (scenes.length > 0) {
+        type = 'source';
+        totalInputs = 0;
+        totalOutputs = 1; // Scene provides 1 wavefront
+        return { inputs: totalInputs, outputs: totalOutputs, type };
+    }
+
+    // Check for Sources/Splitters (Telescopes)
     const telescopes = elements.filter(el => el.type === 'telescope');
     if (telescopes.length > 0) {
-        type = 'source';
+        type = 'splitter'; // Changed from 'source' to 'splitter' (1 In -> N Out)
+        totalInputs = 1; // Telescope Array takes 1 wavefront
         totalOutputs = telescopes.reduce((acc, t) => acc + (t.config?.collectors?.length || 1), 0);
     }
 
     // Check for Sinks (Cameras)
     const cameras = elements.filter(el => el.type === 'camera');
     if (cameras.length > 0) {
-        if (type === 'source') type = 'transform'; // Mixed source/sink? unlikely but logic safe
+        if (type === 'splitter') type = 'transform'; // Mixed?
         else type = 'sink';
         // Assume each camera handles 1 beam unless configured otherwise
         totalInputs = cameras.reduce((acc, c) => acc + (c.config?.inputs || 1), 0);
@@ -38,26 +48,23 @@ export const calculateNodeIO = (node) => {
     // Check for Fibers (Transform)
     const fibers = elements.filter(el => el.type === 'fiber_in');
     if (fibers.length > 0) {
-        if (type !== 'source' && type !== 'sink') type = 'transform';
+        if (type !== 'splitter' && type !== 'sink') type = 'transform';
         const fiberCap = fibers.reduce((acc, f) => acc + (f.config?.modes || 1), 0);
         totalInputs += fiberCap;
         totalOutputs += fiberCap;
     }
 
     // Generic Elements (Mirrors, Splitters -> 1:1)
-    const generics = elements.filter(el => !['telescope', 'camera', 'fiber_in'].includes(el.type));
+    const generics = elements.filter(el => !['scene', 'telescope', 'camera', 'fiber_in'].includes(el.type));
     if (generics.length > 0) {
         if (type === 'generic') {
             totalInputs += generics.length;
             totalOutputs += generics.length;
         }
-        // If mixed with functional units, ignore generics for IO count ??
-        // For now, let's just add them if it's a generic layer. 
-        // Or strictly: if layer has Functional units, use those. If only Generics, use those.
     }
 
-    // Fallback if mixed types kept 0 (e.g. source + generic)
-    if (type === 'source' && totalOutputs === 0) totalOutputs = 1;
+    // Fallback if mixed types kept 0
+    if (type === 'splitter' && totalOutputs === 0) totalOutputs = 1;
     if (type === 'sink' && totalInputs === 0) totalInputs = 1;
     if (type === 'generic' && totalInputs === 0) {
         totalInputs = elements.length || 0;
@@ -132,8 +139,30 @@ export const propagateSignals = (nodes, edges) => {
                 outputCapacity: 0,
                 status
             };
+        } else if (io.type === 'splitter') {
+            // Telescope Logic: 1 In -> N Out (if input present)
+            if (incomingCount > 0) {
+                // Determine if we have enough coverage? 
+                // Simplification based on User Request: "Takes 1 signal in... N signal out"
+                // If we have at least 1 input, we activate all outputs.
+                outgoingCount = io.outputs;
+                status = 'active';
+            } else {
+                outgoingCount = 0;
+                status = 'passive';
+            }
+
+            currentNode.data.io = {
+                incoming: incomingCount,
+                capacity: io.inputs, // 1
+                inputTotal: Math.max(incomingCount, io.inputs),
+                outgoing: outgoingCount,
+                outputCapacity: io.outputs,
+                status
+            };
+
         } else {
-            // Generic
+            // Generic (1:1 per channel)
             outgoingCount = Math.min(incomingCount, capacity);
 
             if (incomingCount > capacity) status = 'error';
@@ -154,7 +183,7 @@ export const propagateSignals = (nodes, edges) => {
         for (const e of outgoingEdges) {
             const edge = edgeMap.get(e.id);
             edge.data.pathCount = outgoingCount;
-            edge.type = 'parallel'; // FORCE VISUAL COMPONENT
+            // edge.type = 'parallel'; // Don't force this here let PipelineEditor handle type, just update data
 
             // Pass Geometry Data to Edge for alignment
             edge.data.sourceCapacity = currentNode.data.io.outputCapacity;
