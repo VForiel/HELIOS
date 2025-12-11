@@ -51,7 +51,7 @@ export default function LayerNode({ id, data, selected }) {
     };
 
     return (
-        <div className={`bg-white dark:bg-slate-800 rounded-lg border shadow-xl min-w-[320px] relative transition-colors duration-200 ${selected ? 'border-blue-500 ring-2 ring-blue-500 ring-opacity-50' : 'border-slate-200 dark:border-slate-700'}`}>
+        <div className={`bg-white dark:bg-slate-800 rounded-lg border shadow-xl min-w-[320px] relative transition-colors duration-200 group ${selected ? 'border-blue-500 ring-2 ring-blue-500 ring-opacity-50' : 'border-slate-200 dark:border-slate-700'}`}>
 
             {/* --------------------------------------------------------------------------------
                ABSOLUTE POSITIONED INTERFACE LAYERS (CENTERED)
@@ -66,7 +66,7 @@ export default function LayerNode({ id, data, selected }) {
                 <Handle
                     type="target"
                     position={Position.Left}
-                    className="!static !w-auto !h-auto !min-w-[24px] !min-h-[24px] !p-1 !rounded-md !border-2 !border-slate-300 dark:!border-slate-600 !bg-slate-100 dark:!bg-slate-900 hover:!border-blue-500 hover:!bg-blue-50 dark:hover:!bg-slate-800 transition-colors flex items-center justify-center"
+                    className="!static !w-auto !h-auto !min-w-[24px] !min-h-[24px] !p-1 !rounded-md !border !bg-transparent !border-transparent !shadow-none group-hover:!bg-slate-100 group-hover:dark:!bg-slate-900 group-hover:!border-slate-300 group-hover:dark:!border-slate-600 hover:!border-blue-500 hover:!bg-blue-50 dark:hover:!bg-slate-800 transition-colors flex items-center justify-center"
                     title="Input Connection"
                     style={{ transform: 'none' }}
                 >
@@ -79,7 +79,7 @@ export default function LayerNode({ id, data, selected }) {
                 <Handle
                     type="source"
                     position={Position.Right}
-                    className="!static !w-auto !h-auto !min-w-[24px] !min-h-[24px] !p-1 !rounded-md !border-2 !border-slate-300 dark:!border-slate-600 !bg-slate-100 dark:!bg-slate-900 hover:!border-purple-500 hover:!bg-purple-50 dark:hover:!bg-slate-800 transition-colors flex items-center justify-center"
+                    className="!static !w-auto !h-auto !min-w-[24px] !min-h-[24px] !p-1 !rounded-md !border !bg-transparent !border-transparent !shadow-none group-hover:!bg-slate-100 group-hover:dark:!bg-slate-900 group-hover:!border-slate-300 group-hover:dark:!border-slate-600 hover:!border-purple-500 hover:!bg-purple-50 dark:hover:!bg-slate-800 transition-colors flex items-center justify-center"
                     title="Output Connection"
                     style={{ transform: 'none' }}
                 >
