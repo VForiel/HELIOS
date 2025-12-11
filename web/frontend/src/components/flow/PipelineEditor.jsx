@@ -16,10 +16,11 @@ import 'reactflow/dist/style.css';
 import TelescopeNode from './nodes/TelescopeNode';
 import CameraNode from './nodes/CameraNode';
 import GenericNode from './nodes/GenericNode';
-import { Menu, Sun, Moon, Heart, Github, Book, Download, Upload, Cpu, Disc, Divide, GitFork, Zap, Activity, Hand, MousePointer2, Stars, Search, Camera, CloudFog, X } from 'lucide-react';
+import { Menu, Sun, Moon, Heart, Github, Book, Download, Upload, Cpu, Disc, Divide, GitFork, Zap, Activity, Hand, MousePointer2, Stars, Search, Camera, CloudFog, X, Code } from 'lucide-react';
 
 import LayerNode from './nodes/LayerNode';
 import ParallelEdge from './edges/ParallelEdge';
+import CodeViewer from '../CodeViewer';
 
 const nodeTypes = {
     layer: LayerNode
@@ -706,6 +707,27 @@ export default function PipelineEditor({
         }
     };
 
+    const handleGetCode = async () => {
+        try {
+            const pipeline = getPipeline();
+            const payload = { mode: 'pipeline', layers: pipeline };
+            
+            const response = await fetch('/api/generate_code', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) throw new Error("Code generation failed");
+
+            const data = await response.json();
+            setInspectData({ code: data.code, title: "Python Code" });
+        } catch (err) {
+            console.error(err);
+            alert("Failed to generate code");
+        }
+    };
+
     // Keyboard Listeners
     useEffect(() => {
         const handleKeyDown = (e) => {
@@ -947,6 +969,14 @@ export default function PipelineEditor({
                         <Download className="w-5 h-5" />
                     </button>
 
+                    <button
+                        onClick={handleGetCode}
+                        className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400"
+                        title="Get Python Code"
+                    >
+                        <Code className="w-5 h-5" />
+                    </button>
+
                     <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-1"></div>
                     <button
                         onClick={onToggleTheme}
@@ -1023,9 +1053,11 @@ export default function PipelineEditor({
                                 {inspectLoading ? "Inspecting Layer..." : inspectData?.title || "Inspection Result"}
                             </h2>
 
-                            <div className="min-h-[300px] flex items-center justify-center bg-slate-50 dark:bg-slate-900 rounded border border-slate-200 dark:border-slate-700 overflow-hidden">
+                            <div className={`flex items-center justify-center bg-slate-50 dark:bg-slate-900 rounded border border-slate-200 dark:border-slate-700 overflow-hidden ${inspectData?.code ? 'h-[500px]' : 'min-h-[300px]'}`}>
                                 {inspectLoading ? (
                                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                                ) : inspectData?.code ? (
+                                    <CodeViewer code={inspectData.code} />
                                 ) : (
                                     <img src={inspectData.image} alt="Inspection" className="max-h-[500px] object-contain" />
                                 )}

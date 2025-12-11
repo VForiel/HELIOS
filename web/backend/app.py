@@ -909,6 +909,185 @@ def run_pipeline(request: PipelineRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/generate_code")
+def generate_code(request: PipelineRequest):
+    code = []
+    code.append("import numpy as np")
+    code.append("import matplotlib.pyplot as plt")
+    code.append("from astropy import units as u")
+    code.append("import helios")
+    code.append("from helios.components import *")
+    code.append("import helios.components.photonics as photonics")
+    code.append("import helios.components.fibers as fibers")
+    code.append("")
+    code.append("# Initialize Pipeline")
+    code.append("pipeline = helios.Pipeline()")
+    code.append("")
+
+    def format_layer(layer_conf, var_name="layer"):
+        lines = []
+        
+        # Helper to get config dict/obj
+        if isinstance(layer_conf.config, dict):
+            conf = layer_conf.config
+        else:
+            conf = layer_conf.config.dict() if hasattr(layer_conf.config, 'dict') else layer_conf.config.__dict__
+
+        l_type = layer_conf.type
+        
+        if l_type == 'scene':
+            lines.append(f"# Scene Layer")
+            lines.append(f"{var_name} = helios.Scene(distance=10*u.pc)")
+            
+            stars = conf.get('stars', [])
+            for i, s in enumerate(stars):
+                lines.append(f"star_{i} = helios.Star(temperature={s.get('temperature', 5778)}*u.K, magnitude={s.get('magnitude', 4.83)})")
+                lines.append(f"star_{i}.position = ({s.get('x_arcsec', 0)}*u.arcsec, {s.get('y_arcsec', 0)}*u.arcsec)")
+                lines.append(f"{var_name}.add(star_{i})")
+            
+            planets = conf.get('planets', [])
+            for i, p in enumerate(planets):
+                lines.append(f"planet_{i} = helios.Planet(mass={p.get('mass', 1.0)}*u.M_jup, orbit_radius={p.get('separation', 1.0)}*u.AU)")
+                if p.get('x_arcsec') is not None:
+                    lines.append(f"planet_{i}.position = ({p.get('x_arcsec')}*u.arcsec, {p.get('y_arcsec')}*u.arcsec)")
+                else:
+                    angle = np.radians(p.get('angle', 0))
+                    dist_pc = 10
+                    sep_arcsec = p.get('separation', 1.0) / dist_pc
+                    x = sep_arcsec * np.cos(angle)
+                    y = sep_arcsec * np.sin(angle)
+                    lines.append(f"planet_{i}.position = ({x:.4f}*u.arcsec, {y:.4f}*u.arcsec)")
+                lines.append(f"{var_name}.add(planet_{i})")
+
+            zodi = conf.get('zodiacal', {})
+            if zodi.get('enabled'):
+                lines.append(f"zodi = helios.Zodiacal(brightness={zodi.get('brightness', 1.0)})")
+                lines.append(f"{var_name}.add(zodi)")
+
+        elif l_type == 'atmosphere':
+            if not conf.get('enabled', True):
+                lines.append(f"# Atmosphere (Disabled)")
+                return []
+            lines.append(f"# Atmosphere Layer")
+            lines.append(f"{var_name} = helios.Atmosphere(rms={conf.get('rms_nm', 100)}*u.nm, wind_speed={conf.get('wind_speed', 5.0)}*u.m/u.s)")
+
+        elif l_type == 'telescope':
+            lines.append(f"# Telescope Layer")
+            preset = conf.get('preset', 'Single')
+            if preset == 'VLTI-UT':
+                lines.append(f"{var_name} = helios.TelescopeArray.vlti(uts=True)")
+            elif preset == 'VLTI-AT':
+                lines.append(f"{var_name} = helios.TelescopeArray.vlti(uts=False)")
+            elif preset == 'LIFE':
+                lines.append(f"{var_name} = helios.TelescopeArray.life()")
+            else:
+                lines.append(f"{var_name} = helios.TelescopeArray(name='Custom Array')")
+                collectors = conf.get('collectors', [])
+                for i, col in enumerate(collectors):
+                    diam = col.get('diameter', 8.0)
+                    ptype = col.get('pupil_type', 'Circular')
+                    
+                    lines.append(f"# Collector {i+1}")
+                    if ptype == 'VLT':
+                        lines.append(f"pupil_{i} = helios.Pupil.vlt()")
+                    elif ptype == 'JWST':
+                        lines.append(f"pupil_{i} = helios.Pupil.jwst()")
+                    elif ptype == 'Obstructed':
+                        lines.append(f"pupil_{i} = helios.Pupil(diameter={diam}*u.m)")
+                        lines.append(f"pupil_{i}.add_disk(radius={diam/2}*u.m)")
+                        obs = col.get('central_obstruction', 0)
+                        lines.append(f"pupil_{i}.add_central_obscuration(diameter={diam*obs}*u.m)")
+                        spiders = col.get('spiders', 0)
+                        if spiders > 0:
+                            lines.append(f"pupil_{i}.add_spiders(arms={spiders}, width={0.02*diam}*u.m)")
+                    else:
+                        lines.append(f"pupil_{i} = helios.Pupil(diameter={diam}*u.m)")
+                        lines.append(f"pupil_{i}.add_disk(radius={diam/2}*u.m)")
+                    
+                    lines.append(f"{var_name}.add_collector(pupil=pupil_{i}, position=({col.get('x', 0)}*u.m, {col.get('y', 0)}*u.m), size={diam}*u.m)")
+
+        elif l_type == 'camera':
+            lines.append(f"# Camera Layer")
+            lines.append(f"{var_name} = helios.Camera(pixels=(256, 256), pixel_scale=(2.0/256)*u.arcsec)")
+            lines.append(f"{var_name}.exposure = {conf.get('exposure', 0.1)}*u.s")
+
+        elif l_type == 'lens':
+            lines.append(f"{var_name} = helios.Lens(focal_length={conf.get('focal_length', 1.0)}*u.m)")
+        
+        elif l_type == 'beam_splitter':
+            lines.append(f"{var_name} = helios.BeamSplitter(cutoff={conf.get('split_ratio', 0.5)})")
+            
+        elif l_type == 'coronagraph':
+            lines.append(f"{var_name} = helios.Coronagraph(phase_mask='{conf.get('type', '4quadrants')}')")
+            
+        elif l_type == 'fiber_in':
+            lines.append(f"{var_name} = fibers.FiberIn(modes={conf.get('modes', 1)}, name='{conf.get('name', 'FiberIn')}')")
+            
+        elif l_type == 'fiber_out':
+            lines.append(f"{var_name} = fibers.FiberOut(name='{conf.get('name', 'FiberOut')}')")
+            
+        elif l_type == 'photonic':
+            ptype = conf.get('type')
+            name = conf.get('name', 'Photonic')
+            if ptype == 'y_splitter':
+                lines.append(f"{var_name} = photonics.YSplitter(name='{name}')")
+            elif ptype == 'tops':
+                lines.append(f"{var_name} = photonics.TOPS(phase={conf.get('phase', 0.0)}, name='{name}')")
+            elif ptype == 'mmi':
+                preset = conf.get('matrix_preset', 'default')
+                if preset == 'hadamard':
+                    lines.append(f"mat = np.array([[1, 1], [1, -1]]) / np.sqrt(2)")
+                elif preset == 'cross':
+                    lines.append(f"mat = np.array([[np.exp(1j*np.pi/4), np.exp(-1j*np.pi/4)], [np.exp(-1j*np.pi/4), np.exp(1j*np.pi/4)]]) / np.sqrt(2)")
+                else:
+                    lines.append(f"mat = np.eye(2)")
+                lines.append(f"{var_name} = photonics.MMI(matrix=mat, name='{name}')")
+            elif ptype == 'swap':
+                mapping = conf.get('mapping', [0, 1])
+                lines.append(f"{var_name} = photonics.Swap(mapping={mapping}, name='{name}')")
+
+        return lines
+
+    for i, layer in enumerate(request.layers):
+        if isinstance(layer, list):
+            code.append(f"# Parallel Block {i}")
+            branch_vars = []
+            for j, sub_layer in enumerate(layer):
+                var_name = f"layer_{i}_{j}"
+                lines = format_layer(sub_layer, var_name)
+                if lines:
+                    code.extend(lines)
+                    branch_vars.append(var_name)
+            code.append(f"pipeline.add_layer([{', '.join(branch_vars)}])")
+        else:
+            var_name = f"layer_{i}"
+            lines = format_layer(layer, var_name)
+            if lines:
+                code.extend(lines)
+                code.append(f"pipeline.add_layer({var_name})")
+        code.append("")
+
+    code.append("# Run Observation")
+    code.append("result = pipeline.observe()")
+    code.append("")
+    code.append("# Plot Result")
+    code.append("if hasattr(result, 'value'):")
+    code.append("    data = result.value")
+    code.append("else:")
+    code.append("    data = result")
+    code.append("")
+    code.append("if data.max() > 0:")
+    code.append("    data = data / data.max()")
+    code.append("    data = np.power(data, 0.5)")
+    code.append("")
+    code.append("plt.figure(figsize=(10, 10))")
+    code.append("plt.imshow(data, cmap='inferno', origin='lower')")
+    code.append("plt.colorbar()")
+    code.append("plt.show()")
+
+    return {"code": "\n".join(code)}
+
+
 @app.post("/api/preview_layer")
 def preview_layer(layer_conf: LayerConfig):
     try:
