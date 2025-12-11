@@ -32,8 +32,10 @@ export const calculateNodeIO = (node) => {
     const telescopes = elements.filter(el => el.type === 'telescope');
     if (telescopes.length > 0) {
         type = 'splitter'; // Changed from 'source' to 'splitter' (1 In -> N Out)
-        totalInputs = 1; // Telescope Array takes 1 wavefront
-        totalOutputs = telescopes.reduce((acc, t) => acc + (t.config?.collectors?.length || 1), 0);
+        // Update: Visual Request -> Show N Inputs for N Collectors to imply parallel beam collection
+        const collectorCount = telescopes.reduce((acc, t) => acc + (t.config?.collectors?.length || 1), 0);
+        totalInputs = collectorCount;
+        totalOutputs = collectorCount;
     }
 
     // Check for Sinks (Cameras)
@@ -140,11 +142,9 @@ export const propagateSignals = (nodes, edges) => {
                 status
             };
         } else if (io.type === 'splitter') {
-            // Telescope Logic: 1 In -> N Out (if input present)
+            // Telescope Logic
+            // If receiving ANY signal, activate ALL outputs
             if (incomingCount > 0) {
-                // Determine if we have enough coverage? 
-                // Simplification based on User Request: "Takes 1 signal in... N signal out"
-                // If we have at least 1 input, we activate all outputs.
                 outgoingCount = io.outputs;
                 status = 'active';
             } else {
@@ -154,7 +154,7 @@ export const propagateSignals = (nodes, edges) => {
 
             currentNode.data.io = {
                 incoming: incomingCount,
-                capacity: io.inputs, // 1
+                capacity: io.inputs,
                 inputTotal: Math.max(incomingCount, io.inputs),
                 outgoing: outgoingCount,
                 outputCapacity: io.outputs,
@@ -183,7 +183,6 @@ export const propagateSignals = (nodes, edges) => {
         for (const e of outgoingEdges) {
             const edge = edgeMap.get(e.id);
             edge.data.pathCount = outgoingCount;
-            // edge.type = 'parallel'; // Don't force this here let PipelineEditor handle type, just update data
 
             // Pass Geometry Data to Edge for alignment
             edge.data.sourceCapacity = currentNode.data.io.outputCapacity;
@@ -191,8 +190,16 @@ export const propagateSignals = (nodes, edges) => {
             const targetNode = nodes.find(n => n.id === e.target);
             if (targetNode) {
                 const targetIO = calculateNodeIO(targetNode);
-                // Input Total = max(incoming, capacity). We know incoming = outgoingCount.
                 edge.data.targetCapacity = Math.max(outgoingCount, targetIO.inputs);
+
+                // Visualization Flag: Broadcast
+                // If Source (1 Output) -> Splitter (N Inputs), perform broadcast visualization
+                if (io.type === 'source' && targetIO.type === 'splitter' && targetIO.inputs > 1) {
+                    edge.data.broadcast = true;
+                } else {
+                    edge.data.broadcast = false;
+                }
+
                 queue.push(targetNode);
             }
         }
