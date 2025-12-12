@@ -1,0 +1,18 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <!-- Phase shifter box -->
+  <rect x="32" y="35" width="36" height="30" fill="none" stroke="#000000" stroke-width="3" rx="2"/>
+  
+  <!-- Phi symbol (Φ) for phase -->
+  <circle cx="50" cy="50" r="9" fill="none" stroke="#000000" stroke-width="2.5"/>
+  <line x1="50" y1="38" x2="50" y2="62" stroke="#000000" stroke-width="2.5"/>
+  
+  <!-- Input waveguide (left) -->
+  <line x1="12" y1="50" x2="32" y2="50" stroke="#000000" stroke-width="3.5" stroke-linecap="round"/>
+  
+  <!-- Output waveguide (right) -->
+  <line x1="68" y1="50" x2="88" y2="50" stroke="#000000" stroke-width="3.5" stroke-linecap="round"/>
+  
+  <!-- Small phase indicator dots -->
+  <circle cx="50" cy="28" r="2" fill="#000000"/>
+  <circle cx="50" cy="72" r="2" fill="#000000"/>
+</svg>

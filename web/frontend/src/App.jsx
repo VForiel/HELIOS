@@ -3,6 +3,7 @@ import { Play, Download } from 'lucide-react';
 import { ReactFlowProvider } from 'reactflow';
 import PipelineEditor from './components/flow/PipelineEditor';
 import ErrorBoundary from './components/ErrorBoundary';
+import { getElementIcon } from './utils/iconMap';
 // Keep config components for passing state logic or if used internally
 import SceneConfig from './components/SceneConfig';
 import TelescopeConfig from './components/TelescopeConfig';
@@ -100,17 +101,17 @@ function App() {
                     <div className={`${isSidebarOpen ? 'w-64 translate-x-0' : 'w-0 -translate-x-full opacity-0'} transition-all duration-300 ease-in-out flex-shrink-0 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col h-full z-20 shadow-xl overflow-hidden`}>
                         {/* Sidebar Header removed as it is now in Top Bar */}
                         <div className="p-4 space-y-2 min-w-[256px] mt-4 overflow-y-auto custom-scrollbar flex-1 pb-20">
-                            
+
                             {/* Generation */}
                             <div className="text-xs font-bold text-blue-500 uppercase tracking-wider mb-2">Generation</div>
                             <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-blue-500 transition-colors flex items-center"
                                 onDragStart={(event) => onDragStart(event, 'scene')} draggable>
-                                <div className="w-3 h-3 rounded-full bg-blue-500 mr-3"></div>
+                                <img src={getElementIcon('scene')} alt="Scene" className="w-4 h-4 mr-3 dark:invert dark:opacity-80" />
                                 <span className="text-slate-700 dark:text-slate-200 text-sm">Scene Source</span>
                             </div>
                             <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-blue-500 transition-colors flex items-center"
                                 onDragStart={(event) => onDragStart(event, 'atmosphere')} draggable>
-                                <div className="w-3 h-3 rounded-full bg-blue-500 mr-3"></div>
+                                <img src={getElementIcon('atmosphere')} alt="Atmosphere" className="w-4 h-4 mr-3 dark:invert dark:opacity-80" />
                                 <span className="text-slate-700 dark:text-slate-200 text-sm">Atmosphere</span>
                             </div>
 
@@ -118,7 +119,7 @@ function App() {
                             <div className="text-xs font-bold text-cyan-500 uppercase tracking-wider mb-2 mt-6">Sampling</div>
                             <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-cyan-500 transition-colors flex items-center"
                                 onDragStart={(event) => onDragStart(event, 'telescope')} draggable>
-                                <div className="w-3 h-3 rounded-full bg-cyan-500 mr-3"></div>
+                                <img src={getElementIcon('telescope')} alt="Telescope" className="w-4 h-4 mr-3 dark:invert dark:opacity-80" />
                                 <span className="text-slate-700 dark:text-slate-200 text-sm">Telescope</span>
                             </div>
 
@@ -126,17 +127,17 @@ function App() {
                             <div className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-2 mt-6">Bulk Optics</div>
                             <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-indigo-500 transition-colors flex items-center"
                                 onDragStart={(event) => onDragStart(event, 'lens')} draggable>
-                                <div className="w-3 h-3 rounded-full bg-indigo-500 mr-3"></div>
+                                <img src={getElementIcon('lens')} alt="Lens" className="w-4 h-4 mr-3 dark:invert dark:opacity-80" />
                                 <span className="text-slate-700 dark:text-slate-200 text-sm">Lens</span>
                             </div>
                             <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-indigo-500 transition-colors flex items-center"
                                 onDragStart={(event) => onDragStart(event, 'beam_splitter')} draggable>
-                                <div className="w-3 h-3 rounded-full bg-indigo-500 mr-3"></div>
+                                <img src={getElementIcon('beam_splitter')} alt="Beam Splitter" className="w-4 h-4 mr-3 dark:invert dark:opacity-80" />
                                 <span className="text-slate-700 dark:text-slate-200 text-sm">Beam Splitter</span>
                             </div>
                             <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-indigo-500 transition-colors flex items-center"
                                 onDragStart={(event) => onDragStart(event, 'coronagraph')} draggable>
-                                <div className="w-3 h-3 rounded-full bg-indigo-500 mr-3"></div>
+                                <img src={getElementIcon('coronagraph')} alt="Coronagraph" className="w-4 h-4 mr-3 dark:invert dark:opacity-80" />
                                 <span className="text-slate-700 dark:text-slate-200 text-sm">Coronagraph</span>
                             </div>
 
@@ -144,25 +145,25 @@ function App() {
                             <div className="text-xs font-bold text-amber-500 uppercase tracking-wider mb-2 mt-6">Photonics</div>
                             <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-amber-500 transition-colors flex items-center"
                                 onDragStart={(event) => onDragStart(event, 'fiber_in')} draggable>
-                                <div className="w-3 h-3 rounded-full bg-amber-500 mr-3"></div>
+                                <img src={getElementIcon('fiber_in')} alt="Fiber Input" className="w-4 h-4 mr-3 dark:invert dark:opacity-80" />
                                 <span className="text-slate-700 dark:text-slate-200 text-sm">Fiber Input</span>
                             </div>
                             <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-amber-500 transition-colors flex items-center"
                                 onDragStart={(event) => onDragStart(event, 'fiber_out')} draggable>
-                                <div className="w-3 h-3 rounded-full bg-amber-500 mr-3"></div>
+                                <img src={getElementIcon('fiber_out')} alt="Fiber Output" className="w-4 h-4 mr-3 dark:invert dark:opacity-80" />
                                 <span className="text-slate-700 dark:text-slate-200 text-sm">Fiber Output</span>
                             </div>
                             <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-amber-500 transition-colors flex items-center"
-                                onDragStart={(event) => onDragStart(event, 'photonic')} draggable>
-                                <div className="w-3 h-3 rounded-full bg-amber-500 mr-3"></div>
-                                <span className="text-slate-700 dark:text-slate-200 text-sm">Photonic Chip</span>
+                                onDragStart={(event) => onDragStart(event, 'mmi')} draggable>
+                                <img src={getElementIcon('mmi')} alt="MMI Coupler" className="w-4 h-4 mr-3 dark:invert dark:opacity-80" />
+                                <span className="text-slate-700 dark:text-slate-200 text-sm">MMI Coupler</span>
                             </div>
 
                             {/* Detection */}
                             <div className="text-xs font-bold text-pink-500 uppercase tracking-wider mb-2 mt-6">Detection</div>
                             <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-pink-500 transition-colors flex items-center"
                                 onDragStart={(event) => onDragStart(event, 'camera')} draggable>
-                                <div className="w-3 h-3 rounded-full bg-pink-500 mr-3"></div>
+                                <img src={getElementIcon('camera')} alt="Camera" className="w-4 h-4 mr-3 dark:invert dark:opacity-80" />
                                 <span className="text-slate-700 dark:text-slate-200 text-sm">Camera</span>
                             </div>
                         </div>

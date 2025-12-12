@@ -17,6 +17,7 @@ import TelescopeNode from './nodes/TelescopeNode';
 import CameraNode from './nodes/CameraNode';
 import GenericNode from './nodes/GenericNode';
 import { Menu, Sun, Moon, Heart, Github, Book, Download, Upload, Cpu, Disc, Divide, GitFork, Zap, Activity, Hand, MousePointer2, Stars, Search, Camera, CloudFog, X, Code } from 'lucide-react';
+import { getElementIcon, getPhotonicIcon } from '../../utils/iconMap';
 
 import LayerNode from './nodes/LayerNode';
 import ParallelEdge from './edges/ParallelEdge';
@@ -83,7 +84,7 @@ export default function PipelineEditor({
             position: { x: 50, y: 100 },
             data: {
                 elements: [
-                    { type: 'scene', label: 'Scene', config: { stars, planets, zodiacal }, icon: Stars }
+                    { type: 'scene', label: 'Scene', config: { stars, planets, zodiacal }, iconPath: getElementIcon('scene') }
                 ]
             }
         },
@@ -93,7 +94,7 @@ export default function PipelineEditor({
             position: { x: 500, y: 100 },
             data: {
                 elements: [
-                    { type: 'telescope', label: 'Telescope', config: telescope, icon: Search }
+                    { type: 'telescope', label: 'Telescope', config: telescope, iconPath: getElementIcon('telescope') }
                 ]
             }
         },
@@ -103,7 +104,7 @@ export default function PipelineEditor({
             position: { x: 950, y: 100 },
             data: {
                 elements: [
-                    { type: 'camera', label: 'Camera', config: camera, icon: Camera }
+                    { type: 'camera', label: 'Camera', config: camera, iconPath: getElementIcon('camera') }
                 ]
             }
         }
@@ -575,18 +576,18 @@ export default function PipelineEditor({
             // Define new element
             // Icons already imported
 
-            let newElement = { type, config: {}, label: type, icon: Disc };
+            let newElement = { type, config: {}, label: type, iconPath: getElementIcon(type) };
 
-            if (type === 'scene') newElement = { type, label: 'Scene', config: { stars, planets, zodiacal }, icon: Stars };
-            else if (type === 'atmosphere') newElement = { type, label: 'Atmosphere', config: atmosphere, icon: CloudFog };
-            else if (type === 'telescope') newElement = { type, label: 'Telescope', config: telescope, icon: Search };
-            else if (type === 'camera') newElement = { type, label: 'Camera', config: camera, icon: Camera };
-            else if (type === 'lens') newElement = { type, label: 'Lens', config: { focal_length: 1.0 }, icon: Disc, fields: [{ name: 'focal_length', type: 'number', label: 'Focal Length', step: 0.1 }] };
-            else if (type === 'beam_splitter') newElement = { type, label: 'Beam Splitter', config: { split_ratio: 0.5 }, icon: Divide, fields: [{ name: 'split_ratio', type: 'number', label: 'Split Ratio', step: 0.1 }] };
-            else if (type === 'coronagraph') newElement = { type, label: 'Coronagraph', config: { type: '4quadrants' }, icon: Disc, fields: [{ name: 'type', type: 'select', label: 'Mask Type', options: [{ value: '4quadrants', label: '4-Quadrants' }, { value: 'vortex', label: 'Vortex' }] }] };
-            else if (type === 'fiber_in') newElement = { type, label: 'Fiber Injection', config: { modes: 1 }, icon: Zap, fields: [{ name: 'modes', type: 'number', label: 'Modes', step: 1 }] };
-            else if (type === 'fiber_out') newElement = { type, label: 'Fiber Output', config: {}, icon: Zap, fields: [] };
-            else if (type === 'photonic') newElement = { type, label: 'Photonic Chip', config: { type: 'y_splitter', phase: 0.0 }, icon: Cpu, fields: [{ name: 'type', type: 'select', label: 'Component Type', options: [{ value: 'y_splitter', label: 'Y-Splitter' }, { value: 'tops', label: 'Phase Shifter' }, { value: 'mmi', label: 'MMI Coupler' }, { value: 'swap', label: 'Waveguide Crossing' }] }, { name: 'phase', type: 'number', label: 'Phase (rad)', step: 0.1 }] };
+            if (type === 'scene') newElement = { type, label: 'Scene', config: { stars, planets, zodiacal }, iconPath: getElementIcon('scene') };
+            else if (type === 'atmosphere') newElement = { type, label: 'Atmosphere', config: atmosphere, iconPath: getElementIcon('atmosphere') };
+            else if (type === 'telescope') newElement = { type, label: 'Telescope', config: telescope, iconPath: getElementIcon('telescope') };
+            else if (type === 'camera') newElement = { type, label: 'Camera', config: camera, iconPath: getElementIcon('camera') };
+            else if (type === 'lens') newElement = { type, label: 'Lens', config: { focal_length: 1.0 }, iconPath: getElementIcon('lens'), fields: [{ name: 'focal_length', type: 'number', label: 'Focal Length', step: 0.1 }] };
+            else if (type === 'beam_splitter') newElement = { type, label: 'Beam Splitter', config: { split_ratio: 0.5 }, iconPath: getElementIcon('beam_splitter'), fields: [{ name: 'split_ratio', type: 'number', label: 'Split Ratio', step: 0.1 }] };
+            else if (type === 'coronagraph') newElement = { type, label: 'Coronagraph', config: { type: '4quadrants' }, iconPath: getElementIcon('coronagraph'), fields: [{ name: 'type', type: 'select', label: 'Mask Type', options: [{ value: '4quadrants', label: '4-Quadrants' }, { value: 'vortex', label: 'Vortex' }] }] };
+            else if (type === 'fiber_in') newElement = { type, label: 'Fiber Injection', config: { modes: 1 }, iconPath: getElementIcon('fiber_in'), fields: [{ name: 'modes', type: 'number', label: 'Modes', step: 1 }] };
+            else if (type === 'fiber_out') newElement = { type, label: 'Fiber Output', config: {}, iconPath: getElementIcon('fiber_out'), fields: [] };
+            else if (type === 'mmi') newElement = { type, label: 'MMI Coupler', config: { inputs: 2, outputs: 2 }, iconPath: getElementIcon('mmi'), fields: [{ name: 'inputs', type: 'number', label: 'Inputs', step: 1 }, { name: 'outputs', type: 'number', label: 'Outputs', step: 1 }] };
 
 
             if (intersections.length > 0) {
@@ -711,7 +712,7 @@ export default function PipelineEditor({
         try {
             const pipeline = getPipeline();
             const payload = { mode: 'pipeline', layers: pipeline };
-            
+
             const response = await fetch('/api/generate_code', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -833,20 +834,20 @@ export default function PipelineEditor({
                             if (conf.stars) setStars(conf.stars);
                             if (conf.planets) setPlanets(conf.planets);
                             if (conf.zodiacal) setZodiacal(conf.zodiacal);
-                            data.elements.push({ type, label: 'Scene', config: { stars: conf.stars, planets: conf.planets, zodiacal: conf.zodiacal }, icon: Stars });
+                            data.elements.push({ type, label: 'Scene', config: { stars: conf.stars, planets: conf.planets, zodiacal: conf.zodiacal }, iconPath: getElementIcon('scene') });
                         } else if (type === 'atmosphere') {
                             setAtmosphere(conf);
-                            data.elements.push({ type, label: 'Atmosphere', config: conf, icon: CloudFog });
+                            data.elements.push({ type, label: 'Atmosphere', config: conf, iconPath: getElementIcon('atmosphere') });
                         } else if (type === 'telescope') {
                             setTelescope(conf);
-                            data.elements.push({ type, label: 'Telescope', config: conf, icon: Search });
+                            data.elements.push({ type, label: 'Telescope', config: conf, iconPath: getElementIcon('telescope') });
                         } else if (type === 'camera') {
                             setCamera(conf);
-                            data.elements.push({ type, label: 'Camera', config: conf, icon: Camera });
+                            data.elements.push({ type, label: 'Camera', config: conf, iconPath: getElementIcon('camera') });
                         } else {
                             // Generics
-                            let element = { type, config: conf, label: type, icon: Disc };
-                            if (type === 'lens') element = { ...element, label: 'Lens', icon: Disc, fields: [{ name: 'focal_length', type: 'number', label: 'Focal Length', step: 0.1 }] };
+                            let element = { type, config: conf, label: type, iconPath: getElementIcon(type) };
+                            if (type === 'lens') element = { ...element, label: 'Lens', iconPath: getElementIcon('lens'), fields: [{ name: 'focal_length', type: 'number', label: 'Focal Length', step: 0.1 }] };
                             // Add more specific types as needed
                             data.elements.push(element);
                         }

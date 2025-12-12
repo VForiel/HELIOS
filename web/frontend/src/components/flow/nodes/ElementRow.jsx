@@ -36,7 +36,13 @@ export default function ElementRow({ element, index, onChange, onRemove }) {
                     {expanded ? <ChevronDown className="w-3 h-3 text-slate-400" /> : <ChevronRight className="w-3 h-3 text-slate-400" />}
 
                     <div className="p-1 rounded text-slate-500 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm">
-                        {IconComponent ? <IconComponent className="w-3.5 h-3.5" /> : <Settings className="w-3.5 h-3.5" />}
+                        {element.iconPath ? (
+                            <img src={element.iconPath} alt={label || type} className="w-3.5 h-3.5 dark:invert dark:opacity-80" />
+                        ) : IconComponent ? (
+                            <IconComponent className="w-3.5 h-3.5" />
+                        ) : (
+                            <Settings className="w-3.5 h-3.5" />
+                        )}
                     </div>
 
                     <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 select-none">

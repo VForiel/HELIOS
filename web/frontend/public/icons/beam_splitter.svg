@@ -1,0 +1,19 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <!-- Beam splitter cube/prism -->
+  <rect x="38" y="38" width="24" height="24" fill="none" stroke="#000000" stroke-width="3" rx="1"/>
+  
+  <!-- Diagonal line showing split -->
+  <line x1="38" y1="62" x2="62" y2="38" stroke="#000000" stroke-width="2"/>
+  
+  <!-- Input beam (from left) -->
+  <line x1="15" y1="50" x2="38" y2="50" stroke="#000000" stroke-width="3" stroke-linecap="round"/>
+  <polygon points="38,50 33,47 33,53" fill="#000000"/>
+  
+  <!-- Transmitted beam (to right) -->
+  <line x1="62" y1="50" x2="85" y2="50" stroke="#000000" stroke-width="3" stroke-linecap="round"/>
+  <polygon points="85,50 80,47 80,53" fill="#000000"/>
+  
+  <!-- Reflected beam (upward) -->
+  <line x1="50" y1="38" x2="50" y2="15" stroke="#000000" stroke-width="3" stroke-linecap="round"/>
+  <polygon points="50,15 47,20 53,20" fill="#000000"/>
+</svg>

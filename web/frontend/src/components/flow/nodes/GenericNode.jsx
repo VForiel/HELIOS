@@ -24,7 +24,11 @@ export default function GenericNode({ id, data, selected }) {
             <div className="bg-slate-50 dark:bg-slate-900 px-4 py-3 border-b border-slate-200 dark:border-slate-800 rounded-t-lg flex items-center justify-between">
                 <div className="flex items-center gap-2">
                     <div className="p-1.5 bg-cyan-100 dark:bg-cyan-900/30 rounded-md text-cyan-600 dark:text-cyan-400">
-                        {Icon && <Icon className="w-4 h-4" />}
+                        {data.iconPath ? (
+                            <img src={data.iconPath} alt={data.label} className="w-4 h-4 dark:invert dark:opacity-80" />
+                        ) : Icon ? (
+                            <Icon className="w-4 h-4" />
+                        ) : null}
                     </div>
                     <div>
                         <h3 className="font-semibold text-slate-800 dark:text-slate-200 text-sm">{data.label}</h3>
