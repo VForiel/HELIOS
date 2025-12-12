@@ -1,4 +1,4 @@
-# API Reference
+# 📚 API Reference
 
 Complete API documentation for the HELIOS package.
 

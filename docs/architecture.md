@@ -1,4 +1,4 @@
-# HELIOS Core Architecture
+# ⚙️ Architecture
 
 HELIOS uses a **Layered Architecture** with a **Pull-Based Execution Model** to simulate optical pipelines.
 
@@ -68,11 +68,11 @@ If a parameter changes in a Layer (e.g., changing Telescope diameter):
 
 ---
 
-# Detailed Class Architecture
+## Detailed Class Architecture
 
 This section presents the detailed architecture of the HELIOS package in the form of a UML class diagram, showing all classes, their attributes, methods, and interactions.
 
-## Architecture Overview
+### Architecture Overview
 
 HELIOS is organized into two main modules:
 - **`core`**: Base classes defining the simulation structure
@@ -423,11 +423,11 @@ classDiagram
     PhotonicChip "1" *-- "0..*" Layer : contains
 ```
 
-## Module Descriptions
+### Module Descriptions
 
-### `core` Module
+#### `core` Module
 
-#### `Wavefront`
+##### `Wavefront`
 Represents the complex electromagnetic field (amplitude and phase) at a given wavelength. It is the main object that flows through the simulation chain.
 
 **Key Attributes:**
@@ -435,21 +435,21 @@ Represents the complex electromagnetic field (amplitude and phase) at a given wa
 - `field`: Complex 2D array representing amplitude and phase
 - `pixel_scale`: Physical scale per pixel
 
-#### `Element`
+##### `Element`
 Abstract base class for all individual physical components. Each element can process a wavefront independently.
 
 **Key Methods:**
 - `process(wavefront, pipeline)`: Abstract method to be implemented by subclasses
 - `description()`: Generates a text description of the element
 
-#### `Layer`
+##### `Layer`
 Abstract base class for logical groups of elements. A layer can contain multiple elements that process wavefronts in parallel.
 
 **Key Methods:**
 - `add_element(element)`: Adds an element to the layer
 - `process(wavefront, pipeline)`: Processes the wavefront through all elements
 
-#### `Pipeline`
+##### `Pipeline`
 Main simulation orchestrator. Manages the sequence of layers and the execution of the observation.
 
 **Key Methods:**
@@ -457,9 +457,9 @@ Main simulation orchestrator. Manages the sequence of layers and the execution o
 - `observe(wavelength, size)`: Executes the full simulation
 - `plot_architecture()`: Visualizes the simulation architecture
 
-### `components` Module
+#### `components` Module
 
-#### Astronomical Scene
+##### Astronomical Scene
 
 **`Scene`**: Layer containing all celestial objects
 - Manages distance to the star system
@@ -478,7 +478,7 @@ Main simulation orchestrator. Manages the sequence of layers and the execution o
 
 **`ZodiacalLight`**, **`LocalZodi`**, **`ExoZodi`**: Zodiacal light (local and exo-zodiacal)
 
-#### Light Collectors
+##### Light Collectors
 
 **`Pupil`**: Optical aperture geometry
 - Construction via primitives (disks, hexagons, spiders)
@@ -493,7 +493,7 @@ Main simulation orchestrator. Manages the sequence of layers and the execution o
 - Interferometric configuration management
 - Presets: VLTI, LIFE
 
-#### Atmosphere and Adaptive Optics
+##### Atmosphere and Adaptive Optics
 
 **`Atmosphere`**: Kolmogorov atmospheric turbulence
 - Phase screens with temporal evolution (frozen-flow)
@@ -503,26 +503,26 @@ Main simulation orchestrator. Manages the sequence of layers and the execution o
 - Correction based on Zernike polynomials
 - Zernike coefficients (n,m) or Noll indices
 
-#### High Contrast Imaging
+##### High Contrast Imaging
 
 **`Coronagraph`**: Coronagraphic masks
 - Types: 4 quadrants, vortex, Lyot
 - On-axis starlight suppression
 
-#### Detection
+##### Detection
 
 **`Camera`**: Detector with realistic noise
 - Dark current, read noise
 - Thermal background, quantum efficiency
 - Methods: `get_raw_image()`, `get_dark()`, `get_image()`
 
-#### Beam Splitting
+##### Beam Splitting
 
 **`BeamSplitter`**: Optical beam splitter
 - Splits a wavefront into multiple paths
 - Transmission/reflection parameter
 
-#### Integrated Photonics
+##### Integrated Photonics
 
 **`FiberIn`** / **`FiberOut`**: Fiber coupling
 - Optical fiber input/output
@@ -533,9 +533,9 @@ Main simulation orchestrator. Manages the sequence of layers and the execution o
 - **`TOPS`**: Thermo-optic phase shifter
 - **`MMI`**: Multi-mode interference coupler (coupling matrix)
 
-## Relationships and Data Flow
+### Relationships and Data Flow
 
-### Inheritance Hierarchy
+#### Inheritance Hierarchy
 
 ```
 Element (abstract)
@@ -562,7 +562,7 @@ Layer (abstract)
 └── MMI
 ```
 
-### Composition
+#### Composition
 
 - **Pipeline** contains **Layers**
 - **Layer** contains **Elements**
@@ -571,14 +571,14 @@ Layer (abstract)
 - **Collector** contains a **Pupil**
 - **PhotonicChip** contains photonic **Layers**
 
-### Processing Flow
+#### Processing Flow
 
 1. **Pipeline.observe()** initializes a **Wavefront**
 2. The **Wavefront** passes sequentially through each **Layer**
 3. Each **Layer** applies its **Elements** to the **Wavefront**
 4. The final result is returned (image, intensity, etc.)
 
-### Typical Chain Example
+#### Typical Chain Example
 
 ```
 Scene → TelescopeArray → Atmosphere → AdaptiveOptics → Coronagraph → Camera
@@ -586,7 +586,7 @@ Scene → TelescopeArray → Atmosphere → AdaptiveOptics → Coronagraph → C
 
 Each component transforms the wavefront according to its physical properties, enabling realistic end-to-end simulation of astronomical observations.
 
-## Implementation Notes
+### Implementation Notes
 
 - Abstract classes (`Element`, `Layer`) define the common interface
 - All classes inheriting from `Element` or `Layer` must implement `process()`

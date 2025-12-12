@@ -1,4 +1,4 @@
-# Contributing to HELIOS
+# 🤝 Contributing
 
 ## Full Agent Development Strategy
 

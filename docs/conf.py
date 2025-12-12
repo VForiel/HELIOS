@@ -96,7 +96,7 @@ myst_fence_as_directive = [
 
 html_theme = 'breeze'
 html_title = 'HELIOS'
-html_static_path = []  # No static files for now
+html_static_path = ['_static']  # Include custom CSS
 
 html_context = {
     "github_user": "VForiel",
@@ -108,3 +108,8 @@ html_context = {
 html_theme_options = {
     "emojis_header_nav": True,
 }
+
+# Custom CSS files
+html_css_files = [
+    'custom.css',
+]

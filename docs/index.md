@@ -1,4 +1,4 @@
-# HELIOS Documentation
+# 🔭 HELIOS Documentation
 
 **Hierarchical End-to-end Lightpath & Instrumental response Simulation**
 
@@ -90,35 +90,8 @@ flowchart LR
 :maxdepth: 2
 :caption: Contents:
 
+getting_started
 api/index
 contribute
 architecture
-```
-
-## Quick Start
-
-```python
-import helios
-from astropy import units as u
-
-# Create a scene
-scene = helios.Scene(distance=10*u.pc)
-scene.add(helios.Star(temperature=5700*u.K, magnitude=5))
-
-# Define telescope array (automatically detects single vs interferometric mode)
-telescope = helios.TelescopeArray(latitude=0*u.deg, longitude=0*u.deg)
-pupil = helios.Pupil(diameter=8*u.m)
-telescope.add_collector(pupil=pupil, position=(0, 0), size=8*u.m)
-
-# For interferometry, add more collectors at different positions:
-# telescope.add_collector(pupil=pupil, position=(47, 0), size=8*u.m)
-# telescope.is_interferometric()  # Returns True if multiple baselines
-
-# Setup pipeline and run
-pipeline = helios.Pipeline()
-pipeline.add_layer(scene)
-pipeline.add_layer(telescope)
-pipeline.add_layer(helios.Camera(pixels=(1024, 1024)))
-
-image = pipeline.observe()
 ```
