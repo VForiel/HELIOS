@@ -4,12 +4,16 @@ import { ReactFlowProvider } from 'reactflow';
 import PipelineEditor from './components/flow/PipelineEditor';
 import ErrorBoundary from './components/ErrorBoundary';
 import { getElementIcon } from './utils/iconMap';
+import { useTranslation } from './utils/i18n';
 // Keep config components for passing state logic or if used internally
 import SceneConfig from './components/SceneConfig';
 import TelescopeConfig from './components/TelescopeConfig';
 import AtmosphereConfig from './components/AtmosphereConfig';
 
 function App() {
+    // Language state
+    const { t, language, setLanguage, languages } = useTranslation();
+
     // State
     const [stars, setStars] = useState([{ temperature: 5778, magnitude: 4.83, x_arcsec: 0, y_arcsec: 0 }]);
     const [planets, setPlanets] = useState([{ mass: 1.0, separation: 1.0, angle: 0.0, radius: 1.0 }]);
@@ -103,75 +107,75 @@ function App() {
                         <div className="p-4 space-y-2 min-w-[256px] mt-4 overflow-y-auto custom-scrollbar flex-1 pb-20">
 
                             {/* Generation */}
-                            <div className="text-xs font-bold text-blue-500 uppercase tracking-wider mb-2">Generation</div>
+                            <div className="text-xs font-bold text-blue-500 uppercase tracking-wider mb-2">{t('sidebar.generation')}</div>
                             <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-blue-500 transition-colors flex items-center"
                                 onDragStart={(event) => onDragStart(event, 'scene')} draggable>
                                 <img src={getElementIcon('scene')} alt="Scene" className="w-4 h-4 mr-3 dark:invert dark:opacity-80" />
-                                <span className="text-slate-700 dark:text-slate-200 text-sm">Scene Source</span>
+                                <span className="text-slate-700 dark:text-slate-200 text-sm">{t('elements.scene')}</span>
                             </div>
                             <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-blue-500 transition-colors flex items-center"
                                 onDragStart={(event) => onDragStart(event, 'atmosphere')} draggable>
                                 <img src={getElementIcon('atmosphere')} alt="Atmosphere" className="w-4 h-4 mr-3 dark:invert dark:opacity-80" />
-                                <span className="text-slate-700 dark:text-slate-200 text-sm">Atmosphere</span>
+                                <span className="text-slate-700 dark:text-slate-200 text-sm">{t('elements.atmosphere')}</span>
                             </div>
 
                             {/* Sampling */}
-                            <div className="text-xs font-bold text-cyan-500 uppercase tracking-wider mb-2 mt-6">Sampling</div>
+                            <div className="text-xs font-bold text-cyan-500 uppercase tracking-wider mb-2 mt-6">{t('sidebar.sampling')}</div>
                             <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-cyan-500 transition-colors flex items-center"
                                 onDragStart={(event) => onDragStart(event, 'telescope')} draggable>
                                 <img src={getElementIcon('telescope')} alt="Telescope" className="w-4 h-4 mr-3 dark:invert dark:opacity-80" />
-                                <span className="text-slate-700 dark:text-slate-200 text-sm">Telescope</span>
+                                <span className="text-slate-700 dark:text-slate-200 text-sm">{t('elements.telescope')}</span>
                             </div>
 
                             {/* Bulk Optics */}
-                            <div className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-2 mt-6">Bulk Optics</div>
+                            <div className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-2 mt-6">{t('sidebar.bulkOptics')}</div>
                             <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-indigo-500 transition-colors flex items-center"
                                 onDragStart={(event) => onDragStart(event, 'lens')} draggable>
                                 <img src={getElementIcon('lens')} alt="Lens" className="w-4 h-4 mr-3 dark:invert dark:opacity-80" />
-                                <span className="text-slate-700 dark:text-slate-200 text-sm">Lens</span>
+                                <span className="text-slate-700 dark:text-slate-200 text-sm">{t('elements.lens')}</span>
                             </div>
                             <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-indigo-500 transition-colors flex items-center"
                                 onDragStart={(event) => onDragStart(event, 'beam_splitter')} draggable>
                                 <img src={getElementIcon('beam_splitter')} alt="Beam Splitter" className="w-4 h-4 mr-3 dark:invert dark:opacity-80" />
-                                <span className="text-slate-700 dark:text-slate-200 text-sm">Beam Splitter</span>
+                                <span className="text-slate-700 dark:text-slate-200 text-sm">{t('elements.beamSplitter')}</span>
                             </div>
                             <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-indigo-500 transition-colors flex items-center"
                                 onDragStart={(event) => onDragStart(event, 'coronagraph')} draggable>
                                 <img src={getElementIcon('coronagraph')} alt="Coronagraph" className="w-4 h-4 mr-3 dark:invert dark:opacity-80" />
-                                <span className="text-slate-700 dark:text-slate-200 text-sm">Coronagraph</span>
+                                <span className="text-slate-700 dark:text-slate-200 text-sm">{t('elements.coronagraph')}</span>
                             </div>
 
                             {/* Photonics */}
-                            <div className="text-xs font-bold text-amber-500 uppercase tracking-wider mb-2 mt-6">Photonics</div>
+                            <div className="text-xs font-bold text-amber-500 uppercase tracking-wider mb-2 mt-6">{t('sidebar.photonics')}</div>
                             <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-amber-500 transition-colors flex items-center"
                                 onDragStart={(event) => onDragStart(event, 'fiber_in')} draggable>
                                 <img src={getElementIcon('fiber_in')} alt="Fiber Input" className="w-4 h-4 mr-3 dark:invert dark:opacity-80" />
-                                <span className="text-slate-700 dark:text-slate-200 text-sm">Fiber Input</span>
+                                <span className="text-slate-700 dark:text-slate-200 text-sm">{t('elements.fiberIn')}</span>
                             </div>
                             <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-amber-500 transition-colors flex items-center"
                                 onDragStart={(event) => onDragStart(event, 'fiber_out')} draggable>
                                 <img src={getElementIcon('fiber_out')} alt="Fiber Output" className="w-4 h-4 mr-3 dark:invert dark:opacity-80" />
-                                <span className="text-slate-700 dark:text-slate-200 text-sm">Fiber Output</span>
+                                <span className="text-slate-700 dark:text-slate-200 text-sm">{t('elements.fiberOut')}</span>
                             </div>
                             <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-amber-500 transition-colors flex items-center"
                                 onDragStart={(event) => onDragStart(event, 'mmi')} draggable>
                                 <img src={getElementIcon('mmi')} alt="MMI Coupler" className="w-4 h-4 mr-3 dark:invert dark:opacity-80" />
-                                <span className="text-slate-700 dark:text-slate-200 text-sm">MMI Coupler</span>
+                                <span className="text-slate-700 dark:text-slate-200 text-sm">{t('elements.mmi')}</span>
                             </div>
 
                             {/* Detection */}
-                            <div className="text-xs font-bold text-pink-500 uppercase tracking-wider mb-2 mt-6">Detection</div>
+                            <div className="text-xs font-bold text-pink-500 uppercase tracking-wider mb-2 mt-6">{t('sidebar.detection')}</div>
                             <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-pink-500 transition-colors flex items-center"
                                 onDragStart={(event) => onDragStart(event, 'camera')} draggable>
                                 <img src={getElementIcon('camera')} alt="Camera" className="w-4 h-4 mr-3 dark:invert dark:opacity-80" />
-                                <span className="text-slate-700 dark:text-slate-200 text-sm">Camera</span>
+                                <span className="text-slate-700 dark:text-slate-200 text-sm">{t('elements.camera')}</span>
                             </div>
                         </div>
 
                         <div className="mt-auto p-4 border-t border-slate-200 dark:border-slate-800 min-w-[256px]">
                             {image && (
                                 <div className="relative group cursor-pointer" onClick={() => window.open(image, '_blank')}>
-                                    <div className="absolute top-0 right-0 bg-blue-600 text-xs px-2 py-1 rounded-bl text-white z-10">Result</div>
+                                    <div className="absolute top-0 right-0 bg-blue-600 text-xs px-2 py-1 rounded-bl text-white z-10">{t('sidebar.result')}</div>
                                     <div className="absolute bottom-2 right-2 bg-white/10 backdrop-blur-sm p-1.5 rounded hover:bg-white/20 transition-colors z-10"
                                         onClick={(e) => {
                                             e.stopPropagation();
@@ -182,14 +186,14 @@ function App() {
                                             a.click();
                                             setTimeout(() => document.body.removeChild(a), 1000);
                                         }}
-                                        title="Download Image"
+                                        title={t('sidebar.downloadImage')}
                                     >
                                         <Download className="w-4 h-4 text-white" />
                                     </div>
                                     <img src={image} className="w-full h-32 object-contain bg-black rounded border border-slate-300 dark:border-slate-700" alt="Result thumbnail" />
                                 </div>
                             )}
-                            {loading && <div className="text-center text-xs text-blue-500 dark:text-blue-400 mt-2 animate-pulse">Running Simulation...</div>}
+                            {loading && <div className="text-center text-xs text-blue-500 dark:text-blue-400 mt-2 animate-pulse">{t('sidebar.running')}</div>}
                             {error && <div className="text-xs text-red-500 dark:text-red-400 mt-2 bg-red-100 dark:bg-red-900/20 p-2 rounded">{error}</div>}
                         </div>
                     </div>
@@ -207,6 +211,10 @@ function App() {
                             onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
                             onToggleTheme={toggleTheme}
                             isDark={theme === 'dark'}
+                            language={language}
+                            setLanguage={setLanguage}
+                            languages={languages}
+                            t={t}
                         />
                     </div>
                 </div>

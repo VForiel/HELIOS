@@ -16,7 +16,7 @@ import 'reactflow/dist/style.css';
 import TelescopeNode from './nodes/TelescopeNode';
 import CameraNode from './nodes/CameraNode';
 import GenericNode from './nodes/GenericNode';
-import { Menu, Sun, Moon, Heart, Github, Book, Download, Upload, Cpu, Disc, Divide, GitFork, Zap, Activity, Hand, MousePointer2, Stars, Search, Camera, CloudFog, X, Code } from 'lucide-react';
+import { Menu, Sun, Moon, Heart, Github, Book, Download, Upload, Cpu, Disc, Divide, GitFork, Zap, Activity, Hand, MousePointer2, Stars, Search, Camera, CloudFog, X, Code, Languages } from 'lucide-react';
 import { getElementIcon, getPhotonicIcon } from '../../utils/iconMap';
 
 import LayerNode from './nodes/LayerNode';
@@ -64,7 +64,11 @@ export default function PipelineEditor({
     runSimulation,
     onToggleSidebar,
     onToggleTheme,
-    isDark
+    isDark,
+    language,
+    setLanguage,
+    languages,
+    t
 }) {
     const reactFlowWrapper = useRef(null);
     const edgeUpdateSuccessful = useRef(true);
@@ -75,6 +79,9 @@ export default function PipelineEditor({
     // Inspect Modal State
     const [inspectData, setInspectData] = useState(null); // { image: blobUrl, title: string }
     const [inspectLoading, setInspectLoading] = useState(false);
+
+    // Language Dropdown State
+    const [isLanguageDropdownOpen, setIsLanguageDropdownOpen] = useState(false);
 
     // Toast Notification State
     const [toasts, setToasts] = useState([]); // Array of { id, message, type }
@@ -498,7 +505,7 @@ export default function PipelineEditor({
     useMemo(() => {
         setNodes((nds) =>
             nds.map((node) => {
-                let newData = { ...node.data, onInspect: handleInspect };
+                let newData = { ...node.data, onInspect: handleInspect, t };
                 if (node.type === 'scene') {
                     newData = { ...newData, stars, setStars, planets, setPlanets, zodiacal, setZodiacal };
                 } else if (node.type === 'atmosphere') {
@@ -511,7 +518,7 @@ export default function PipelineEditor({
                 return { ...node, data: newData };
             })
         );
-    }, [stars, planets, zodiacal, atmosphere, telescope, camera, setNodes]); // Added handleInspect implicitly via closure
+    }, [stars, planets, zodiacal, atmosphere, telescope, camera, setNodes, t]); // Added t dependency
 
 
 
@@ -544,7 +551,7 @@ export default function PipelineEditor({
             lastInvalidConnection.current = {
                 sourceType: 'self',
                 targetType: 'self',
-                message: "Un nœud ne peut pas se connecter à lui-même"
+                message: t('validation.selfLoop')
             };
             return false;
         }
@@ -589,7 +596,7 @@ export default function PipelineEditor({
         }
 
         return isValid;
-    }, [nodes, getLayerType]);
+    }, [nodes, getLayerType, t]);
 
 
 
@@ -604,7 +611,7 @@ export default function PipelineEditor({
 
         // Check for self-loop
         if (params.source === params.target) {
-            showToast("❌ Connexion invalide : Un nœud ne peut pas se connecter à lui-même");
+            showToast(`❌ ${t('validation.invalidConnection')} : ${t('validation.selfLoop')}`);
             return;
         }
 
@@ -634,15 +641,15 @@ export default function PipelineEditor({
             if (!isValid) {
                 // Show toast with explanation
                 const ruleExplanations = {
-                    'GenerationLayer': 'Les couches de génération (Scene, Atmosphere) peuvent seulement se connecter à d\'autres couches de génération ou à des couches d\'échantillonnage (Telescope)',
-                    'SamplingLayer': 'Les couches d\'échantillonnage (Telescope) peuvent seulement se connecter à des couches optiques (Lens, etc.) ou de détection (Camera)',
-                    'OpticalLayer': 'Les couches optiques (Lens, Coronagraph, etc.) peuvent seulement se connecter à d\'autres couches optiques ou de détection (Camera)',
-                    'DetectionLayer': 'Les couches de détection (Camera) peuvent seulement se connecter à des couches de traitement de données',
-                    'DataLayer': 'Les couches de données peuvent seulement se connecter à d\'autres couches de données'
+                    'GenerationLayer': t('validation.generationLayer'),
+                    'SamplingLayer': t('validation.samplingLayer'),
+                    'OpticalLayer': t('validation.opticalLayer'),
+                    'DetectionLayer': t('validation.detectionLayer'),
+                    'DataLayer': t('validation.dataLayer')
                 };
 
-                const explanation = ruleExplanations[sourceType] || `${sourceType} ne peut pas se connecter à ${targetType}`;
-                showToast(`❌ Connexion invalide : ${explanation}`);
+                const explanation = ruleExplanations[sourceType] || `${sourceType} cannot connect to ${targetType}`;
+                showToast(`❌ ${t('validation.invalidConnection')} : ${explanation}`);
                 console.warn(`Invalid connection: ${sourceType} cannot connect to ${targetType}`);
                 return; // Don't create the connection
             }
@@ -670,7 +677,7 @@ export default function PipelineEditor({
             );
             return addEdge({ ...params, animated: true, type: edgeType, data: edgeData }, filtered);
         });
-    }, [setEdges, reactFlowInstance, registerChange, showToast, getLayerType]);
+    }, [setEdges, reactFlowInstance, registerChange, showToast, getLayerType, t]);
 
     const onEdgeUpdateStart = useCallback(() => {
         edgeUpdateSuccessful.current = false;
@@ -703,25 +710,25 @@ export default function PipelineEditor({
 
             if (message) {
                 // Self-loop or custom message
-                showToast(`❌ Connexion invalide : ${message}`);
+                showToast(`❌ ${t('validation.invalidConnection')} : ${message}`);
             } else {
                 // Type-based validation error
                 const ruleExplanations = {
-                    'GenerationLayer': 'Les couches de génération (Scene, Atmosphere) peuvent seulement se connecter à d\'autres couches de génération ou à des couches d\'échantillonnage (Telescope)',
-                    'SamplingLayer': 'Les couches d\'échantillonnage (Telescope) peuvent seulement se connecter à des couches optiques (Lens, etc.) ou de détection (Camera)',
-                    'OpticalLayer': 'Les couches optiques (Lens, Coronagraph, etc.) peuvent seulement se connecter à d\'autres couches optiques ou de détection (Camera)',
-                    'DetectionLayer': 'Les couches de détection (Camera) peuvent seulement se connecter à des couches de traitement de données',
-                    'DataLayer': 'Les couches de données peuvent seulement se connecter à d\'autres couches de données'
+                    'GenerationLayer': t('validation.generationLayer'),
+                    'SamplingLayer': t('validation.samplingLayer'),
+                    'OpticalLayer': t('validation.opticalLayer'),
+                    'DetectionLayer': t('validation.detectionLayer'),
+                    'DataLayer': t('validation.dataLayer')
                 };
 
-                const explanation = ruleExplanations[sourceType] || `${sourceType} ne peut pas se connecter à ${targetType}`;
-                showToast(`❌ Connexion invalide : ${explanation}`);
+                const explanation = ruleExplanations[sourceType] || `${sourceType} cannot connect to ${targetType}`;
+                showToast(`❌ ${t('validation.invalidConnection')} : ${explanation}`);
                 console.warn(`Invalid connection attempt: ${sourceType} cannot connect to ${targetType}`);
             }
 
             lastInvalidConnection.current = null;
         }
-    }, [showToast]);
+    }, [showToast, t]);
 
 
 
@@ -1078,12 +1085,12 @@ export default function PipelineEditor({
                     <button
                         onClick={onToggleSidebar}
                         className={"p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors " + (isDark ? 'text-slate-300' : 'text-slate-600')}
-                        title="Toggle Sidebar"
+                        title={t('toolbar.toggleSidebar')}
                     >
                         <Menu className="w-5 h-5" />
                     </button>
                     <h1 className="text-xl font-bold bg-gradient-to-r from-blue-500 to-indigo-500 bg-clip-text text-transparent">
-                        HELIOS <span className="text-xs font-normal text-slate-500 inline-block ml-2 align-middle">Visual Architect</span>
+                        HELIOS <span className="text-xs font-normal text-slate-500 inline-block ml-2 align-middle">{t('app.subtitle')}</span>
                     </h1>
                 </div>
 
@@ -1094,7 +1101,7 @@ export default function PipelineEditor({
                         target="_blank"
                         rel="noopener noreferrer"
                         className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-pink-500 hover:text-pink-600"
-                        title="Support the Project"
+                        title={t('toolbar.support')}
                     >
                         <Heart className="w-5 h-5 fill-current" />
                     </a>
@@ -1105,7 +1112,7 @@ export default function PipelineEditor({
                         target="_blank"
                         rel="noopener noreferrer"
                         className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-slate-600 dark:text-slate-300 hover:text-black dark:hover:text-white"
-                        title="GitHub Repository"
+                        title={t('toolbar.github')}
                     >
                         <Github className="w-5 h-5" />
                     </a>
@@ -1116,7 +1123,7 @@ export default function PipelineEditor({
                         target="_blank"
                         rel="noopener noreferrer"
                         className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400"
-                        title="Project Documentation"
+                        title={t('toolbar.documentation')}
                     >
                         <Book className="w-5 h-5" />
                     </a>
@@ -1135,7 +1142,7 @@ export default function PipelineEditor({
                     <button
                         onClick={handleImportClick}
                         className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400"
-                        title="Import Pipeline"
+                        title={t('toolbar.import')}
                     >
                         <Upload className="w-5 h-5" />
                     </button>
@@ -1143,7 +1150,7 @@ export default function PipelineEditor({
                     <button
                         onClick={handleExport}
                         className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400"
-                        title="Export Pipeline"
+                        title={t('toolbar.export')}
                     >
                         <Download className="w-5 h-5" />
                     </button>
@@ -1151,7 +1158,7 @@ export default function PipelineEditor({
                     <button
                         onClick={handleGetCode}
                         className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400"
-                        title="Get Python Code"
+                        title={t('toolbar.getCode')}
                     >
                         <Code className="w-5 h-5" />
                     </button>
@@ -1160,16 +1167,67 @@ export default function PipelineEditor({
                     <button
                         onClick={onToggleTheme}
                         className={"p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors " + (isDark ? 'text-yellow-400' : 'text-slate-600')}
-                        title="Toggle Theme"
+                        title={t('toolbar.toggleTheme')}
                     >
                         {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
                     </button>
+
+                    {/* Language Selector */}
+                    <div className="relative">
+                        <button
+                            onClick={() => setIsLanguageDropdownOpen(!isLanguageDropdownOpen)}
+                            className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 flex items-center gap-1"
+                            title={t('toolbar.language')}
+                        >
+                            <Languages className="w-5 h-5" />
+                            <span className="text-xs font-semibold">
+                                {languages.find(l => l.code === language)?.flag || '🌐'}
+                            </span>
+                        </button>
+
+                        {/* Language Dropdown */}
+                        {isLanguageDropdownOpen && (
+                            <>
+                                {/* Backdrop to close dropdown */}
+                                <div
+                                    className="fixed inset-0 z-40"
+                                    onClick={() => setIsLanguageDropdownOpen(false)}
+                                ></div>
+
+                                {/* Dropdown Menu */}
+                                <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 z-50 overflow-hidden">
+                                    {languages.map((lang) => (
+                                        <button
+                                            key={lang.code}
+                                            onClick={() => {
+                                                setLanguage(lang.code);
+                                                setIsLanguageDropdownOpen(false);
+                                            }}
+                                            className={`w-full px-4 py-2.5 text-left flex items-center gap-3 transition-colors ${language === lang.code
+                                                ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
+                                                : 'hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300'
+                                                }`}
+                                        >
+                                            <span className="text-xl">{lang.flag}</span>
+                                            <div className="flex-1">
+                                                <div className="font-medium text-sm">{lang.nativeName}</div>
+                                                <div className="text-xs opacity-60">{lang.name}</div>
+                                            </div>
+                                            {language === lang.code && (
+                                                <div className="w-2 h-2 rounded-full bg-blue-600 dark:bg-blue-400"></div>
+                                            )}
+                                        </button>
+                                    ))}
+                                </div>
+                            </>
+                        )}
+                    </div>
 
                     <button
                         onClick={handleRun}
                         className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2 rounded-lg text-sm font-semibold shadow-md transition-transform active:scale-95 flex items-center"
                     >
-                        Run Pipeline
+                        {t('toolbar.runPipeline')}
                     </button>
                 </div>
             </div>

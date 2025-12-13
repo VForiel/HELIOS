@@ -7,6 +7,9 @@ import SignalVisualizer from './SignalVisualizer';
 export default function LayerNode({ id, data, selected }) {
     const { deleteElements, setNodes } = useReactFlow();
 
+    // Get translation function from data
+    const t = data.t || ((key) => key); // Fallback if t is not provided
+
     // Data.elements is the list of items [ { type, config, label, icon... }, ... ]
     const elements = data.elements || [];
     const io = data.io || { incoming: 0, capacity: 0, outgoing: 0, status: 'unknown' };
@@ -57,7 +60,7 @@ export default function LayerNode({ id, data, selected }) {
                 bg: 'bg-blue-100 dark:bg-blue-900/30',
                 text: 'text-blue-600 dark:text-blue-400',
                 border: 'hover:border-blue-500',
-                title: 'Generation',
+                title: t('nodes.generation'),
                 Icon: Stars
             };
         }
@@ -66,7 +69,7 @@ export default function LayerNode({ id, data, selected }) {
                 bg: 'bg-cyan-100 dark:bg-cyan-900/30',
                 text: 'text-cyan-600 dark:text-cyan-400',
                 border: 'hover:border-cyan-500',
-                title: 'Sampling',
+                title: t('nodes.sampling'),
                 Icon: Search
             };
         }
@@ -75,7 +78,7 @@ export default function LayerNode({ id, data, selected }) {
                 bg: 'bg-pink-100 dark:bg-pink-900/30',
                 text: 'text-pink-600 dark:text-pink-400',
                 border: 'hover:border-pink-500',
-                title: 'Detection',
+                title: t('nodes.detection'),
                 Icon: Camera
             };
         }
@@ -84,7 +87,7 @@ export default function LayerNode({ id, data, selected }) {
                 bg: 'bg-amber-100 dark:bg-amber-900/30',
                 text: 'text-amber-600 dark:text-amber-400',
                 border: 'hover:border-amber-500',
-                title: 'Photonics',
+                title: t('nodes.photonics'),
                 Icon: Cpu
             };
         }
@@ -93,7 +96,7 @@ export default function LayerNode({ id, data, selected }) {
             bg: 'bg-indigo-100 dark:bg-indigo-900/30',
             text: 'text-indigo-600 dark:text-indigo-400',
             border: 'hover:border-indigo-500',
-            title: 'Bulk Optics',
+            title: t('nodes.bulkOptics'),
             Icon: Disc
         };
     };
@@ -117,7 +120,7 @@ export default function LayerNode({ id, data, selected }) {
                     type="target"
                     position={Position.Left}
                     className="!static !w-auto !h-auto !min-w-[24px] !min-h-[24px] !p-1 !rounded-md !border !bg-transparent !border-transparent !shadow-none group-hover:!bg-slate-100 group-hover:dark:!bg-slate-900 group-hover:!border-slate-300 group-hover:dark:!border-slate-600 hover:!border-blue-500 hover:!bg-blue-50 dark:hover:!bg-slate-800 transition-colors flex items-center justify-center"
-                    title="Input Connection"
+                    title={t('nodes.inputConnection')}
                     style={{ transform: 'none' }}
                 >
                     <SignalVisualizer config={paramsInput} layout="vertical" spacing={15} isInput={true} />
@@ -130,7 +133,7 @@ export default function LayerNode({ id, data, selected }) {
                     type="source"
                     position={Position.Right}
                     className="!static !w-auto !h-auto !min-w-[24px] !min-h-[24px] !p-1 !rounded-md !border !bg-transparent !border-transparent !shadow-none group-hover:!bg-slate-100 group-hover:dark:!bg-slate-900 group-hover:!border-slate-300 group-hover:dark:!border-slate-600 hover:!border-purple-500 hover:!bg-purple-50 dark:hover:!bg-slate-800 transition-colors flex items-center justify-center"
-                    title="Output Connection"
+                    title={t('nodes.outputConnection')}
                     style={{ transform: 'none' }}
                 >
                     <SignalVisualizer config={paramsOutput} layout="vertical" spacing={15} isInput={false} />
@@ -150,7 +153,7 @@ export default function LayerNode({ id, data, selected }) {
                     <div>
                         <h3 className="font-semibold text-slate-800 dark:text-slate-200 text-sm">{style.title}</h3>
                         <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">
-                            {elements.length} Elements | {io.incoming || 0} In / {io.outgoing || 0} Out
+                            {elements.length} {t('nodes.elements')} | {io.incoming || 0} {t('nodes.in')} / {io.outgoing || 0} {t('nodes.out')}
                         </p>
                     </div>
                 </div>
@@ -159,7 +162,7 @@ export default function LayerNode({ id, data, selected }) {
                     <button
                         onClick={() => deleteElements({ nodes: [{ id }] })}
                         className="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-red-500 transition-colors"
-                        title="Delete Layer"
+                        title={t('nodes.deleteLayer')}
                     >
                         <Trash2 className="w-4 h-4" />
                     </button>
@@ -171,7 +174,7 @@ export default function LayerNode({ id, data, selected }) {
                 {
                     elements.length === 0 && (
                         <div className="text-center p-4 border border-dashed border-slate-300 dark:border-slate-700 rounded-lg text-slate-400 text-xs italic">
-                            Drop items here to add elements...
+                            {t('nodes.dropHere')}
                         </div>
                     )
                 }
