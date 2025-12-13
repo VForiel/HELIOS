@@ -6,7 +6,7 @@ export default function LayerVisualizer({ type, config }) {
     const [image, setImage] = useState(null);
     const [filename, setFilename] = useState(`${type}_preview.png`);
     const [loading, setLoading] = useState(false);
-    const [viewMode, setViewMode] = useState('geometry'); // 'geometry' or 'sed'
+    const [viewMode, setViewMode] = useState(type === 'camera' ? 'processed' : 'geometry'); // 'geometry' or 'sed' for scene, 'processed'/'raw'/'dark' for camera
 
     // Figsize state: [width, height] in inches
     const [figSize, setFigSize] = useState([6, 6]);
@@ -84,7 +84,7 @@ export default function LayerVisualizer({ type, config }) {
 
     // Re-fetch when toggling mode
     useEffect(() => {
-        if (showPreview && type === 'scene' && !loading) {
+        if (showPreview && (type === 'scene' || type === 'camera') && !loading) {
             handlePreview();
         }
     }, [viewMode]);
@@ -101,11 +101,15 @@ export default function LayerVisualizer({ type, config }) {
 
             {showPreview && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setShowPreview(false)}>
-                    <div className="bg-white dark:bg-slate-900 rounded-lg shadow-2xl border border-slate-200 dark:border-slate-700 max-w-2xl w-full flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+                    <div className="bg-white dark:bg-slate-900 rounded-lg shadow-2xl border border-slate-200 dark:border-slate-700 max-w-3xl w-full flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
                         {/* Header */}
                         <div className="flex items-center justify-between p-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950">
                             <div className="flex items-center gap-4">
-                                <h3 className="font-semibold text-slate-800 dark:text-slate-200 capitalize">{type} Visualization</h3>
+                                <h3 className="font-semibold text-slate-800 dark:text-slate-200 capitalize">
+                                    {type === 'camera'
+                                        ? `Camera - ${viewMode === 'processed' ? 'Processed' : viewMode === 'raw' ? 'Raw' : 'Dark'}`
+                                        : `${type} Visualization`}
+                                </h3>
                                 {type === 'scene' && (
                                     <div className="flex bg-slate-200 dark:bg-slate-800 rounded p-1">
                                         <button
@@ -125,6 +129,37 @@ export default function LayerVisualizer({ type, config }) {
                                                 }`}
                                         >
                                             SED
+                                        </button>
+                                    </div>
+                                )}
+                                {type === 'camera' && (
+                                    <div className="flex bg-slate-200 dark:bg-slate-800 rounded p-1">
+                                        <button
+                                            onClick={() => setViewMode('processed')}
+                                            className={`px-3 py-1 text-xs font-medium rounded transition-all ${viewMode === 'processed'
+                                                ? 'bg-white dark:bg-slate-700 text-pink-600 dark:text-pink-400 shadow-sm'
+                                                : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                                                }`}
+                                        >
+                                            Processed
+                                        </button>
+                                        <button
+                                            onClick={() => setViewMode('raw')}
+                                            className={`px-3 py-1 text-xs font-medium rounded transition-all ${viewMode === 'raw'
+                                                ? 'bg-white dark:bg-slate-700 text-pink-600 dark:text-pink-400 shadow-sm'
+                                                : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                                                }`}
+                                        >
+                                            Raw
+                                        </button>
+                                        <button
+                                            onClick={() => setViewMode('dark')}
+                                            className={`px-3 py-1 text-xs font-medium rounded transition-all ${viewMode === 'dark'
+                                                ? 'bg-white dark:bg-slate-700 text-pink-600 dark:text-pink-400 shadow-sm'
+                                                : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                                                }`}
+                                        >
+                                            Dark
                                         </button>
                                     </div>
                                 )}

@@ -6,8 +6,9 @@ import matplotlib.pyplot as plt
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Tuple, Literal, Union, Dict, Any
+from datetime import datetime
 from astropy import units as u
 
 import helios
@@ -55,6 +56,7 @@ class ZodiacalData(BaseModel):
     radius: Optional[float] = None
 
 class ScenePayload(BaseModel):
+    model_config = ConfigDict(extra='allow')  # Allow view_mode and figsize from frontend
     stars: List[StarData] = []
     planets: List[PlanetData] = []
     zodiacal: ZodiacalData = ZodiacalData()
@@ -83,6 +85,7 @@ class TelescopePayload(BaseModel):
     collectors: List[CollectorData] = []
 
 class CameraPayload(BaseModel):
+    model_config = ConfigDict(extra='allow')  # Allow view_mode and figsize from frontend
     wavelength: float = 1.0
     exposure: float = 0.1
 
@@ -1202,10 +1205,23 @@ def preview_layer(layer_conf: LayerConfig):
             filename = "telescope_preview.png"
             
         elif layer_conf.type == 'camera':
-            # Visualize Camera (Dark Frame / Noise)
+            # Visualize Camera (Processed / Raw / Dark Frame)
             try:
+                # Extract view_mode FIRST (before creating CameraPayload which consumes the dict)
+                view_mode = 'processed'
                 if isinstance(layer_conf.config, dict):
-                    config = CameraPayload(**layer_conf.config)
+                    view_mode = layer_conf.config.get('view_mode', 'processed')
+                    print(f"[DEBUG] Camera config dict: {layer_conf.config}")
+                    print(f"[DEBUG] Extracted view_mode: {view_mode}")
+                elif hasattr(layer_conf.config, 'view_mode'):
+                    view_mode = layer_conf.config.view_mode
+                    print(f"[DEBUG] view_mode from object: {view_mode}")
+                
+                # Now create the CameraPayload (filter out view_mode and figsize which are not CameraPayload fields)
+                if isinstance(layer_conf.config, dict):
+                    # Create a copy without view_mode and figsize
+                    camera_config = {k: v for k, v in layer_conf.config.items() if k not in ['view_mode', 'figsize']}
+                    config = CameraPayload(**camera_config)
                 else:
                     config = layer_conf.config
                     
@@ -1215,24 +1231,48 @@ def preview_layer(layer_conf: LayerConfig):
                     wavelength=float(config.wavelength) * u.um
                 )
                 
-                # plot creates its own figure, let's try to control it if possible
-                # Camera.plot returns ax
-                # We can resize the figure controls
-                ax = camera.plot(wavefront=None, show=False, title="Detector Dark Frame Preview")
-                fig = ax.figure
-                fig.set_size_inches(figsize)
+                print(f"[DEBUG] About to generate image with view_mode: {view_mode}")
+                
+                # Get the appropriate image based on view_mode
+                if view_mode == 'processed':
+                    image_data = camera.get_image(wavefront=None)
+                    title = "Camera - Processed Image (Dark Subtracted)"
+                    filename = "camera_processed.png"
+                elif view_mode == 'raw':
+                    image_data = camera.get_raw_image(wavefront=None)
+                    title = "Camera - Raw Image (Signal + Dark + Noise)"
+                    filename = "camera_raw.png"
+                else:  # 'dark'
+                    image_data = camera.get_dark()
+                    title = "Camera - Dark Frame"
+                    filename = "camera_dark.png"
+                
+                # Create figure and plot
+                fig, ax = plt.subplots(figsize=figsize)
+                im = ax.imshow(image_data, origin='lower', cmap='inferno')
+                
+                # Colorbar
+                cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+                cbar.set_label('Counts (e-)')
+                
+                # Labels and Title
+                ax.set_xlabel('Pixel X')
+                ax.set_ylabel('Pixel Y')
+                ax.set_title(title)
                 
                 fig.savefig(buf, format='png', bbox_inches='tight', dpi=100)
                 plt.close(fig)
-                filename = "camera_preview.png"
                 
             except Exception as e:
                 print(f"Error previewing camera: {e}")
+                import traceback
+                traceback.print_exc()
                 fig, ax = plt.subplots(figsize=(4, 1))
                 ax.text(0.5, 0.5, f"Error: {str(e)}", ha='center', va='center')
                 ax.axis('off')
                 fig.savefig(buf, format='png')
                 plt.close(fig)
+                filename = "camera_error.png"
 
         buf.seek(0)
         return Response(
