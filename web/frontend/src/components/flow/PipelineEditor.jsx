@@ -526,7 +526,11 @@ export default function PipelineEditor({
         }
 
         setEdges((eds) => {
-            const filtered = eds.filter(e => e.target !== params.target);
+            // Remove existing connections TO the target (prevents multiple inputs)
+            // AND remove existing connections FROM the source (prevents multiple outputs)
+            const filtered = eds.filter(e =>
+                e.target !== params.target && e.source !== params.source
+            );
             return addEdge({ ...params, animated: true, type: edgeType, data: edgeData }, filtered);
         });
     }, [setEdges, reactFlowInstance, registerChange]);
