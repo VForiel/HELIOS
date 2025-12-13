@@ -31,11 +31,11 @@ export const calculateNodeIO = (node) => {
     // Check for Sources/Splitters (Telescopes)
     const telescopes = elements.filter(el => el.type === 'telescope');
     if (telescopes.length > 0) {
-        type = 'splitter'; // Changed from 'source' to 'splitter' (1 In -> N Out)
-        // Update: Visual Request -> Show N Inputs for N Collectors to imply parallel beam collection
+        type = 'splitter'; // 1 In -> N Out (sampling layer)
+        // A sampling layer receives 1 wavefront and samples it at N collector positions
         const collectorCount = telescopes.reduce((acc, t) => acc + (t.config?.collectors?.length || 1), 0);
-        totalInputs = collectorCount;
-        totalOutputs = collectorCount;
+        totalInputs = 1; // Single input wavefront
+        totalOutputs = collectorCount; // N output beams (one per collector)
     }
 
     // Check for Sinks (Cameras)
@@ -178,11 +178,19 @@ export const propagateSignals = (nodes, edges) => {
             };
         }
 
+
         // Propagate to Outgoing Edges
         const outgoingEdges = edges.filter(e => e.source === current.id);
         for (const e of outgoingEdges) {
             const edge = edgeMap.get(e.id);
             edge.data.pathCount = outgoingCount;
+
+            // Set edge type based on pathCount
+            if (outgoingCount > 1) {
+                edge.type = 'parallel';
+            } else {
+                edge.type = edge.type || 'default'; // Keep existing type if already set
+            }
 
             // Pass Geometry Data to Edge for alignment
             edge.data.sourceCapacity = currentNode.data.io.outputCapacity;
@@ -203,6 +211,7 @@ export const propagateSignals = (nodes, edges) => {
                 queue.push(targetNode);
             }
         }
+
     }
 
     return {

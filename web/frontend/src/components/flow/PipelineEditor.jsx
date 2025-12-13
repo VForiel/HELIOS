@@ -132,7 +132,7 @@ export default function PipelineEditor({
             // Simple diffing logic 
             const updatedEdges = newEdges.map((ne, i) => {
                 const old = edges.find(e => e.id === ne.id);
-                if (!old || (old.data?.pathCount !== ne.data.pathCount)) {
+                if (!old || (old.data?.pathCount !== ne.data.pathCount) || (old.type !== ne.type)) {
                     edgesChanged = true;
                     return ne; // Use new edge
                 }
