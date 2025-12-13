@@ -104,8 +104,8 @@ export default function LayerVisualizer({ type, config }) {
                     <div className="bg-white dark:bg-slate-900 rounded-lg shadow-2xl border border-slate-200 dark:border-slate-700 max-w-3xl w-full flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
                         {/* Header */}
                         <div className="flex items-center justify-between p-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950">
-                            <div className="flex items-center gap-4">
-                                <h3 className="font-semibold text-slate-800 dark:text-slate-200 capitalize">
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <h3 className="font-semibold text-slate-800 dark:text-slate-200 capitalize whitespace-nowrap">
                                     {type === 'camera'
                                         ? `Camera - ${viewMode === 'processed' ? 'Processed' : viewMode === 'raw' ? 'Raw' : 'Dark'}`
                                         : `${type} Visualization`}
@@ -136,7 +136,7 @@ export default function LayerVisualizer({ type, config }) {
                                     <div className="flex bg-slate-200 dark:bg-slate-800 rounded p-1">
                                         <button
                                             onClick={() => setViewMode('processed')}
-                                            className={`px-3 py-1 text-xs font-medium rounded transition-all ${viewMode === 'processed'
+                                            className={`px-2 py-1 text-xs font-medium rounded transition-all ${viewMode === 'processed'
                                                 ? 'bg-white dark:bg-slate-700 text-pink-600 dark:text-pink-400 shadow-sm'
                                                 : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
                                                 }`}
@@ -145,7 +145,7 @@ export default function LayerVisualizer({ type, config }) {
                                         </button>
                                         <button
                                             onClick={() => setViewMode('raw')}
-                                            className={`px-3 py-1 text-xs font-medium rounded transition-all ${viewMode === 'raw'
+                                            className={`px-2 py-1 text-xs font-medium rounded transition-all ${viewMode === 'raw'
                                                 ? 'bg-white dark:bg-slate-700 text-pink-600 dark:text-pink-400 shadow-sm'
                                                 : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
                                                 }`}
@@ -154,7 +154,7 @@ export default function LayerVisualizer({ type, config }) {
                                         </button>
                                         <button
                                             onClick={() => setViewMode('dark')}
-                                            className={`px-3 py-1 text-xs font-medium rounded transition-all ${viewMode === 'dark'
+                                            className={`px-2 py-1 text-xs font-medium rounded transition-all ${viewMode === 'dark'
                                                 ? 'bg-white dark:bg-slate-700 text-pink-600 dark:text-pink-400 shadow-sm'
                                                 : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
                                                 }`}
