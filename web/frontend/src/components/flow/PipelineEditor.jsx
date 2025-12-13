@@ -76,6 +76,19 @@ export default function PipelineEditor({
     const [inspectData, setInspectData] = useState(null); // { image: blobUrl, title: string }
     const [inspectLoading, setInspectLoading] = useState(false);
 
+    // Toast Notification State
+    const [toasts, setToasts] = useState([]); // Array of { id, message, type }
+
+    const showToast = useCallback((message, type = 'error') => {
+        const id = Date.now();
+        setToasts(prev => [...prev, { id, message, type }]);
+        // Auto-remove after 5 seconds
+        setTimeout(() => {
+            setToasts(prev => prev.filter(t => t.id !== id));
+        }, 5000);
+    }, []);
+
+
     // Initial Nodes (Layers)
     const initialNodes = [
         {
@@ -503,17 +516,141 @@ export default function PipelineEditor({
 
 
 
-    // Enforce 1-to-1 connections per handle and prevent self-loops
-    const isValidConnection = useCallback((connection) => {
-        return connection.source !== connection.target;
+    // Layer type mapping (must match backend)
+    const getLayerType = useCallback((elementType) => {
+        const mapping = {
+            'scene': 'GenerationLayer',
+            'atmosphere': 'GenerationLayer',
+            'telescope': 'SamplingLayer',
+            'lens': 'OpticalLayer',
+            'beam_splitter': 'OpticalLayer',
+            'coronagraph': 'OpticalLayer',
+            'fiber_in': 'OpticalLayer',
+            'fiber_out': 'OpticalLayer',
+            'mmi': 'OpticalLayer',
+            'photonic': 'OpticalLayer',
+            'camera': 'DetectionLayer',
+        };
+        return mapping[elementType] || 'Layer';
     }, []);
+
+    // Track invalid connection attempts
+    const lastInvalidConnection = useRef(null);
+
+    // Comprehensive connection validation with layer types (NO TOAST - only returns boolean)
+    const isValidConnection = useCallback((connection) => {
+        // Prevent self-loops
+        if (connection.source === connection.target) {
+            lastInvalidConnection.current = {
+                sourceType: 'self',
+                targetType: 'self',
+                message: "Un nœud ne peut pas se connecter à lui-même"
+            };
+            return false;
+        }
+
+        // Get source and target nodes
+        const sourceNode = nodes.find(n => n.id === connection.source);
+        const targetNode = nodes.find(n => n.id === connection.target);
+
+        if (!sourceNode || !targetNode) return false;
+
+        // Determine layer types from elements
+        const getNodeLayerType = (node) => {
+            if (!node.data.elements || node.data.elements.length === 0) return null;
+            // Use the first element's layer type (nodes should be homogeneous)
+            return getLayerType(node.data.elements[0].type);
+        };
+
+        const sourceType = getNodeLayerType(sourceNode);
+        const targetType = getNodeLayerType(targetNode);
+
+        if (!sourceType || !targetType) return true; // Allow if types unknown (fallback)
+
+        // Strict validation rules matching backend
+        const validConnections = {
+            'GenerationLayer': ['GenerationLayer', 'SamplingLayer'],
+            'SamplingLayer': ['OpticalLayer', 'DetectionLayer'],  // Can connect to BOTH
+            'OpticalLayer': ['OpticalLayer', 'DetectionLayer'],
+            'DetectionLayer': ['DataLayer'],
+            'DataLayer': ['DataLayer'],
+            'Layer': ['Layer', 'GenerationLayer', 'SamplingLayer', 'OpticalLayer', 'DetectionLayer', 'DataLayer'] // Fallback
+        };
+
+        const allowed = validConnections[sourceType] || [];
+        const isValid = allowed.includes(targetType);
+
+        if (!isValid) {
+            // Store the invalid connection details for onConnectEnd to show toast
+            lastInvalidConnection.current = {
+                sourceType,
+                targetType
+            };
+        }
+
+        return isValid;
+    }, [nodes, getLayerType]);
+
+
 
     const onConnect = useCallback((params) => {
         if (!reactFlowInstance) return;
+
+        // Validate connection and show toast if invalid
+        const sourceNode = reactFlowInstance.getNode(params.source);
+        const targetNode = reactFlowInstance.getNode(params.target);
+
+        if (!sourceNode || !targetNode) return;
+
+        // Check for self-loop
+        if (params.source === params.target) {
+            showToast("❌ Connexion invalide : Un nœud ne peut pas se connecter à lui-même");
+            return;
+        }
+
+        // Get layer types
+        const getNodeLayerType = (node) => {
+            if (!node.data.elements || node.data.elements.length === 0) return null;
+            return getLayerType(node.data.elements[0].type);
+        };
+
+        const sourceType = getNodeLayerType(sourceNode);
+        const targetType = getNodeLayerType(targetNode);
+
+        // Validate if types are known
+        if (sourceType && targetType) {
+            const validConnections = {
+                'GenerationLayer': ['GenerationLayer', 'SamplingLayer'],
+                'SamplingLayer': ['OpticalLayer', 'DetectionLayer'],
+                'OpticalLayer': ['OpticalLayer', 'DetectionLayer'],
+                'DetectionLayer': ['DataLayer'],
+                'DataLayer': ['DataLayer'],
+                'Layer': ['Layer', 'GenerationLayer', 'SamplingLayer', 'OpticalLayer', 'DetectionLayer', 'DataLayer']
+            };
+
+            const allowed = validConnections[sourceType] || [];
+            const isValid = allowed.includes(targetType);
+
+            if (!isValid) {
+                // Show toast with explanation
+                const ruleExplanations = {
+                    'GenerationLayer': 'Les couches de génération (Scene, Atmosphere) peuvent seulement se connecter à d\'autres couches de génération ou à des couches d\'échantillonnage (Telescope)',
+                    'SamplingLayer': 'Les couches d\'échantillonnage (Telescope) peuvent seulement se connecter à des couches optiques (Lens, etc.) ou de détection (Camera)',
+                    'OpticalLayer': 'Les couches optiques (Lens, Coronagraph, etc.) peuvent seulement se connecter à d\'autres couches optiques ou de détection (Camera)',
+                    'DetectionLayer': 'Les couches de détection (Camera) peuvent seulement se connecter à des couches de traitement de données',
+                    'DataLayer': 'Les couches de données peuvent seulement se connecter à d\'autres couches de données'
+                };
+
+                const explanation = ruleExplanations[sourceType] || `${sourceType} ne peut pas se connecter à ${targetType}`;
+                showToast(`❌ Connexion invalide : ${explanation}`);
+                console.warn(`Invalid connection: ${sourceType} cannot connect to ${targetType}`);
+                return; // Don't create the connection
+            }
+        }
+
         registerChange();
 
         // Edge Type Logic based on Layer Content
-        const sourceNode = reactFlowInstance.getNode(params.source);
         let edgeType = 'default';
         let edgeData = { pathCount: 1 };
 
@@ -533,7 +670,7 @@ export default function PipelineEditor({
             );
             return addEdge({ ...params, animated: true, type: edgeType, data: edgeData }, filtered);
         });
-    }, [setEdges, reactFlowInstance, registerChange]);
+    }, [setEdges, reactFlowInstance, registerChange, showToast, getLayerType]);
 
     const onEdgeUpdateStart = useCallback(() => {
         edgeUpdateSuccessful.current = false;
@@ -550,6 +687,43 @@ export default function PipelineEditor({
         }
         edgeUpdateSuccessful.current = true;
     }, [setEdges]);
+
+    // Track connection attempt to show toast on failed connections
+    const connectionAttempt = useRef(null);
+
+    const onConnectStart = useCallback((event, { nodeId, handleType }) => {
+        // Clear previous invalid connection tracking
+        lastInvalidConnection.current = null;
+    }, []);
+
+    const onConnectEnd = useCallback((event) => {
+        // Check if the last connection attempt was invalid
+        if (lastInvalidConnection.current) {
+            const { sourceType, targetType, message } = lastInvalidConnection.current;
+
+            if (message) {
+                // Self-loop or custom message
+                showToast(`❌ Connexion invalide : ${message}`);
+            } else {
+                // Type-based validation error
+                const ruleExplanations = {
+                    'GenerationLayer': 'Les couches de génération (Scene, Atmosphere) peuvent seulement se connecter à d\'autres couches de génération ou à des couches d\'échantillonnage (Telescope)',
+                    'SamplingLayer': 'Les couches d\'échantillonnage (Telescope) peuvent seulement se connecter à des couches optiques (Lens, etc.) ou de détection (Camera)',
+                    'OpticalLayer': 'Les couches optiques (Lens, Coronagraph, etc.) peuvent seulement se connecter à d\'autres couches optiques ou de détection (Camera)',
+                    'DetectionLayer': 'Les couches de détection (Camera) peuvent seulement se connecter à des couches de traitement de données',
+                    'DataLayer': 'Les couches de données peuvent seulement se connecter à d\'autres couches de données'
+                };
+
+                const explanation = ruleExplanations[sourceType] || `${sourceType} ne peut pas se connecter à ${targetType}`;
+                showToast(`❌ Connexion invalide : ${explanation}`);
+                console.warn(`Invalid connection attempt: ${sourceType} cannot connect to ${targetType}`);
+            }
+
+            lastInvalidConnection.current = null;
+        }
+    }, [showToast]);
+
+
 
 
     const onDragOver = useCallback((event) => {
@@ -1007,6 +1181,8 @@ export default function PipelineEditor({
                     onNodesChange={onNodesChange}
                     onEdgesChange={onEdgesChange}
                     onConnect={onConnect}
+                    onConnectStart={onConnectStart}
+                    onConnectEnd={onConnectEnd}
                     onEdgeUpdate={onEdgeUpdate}
                     onEdgeUpdateStart={onEdgeUpdateStart}
                     onEdgeUpdateEnd={onEdgeUpdateEnd}
@@ -1070,6 +1246,53 @@ export default function PipelineEditor({
                         </div>
                     </div>
                 )}
+
+                {/* Toast Notifications - Bottom Right */}
+                <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-md">
+                    {toasts.map(toast => (
+                        <div
+                            key={toast.id}
+                            className={`
+                                px-4 py-3 rounded-lg shadow-lg border
+                                ${toast.type === 'error'
+                                    ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-800 dark:text-red-200'
+                                    : 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-200'
+                                }
+                                animate-slide-in-right
+                                backdrop-blur-sm
+                            `}
+                            style={{
+                                animation: 'slideInRight 0.3s ease-out'
+                            }}
+                        >
+                            <div className="flex items-start gap-2">
+                                <div className="flex-1 text-sm font-medium">
+                                    {toast.message}
+                                </div>
+                                <button
+                                    onClick={() => setToasts(prev => prev.filter(t => t.id !== toast.id))}
+                                    className="text-current opacity-50 hover:opacity-100 transition-opacity"
+                                >
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                {/* Add keyframes for animation */}
+                <style>{`
+                    @keyframes slideInRight {
+                        from {
+                            transform: translateX(100%);
+                            opacity: 0;
+                        }
+                        to {
+                            transform: translateX(0);
+                            opacity: 1;
+                        }
+                    }
+                `}</style>
             </div>
         </div >
     );

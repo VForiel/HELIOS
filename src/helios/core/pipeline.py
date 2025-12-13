@@ -1482,26 +1482,44 @@ class Pipeline:
             # Check transitions
             for t_curr in curr_types:
                 for t_next in next_types:
+                    # Strict layer connection rules:
                     # Generation -> Generation (OK)
                     # Generation -> Sampling (OK)
                     # Sampling -> Optical (OK)
+                    # Sampling -> Detection (OK)
                     # Optical -> Optical (OK)
                     # Optical -> Detection (OK)
                     # Detection -> Data (OK)
                     # Data -> Data (OK)
                     
                     is_valid = False
+                    error_msg = None
                     
                     if issubclass(t_curr, GenerationLayer):
-                        if issubclass(t_next, (GenerationLayer, SamplingLayer)): is_valid = True
+                        if issubclass(t_next, (GenerationLayer, SamplingLayer)): 
+                            is_valid = True
+                        else:
+                            error_msg = f"{t_curr.__name__} can only connect to GenerationLayer or SamplingLayer, not {t_next.__name__}"
                     elif issubclass(t_curr, SamplingLayer):
-                        if issubclass(t_next, (OpticalLayer, DetectionLayer)): is_valid = True
+                        if issubclass(t_next, (OpticalLayer, DetectionLayer)): 
+                            is_valid = True
+                        else:
+                            error_msg = f"{t_curr.__name__} can only connect to OpticalLayer or DetectionLayer, not {t_next.__name__}"
                     elif issubclass(t_curr, OpticalLayer):
-                        if issubclass(t_next, (OpticalLayer, DetectionLayer)): is_valid = True
+                        if issubclass(t_next, (OpticalLayer, DetectionLayer)): 
+                            is_valid = True
+                        else:
+                            error_msg = f"{t_curr.__name__} can only connect to OpticalLayer or DetectionLayer, not {t_next.__name__}"
                     elif issubclass(t_curr, DetectionLayer):
-                        if issubclass(t_next, DataLayer): is_valid = True
+                        if issubclass(t_next, DataLayer): 
+                            is_valid = True
+                        else:
+                            error_msg = f"{t_curr.__name__} can only connect to DataLayer, not {t_next.__name__}"
                     elif issubclass(t_curr, DataLayer):
-                        if issubclass(t_next, DataLayer): is_valid = True
+                        if issubclass(t_next, DataLayer): 
+                            is_valid = True
+                        else:
+                            error_msg = f"{t_curr.__name__} can only connect to DataLayer, not {t_next.__name__}"
                     # Fallback for legacy generic Layer
                     elif t_curr == Layer or t_next == Layer:
                          is_valid = True
@@ -1509,8 +1527,8 @@ class Pipeline:
                     else:
                          is_valid = True
                     
-                    if not is_valid:
-                         print(f"Warning: Invalid architecture transition from {t_curr.__name__} to {t_next.__name__}")
+                    if not is_valid and error_msg:
+                         print(f"Warning: Invalid architecture transition - {error_msg}")
 
 
     def plot_uml_diagram(self, figsize: Tuple[float, float] = (16, 10), 

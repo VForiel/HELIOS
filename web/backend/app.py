@@ -118,6 +118,34 @@ class PipelineRequest(BaseModel):
 
 # --- Helper Functions ---
 
+def get_layer_type(element_type: str) -> str:
+    """
+    Map element type to layer type class name for validation.
+    
+    This mapping enforces the architectural rules:
+    - GenerationLayer: Scene, Atmosphere (generate electromagnetic fields)
+    - SamplingLayer: Telescope (samples continuous field into discrete beams)
+    - OpticalLayer: Lenses, mirrors, fibers, photonics (propagate/modify beams)
+    - DetectionLayer: Camera (converts photons to digital data)
+    - DataLayer: Data processing algorithms (not yet implemented)
+    """
+    mapping = {
+        'scene': 'GenerationLayer',
+        'atmosphere': 'GenerationLayer',
+        'telescope': 'SamplingLayer',
+        'lens': 'OpticalLayer',
+        'beam_splitter': 'OpticalLayer',
+        'coronagraph': 'OpticalLayer',
+        'fiber_in': 'OpticalLayer',
+        'fiber_out': 'OpticalLayer',
+        'photonic': 'OpticalLayer',
+        'mmi': 'OpticalLayer',
+        'camera': 'DetectionLayer',
+        # DataLayer types will be added when implemented
+    }
+    return mapping.get(element_type, 'Layer')  # Fallback to generic Layer
+
+
 def create_scene(config: ScenePayload):
     # Fixed distance for conversion scaling (10 pc -> 1 AU = 0.1 arcsec)
     sys_distance = 10 * u.pc 
