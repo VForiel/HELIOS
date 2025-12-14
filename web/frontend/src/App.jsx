@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Play, Download } from 'lucide-react';
-import { ReactFlowProvider } from 'reactflow';
+import { ReactFlowProvider, useNodesState, useEdgesState } from 'reactflow';
 import PipelineEditor from './components/flow/PipelineEditor';
+import LayeredView from './components/LayeredView';
 import ErrorBoundary from './components/ErrorBoundary';
 import { getElementIcon } from './utils/iconMap';
 import { useTranslation } from './utils/i18n';
@@ -9,6 +10,7 @@ import { useTranslation } from './utils/i18n';
 import SceneConfig from './components/SceneConfig';
 import TelescopeConfig from './components/TelescopeConfig';
 import AtmosphereConfig from './components/AtmosphereConfig';
+import { LayoutList, GitGraph } from 'lucide-react';
 
 function App() {
     // Language state
@@ -35,6 +37,50 @@ function App() {
     // UI State
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [theme, setTheme] = useState('dark');
+    const [viewMode, setViewMode] = useState('graph'); // 'graph' | 'layered'
+
+    // Hoisted Graph State
+    // Initial Nodes (Layers)
+    const initialNodes = [
+        {
+            id: 'layer-1',
+            type: 'layer',
+            position: { x: 50, y: 100 },
+            data: {
+                elements: [
+                    { type: 'scene', label: 'Scene', config: { stars, planets, zodiacal }, iconPath: getElementIcon('scene') }
+                ]
+            }
+        },
+        {
+            id: 'layer-2',
+            type: 'layer',
+            position: { x: 500, y: 100 },
+            data: {
+                elements: [
+                    { type: 'telescope', label: 'Telescope', config: telescope, iconPath: getElementIcon('telescope') }
+                ]
+            }
+        },
+        {
+            id: 'layer-3',
+            type: 'layer',
+            position: { x: 950, y: 100 },
+            data: {
+                elements: [
+                    { type: 'camera', label: 'Camera', config: camera, iconPath: getElementIcon('camera') }
+                ]
+            }
+        }
+    ];
+
+    const initialEdges = [
+        { id: 'e1-2', source: 'layer-1', target: 'layer-2', animated: true },
+        { id: 'e2-3', source: 'layer-2', target: 'layer-3', animated: true },
+    ];
+
+    const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
+    const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
 
     // Theme Effect
     React.useEffect(() => {
@@ -201,6 +247,12 @@ function App() {
                     {/* GRAPH EDITOR AREA */}
                     <div className="flex-1 relative h-full bg-slate-50 dark:bg-slate-950">
                         <PipelineEditor
+                            nodes={nodes}
+                            setNodes={setNodes}
+                            onNodesChange={onNodesChange}
+                            edges={edges}
+                            setEdges={setEdges}
+                            onEdgesChange={onEdgesChange}
                             stars={stars} setStars={setStars}
                             planets={planets} setPlanets={setPlanets}
                             zodiacal={zodiacal} setZodiacal={setZodiacal}
@@ -215,6 +267,8 @@ function App() {
                             setLanguage={setLanguage}
                             languages={languages}
                             t={t}
+                            viewMode={viewMode}
+                            setViewMode={setViewMode}
                         />
                     </div>
                 </div>

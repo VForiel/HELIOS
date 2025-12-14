@@ -1,28 +1,24 @@
 import React, { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import ReactFlow, {
-    ReactFlowProvider,
-    addEdge,
-    updateEdge,
-    useNodesState,
-    useEdgesState,
+    useReactFlow,
     Controls,
     ControlButton,
     Background,
-    MiniMap,
-    useReactFlow,
-    Panel
+    addEdge,
+    updateEdge
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import TelescopeNode from './nodes/TelescopeNode';
 import CameraNode from './nodes/CameraNode';
 import GenericNode from './nodes/GenericNode';
-import { Menu, Sun, Moon, Heart, Github, Book, Download, Upload, Cpu, Disc, Divide, GitFork, Zap, Activity, Hand, MousePointer2, Stars, Search, Camera, CloudFog, X, Code, Languages } from 'lucide-react';
+import { Menu, Sun, Moon, Heart, Github, Book, Download, Upload, Cpu, Disc, Divide, GitFork, Zap, Activity, Hand, MousePointer2, Stars, Search, Camera, CloudFog, X, Code, Languages, LayoutList, GitGraph } from 'lucide-react';
 import { getElementIcon, getPhotonicIcon } from '../../utils/iconMap';
 
 import LayerNode from './nodes/LayerNode';
 import ParallelEdge from './edges/ParallelEdge';
 import CodeViewer from '../CodeViewer';
 import SimulationControls from '../SimulationControls';
+import LayeredView from '../LayeredView';
 
 const nodeTypes = {
     layer: LayerNode
@@ -36,26 +32,52 @@ let id = 1;
 const getId = () => `node_${id++}`;
 
 // History Helper
-const useUndoRedo = (initialNodes, initialEdges) => {
+const useUndoRedo = (nodes, edges, setNodes, setEdges) => {
     const [past, setPast] = useState([]);
     const [future, setFuture] = useState([]);
 
-    const takeSnapshot = useCallback((nodes, edges) => {
+    const takeSnapshot = useCallback(() => {
         setPast(old => {
             const newPast = [...old, { nodes, edges }];
             if (newPast.length > 50) newPast.shift(); // Limit to 50
             return newPast;
         });
         setFuture([]);
-    }, []);
+    }, [nodes, edges]);
 
     const canUndo = past.length > 0;
     const canRedo = future.length > 0;
 
-    return { past, setPast, future, setFuture, takeSnapshot, canUndo, canRedo };
+    const undo = useCallback(() => {
+        if (!canUndo) return;
+        const current = { nodes, edges };
+        const previous = past[past.length - 1];
+        const newPast = past.slice(0, past.length - 1);
+
+        setPast(newPast);
+        setFuture([current, ...future]);
+        setNodes(previous.nodes);
+        setEdges(previous.edges);
+    }, [nodes, edges, past, future, canUndo, setNodes, setEdges]); // Added dependencies
+
+    const redo = useCallback(() => {
+        if (!canRedo) return;
+        const current = { nodes, edges };
+        const next = future[0];
+        const newFuture = future.slice(1);
+
+        setPast([...past, current]);
+        setFuture(newFuture);
+        setNodes(next.nodes);
+        setEdges(next.edges);
+    }, [nodes, edges, past, future, canRedo, setNodes, setEdges]);
+
+    return { past, setPast, future, setFuture, takeSnapshot, canUndo, canRedo, undo, redo };
 };
 
 export default function PipelineEditor({
+    nodes, setNodes, onNodesChange,
+    edges, setEdges, onEdgesChange,
     stars, setStars,
     planets, setPlanets,
     zodiacal, setZodiacal,
@@ -69,7 +91,9 @@ export default function PipelineEditor({
     language,
     setLanguage,
     languages,
-    t
+    t,
+    viewMode,
+    setViewMode
 }) {
     const reactFlowWrapper = useRef(null);
     const edgeUpdateSuccessful = useRef(true);
@@ -78,14 +102,14 @@ export default function PipelineEditor({
     const [interactionMode, setInteractionMode] = useState('nav'); // 'nav' | 'select'
 
     // Inspect Modal State
-    const [inspectData, setInspectData] = useState(null); // { image: blobUrl, title: string }
+    const [inspectData, setInspectData] = useState(null);
     const [inspectLoading, setInspectLoading] = useState(false);
 
     // Language Dropdown State
     const [isLanguageDropdownOpen, setIsLanguageDropdownOpen] = useState(false);
 
     // Toast Notification State
-    const [toasts, setToasts] = useState([]); // Array of { id, message, type }
+    const [toasts, setToasts] = useState([]);
 
     // Bottom Bar State
     const [isBottomBarExpanded, setIsBottomBarExpanded] = useState(false);
@@ -93,85 +117,33 @@ export default function PipelineEditor({
     const showToast = useCallback((message, type = 'error') => {
         const id = Date.now();
         setToasts(prev => [...prev, { id, message, type }]);
-        // Auto-remove after 5 seconds
         setTimeout(() => {
             setToasts(prev => prev.filter(t => t.id !== id));
         }, 5000);
     }, []);
 
-
-    // Initial Nodes (Layers)
-    const initialNodes = [
-        {
-            id: 'layer-1',
-            type: 'layer',
-            position: { x: 50, y: 100 },
-            data: {
-                elements: [
-                    { type: 'scene', label: 'Scene', config: { stars, planets, zodiacal }, iconPath: getElementIcon('scene') }
-                ]
-            }
-        },
-        {
-            id: 'layer-2',
-            type: 'layer',
-            position: { x: 500, y: 100 },
-            data: {
-                elements: [
-                    { type: 'telescope', label: 'Telescope', config: telescope, iconPath: getElementIcon('telescope') }
-                ]
-            }
-        },
-        {
-            id: 'layer-3',
-            type: 'layer',
-            position: { x: 950, y: 100 },
-            data: {
-                elements: [
-                    { type: 'camera', label: 'Camera', config: camera, iconPath: getElementIcon('camera') }
-                ]
-            }
-        }
-    ];
-
-    const initialEdges = [
-        { id: 'e1-2', source: 'layer-1', target: 'layer-2', animated: true },
-        { id: 'e2-3', source: 'layer-2', target: 'layer-3', animated: true },
-    ];
-
-    const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-    const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
-
-    // Sync Edges with Telescope Config (Parallel Paths)
-    // Sync Edges and Calculate IO (Global Propagation)
-    // This effect runs whenever nodes or edges structure changes to ensure consistency
+    // Sync Logic... (Kept as is but removing local state)
     useEffect(() => {
         import('../../utils/optical_logic').then(({ propagateSignals }) => {
             const { nodes: newNodes, edges: newEdges } = propagateSignals(nodes, edges);
 
-            // Check for differences to avoid infinite loop
             let nodesChanged = false;
             let edgesChanged = false;
 
-            // Simple diffing logic 
             const updatedEdges = newEdges.map((ne, i) => {
                 const old = edges.find(e => e.id === ne.id);
                 if (!old || (old.data?.pathCount !== ne.data.pathCount) || (old.type !== ne.type)) {
                     edgesChanged = true;
-                    return ne; // Use new edge
+                    return ne;
                 }
-                return old; // Keep old reference
+                return old;
             });
-            // If length changed (e.g. edge added/removed outside this logic), setEdges triggers anyway. 
-            // We focus on data updates here.
 
             const updatedNodes = newNodes.map((nn, i) => {
                 const old = nodes.find(n => n.id === nn.id);
-                // Compare IO state
                 const newIO = nn.data.io;
                 const oldIO = old?.data?.io;
 
-                // Deep comparison for IO object
                 if (!oldIO || JSON.stringify(oldIO) !== JSON.stringify(newIO)) {
                     nodesChanged = true;
                     return nn;
@@ -190,72 +162,19 @@ export default function PipelineEditor({
             }
         });
     }, [
-        // Dependencies to trigger recalculation
         nodes.map(n => JSON.stringify(n.data.elements)).join(','),
         edges.map(e => e.source + e.target).join(','),
         setNodes,
         setEdges
     ]);
 
-
-
-    // OLD LOGIC COMMENTED OUT
-    /* 
-    useEffect(() => {
-        const collectorCount = telescope.collectors ? telescope.collectors.length : 1;
-        console.log('[PipelineEditor] Telescope update detected. Collectors:', collectorCount);
-    
-        setEdges(eds => eds.map(e => {
-            const sourceNode = nodes.find(n => n.id === e.source);
-            // Check if source node is a layer containing a telescope element
-            const hasTelescope = sourceNode?.data?.elements?.some(el => el.type === 'telescope');
-    
-            if (hasTelescope) {
-                console.log(`[PipelineEditor] Checking edge ${e.id} from telescope source. Current pathCount: ${e.data?.pathCount}, Target: ${collectorCount}`);
-                if (e.data?.pathCount !== collectorCount || e.type !== 'parallel') {
-                    console.log(`[PipelineEditor] Updating edge ${e.id} to parallel with pathCount ${collectorCount}`);
-                    return {
-                        ...e,
-                        type: 'parallel',
-                        data: { ...e.data, pathCount: collectorCount }
-                    };
-                }
-            }
-            return e;
-        }));
-    }, [telescope.collectors, nodes, setEdges]); */
-
-    // Undo/Redo Hook
-    const { past, setPast, future, setFuture, takeSnapshot, canUndo, canRedo } = useUndoRedo(initialNodes, initialEdges);
-
-    const undo = useCallback(() => {
-        if (!canUndo) return;
-        const current = { nodes, edges };
-        const previous = past[past.length - 1];
-        const newPast = past.slice(0, past.length - 1);
-
-        setPast(newPast);
-        setFuture([current, ...future]);
-        setNodes(previous.nodes);
-        setEdges(previous.edges);
-    }, [nodes, edges, past, future, canUndo, setNodes, setEdges, setPast, setFuture]);
-
-    const redo = useCallback(() => {
-        if (!canRedo) return;
-        const current = { nodes, edges };
-        const next = future[0];
-        const newFuture = future.slice(1);
-
-        setPast([...past, current]);
-        setFuture(newFuture);
-        setNodes(next.nodes);
-        setEdges(next.edges);
-    }, [nodes, edges, past, future, canRedo, setNodes, setEdges, setPast, setFuture]);
+    // Undo/Redo Hook (Passed props)
+    const { takeSnapshot, undo, redo } = useUndoRedo(nodes, edges, setNodes, setEdges);
 
     // Snapshot Trigger
     const registerChange = useCallback(() => {
-        takeSnapshot(nodes, edges);
-    }, [nodes, edges, takeSnapshot]);
+        takeSnapshot();
+    }, [takeSnapshot]);
 
     // Copy/Paste Logic
     const handleCopy = useCallback(() => {
@@ -288,149 +207,71 @@ export default function PipelineEditor({
 
 
 
+    // Refs for stable access in callbacks to prevent dependency loops
+    const nodesRef = useRef(nodes);
+    const edgesRef = useRef(edges);
+    useEffect(() => {
+        nodesRef.current = nodes;
+        edgesRef.current = edges;
+    }, [nodes, edges]);
+
     // Inspect Logic
-    const handleInspect = async (nodeId) => {
+    const handleInspect = useCallback(async (nodeId) => {
+        const currentNodes = nodesRef.current;
+        const currentEdges = edgesRef.current;
+
         try {
             setInspectLoading(true);
             setInspectData(null);
 
-            // 1. Get Linear Pipeline
-            const pipeline = getPipeline();
+            // Re-implement getPipeline logic locally using refs to avoid dependency on the function
+            // Traversal Logic
+            const getPipelineSnapshot = () => {
+                const startNodes = currentNodes.filter(n =>
+                    n.data.elements && n.data.elements.some(el => el.type === 'scene')
+                );
+                const root = startNodes.length > 0 ? startNodes[0] : currentNodes[0];
 
-            // 2. Find Index of Node in Linear Pipeline
-            // We need to trace which "linear index" corresponds to this nodeId.
-            // Simplified Assumption: The order in getPipeline() matches the topological order.
-            // But complex branching makes this tricky.
-            // BETTER APPROACH:
-            // Send the node ID to backend? But backend doesn't know our graph IDs.
-            // Refined Logic:
-            // The getPipeline() returns a nested list structure for parallel branches.
-            // The backend flattens this. 
-            // We need to match the flattening logic to find the index.
+                if (!root) return [];
 
-            // For now, let's just find the index of the node in the `nodes` array? No, that's arbitrary.
-            // Let's rely on the fact that `getPipeline` traverses from Root.
-            // We need to find "Where is this node in the flattened execution list?"
+                let visited = new Set();
+                const buildChain = (node) => {
+                    const layerElements = node.data.elements.map(el => ({
+                        type: el.type,
+                        config: el.config,
+                        metadata: { position: node.position }
+                    }));
 
-            // Let's implement a quick helper to flatten and find index.
-            let targetIndex = -1;
-            let currentIndex = 0;
+                    const outEdges = currentEdges.filter(e => e.source === node.id);
+                    const targets = outEdges
+                        .map(e => currentNodes.find(n => n.id === e.target))
+                        .filter(n => n && !visited.has(n.id));
 
-            const traverseAndFind = (list) => {
-                // Using the same logic as backend's "flat_layers.append(layer_obj)"
-                // Backend iterates: for layer_conf in request.layers:
-                // if nested? Backend currently iterates top level.
+                    targets.forEach(t => visited.add(t.id));
 
-                // Wait, backend `request.layers` is `List[LayerConfig]`.
-                // `getPipeline` returns a list where items can be arrays (parallel).
-                // Does backend support nested lists in `PipelineRequest`?
-                // Checking app.py... `class PipelineRequest(BaseModel): layers: List[LayerConfig]`
-                // And `LayerConfig` has `type`, `config`. 
-                // If `getPipeline` returns nested arrays, Pydantic might fail or flatten it if configured?
-                // Let's check `getPipeline` output structure again.
-                // It returns `[layerElements, branches]`.
-                // This seems to NOT match `List[LayerConfig]` directly if strict.
+                    if (targets.length === 0) return [layerElements];
+                    else if (targets.length === 1) return [layerElements, ...buildChain(targets[0])];
+                    else {
+                        const branches = targets.map(t => buildChain(t));
+                        return [layerElements, branches];
+                    }
+                };
 
-                // Assuming the current backend `run_pipeline` iterates flatly, 
-                // `getPipeline` likely generates a flat list for linear cases,
-                // but for parallel?
-                // The backend flat_layers used in `inspect_node` iterates `request.layers` directly.
-
-                // Let's assume we flatten the pipeline before sending.
-                // We will send a Flattened version where parallel branches are serialized sequentially?
-                // Or we just send the linear path UP TO the target node?
-                // "Inspet Node" implies inspecting the state AT that node.
-
-                // Simple Robust Strategy:
-                // 1. Find the path from Root to Target Node.
-                // 2. Construct a pipeline of just that path.
-                // 3. Send that to `/api/simulate` (or inspect endpoint) and get the LAST layer's output.
-                // This avoids index confusion and handles branching implicitly by just picking one path.
-                // BUT, if it's a combiner node, it needs all inputs.
-
-                // Revised Strategy:
-                // 1. Serialize the FULL graph to a flat list (Topological Sort).
-                // 2. Find the index of the target node in that sort.
-                // 3. Send flat list + index to backend.
-
-                // Implementation of Topological Sort / Flattening:
-                // We reuse `getPipeline` but we need to know which item in the result corresponds to our `nodeId`.
-
-                // HACK for now: Flatten the graph based on visual position or edge traversal?
-                // `getPipeline` seems to try to build a structure.
-                // Let's just traverse and count.
-
+                visited.add(root.id);
+                return buildChain(root);
             };
 
-            // Hacky Index Finding based on `getPipeline` recursion order:
-            // We will modify `getPipeline` or traverse its result?
-            // Since `getPipeline` returns config objects, we lose the ID.
-
-            // Let's just try to map IDs to the output of getPipeline.
-            // We will re-run the `buildChain` logic but keep IDs.
-
-            const startNodes = nodes.filter(n =>
+            // Traversal for Index Finding
+            const startNodes = currentNodes.filter(n =>
                 n.data.elements && n.data.elements.some(el => el.type === 'scene')
             );
-            const root = startNodes.length > 0 ? startNodes[0] : nodes[0];
+            const root = startNodes.length > 0 ? startNodes[0] : currentNodes[0];
 
             if (!root) throw new Error("No Scene Found");
 
-            let flatList = [];
-            let visited = new Set();
-            let foundIndex = -1;
-
-            const traverse = (node) => {
-                if (!node) return;
-                visited.add(node.id);
-
-                // Add this layer to list
-                if (node.id === nodeId) {
-                    foundIndex = flatList.length;
-                }
-                flatList.push(node); // Placeholder
-
-                const outEdges = edges.filter(e => e.source === node.id);
-                if (outEdges.length > 0) {
-                    // If multiple, which one first?
-                    // Depth first
-                    const nextNodes = outEdges.map(e => nodes.find(n => n.id === e.target)).filter(n => n && !visited.has(n.id));
-                    nextNodes.forEach(traverse);
-                }
-            };
-
-            traverse(root);
-
-            if (foundIndex === -1) {
-                // Maybe node is disconnected? 
-                // Or maybe it IS the root? (Included in logic)
-                console.warn("Target node not found in traversal", nodeId);
-                // Fallback if disconnected: just inspect it alone? (Won't verify inputs)
-                return;
-            }
-
-            targetIndex = foundIndex;
-            const finalPipeline = getPipeline(); // This needs to match the traversal order!
-            // `getPipeline` currently handles branching by returning nested arrays?
-            // If the backend expects a flat list, we should FLATTEN `finalPipeline` similarly.
-
-            const flatPipelineConfig = finalPipeline.flat(Infinity);
-            // Note: `getPipeline` builds `[layerElements]`. layerElements is a list of dicts.
-            // So `flat(Infinity)` will give a list of dicts (elements).
-            // This assumes 1 Node = 1 Layer = 1 Element in backend?
-            // Backend `inspect_node` iterates layers.
-            // `LayerNode` has `elements` (array). 
-            // When we flattened, did we preserve the "Node = Layer" grouping?
-            // `getPipeline` logic: `return [layerElements, ...]`
-            // layerElements is `[{type, config}, {type, config}]`.
-            // So one Node can trigger MULTIPLE backend layers.
-
-            // We need to count ELEMENTS, not Nodes.
-            // Recalculate index based on elements count.
-
             let elementIndex = 0;
             let targetElementIndex = -1;
-            visited = new Set();
+            let visited = new Set();
 
             const traverseElements = (node) => {
                 if (!node) return;
@@ -438,20 +279,15 @@ export default function PipelineEditor({
 
                 const nodeElements = node.data.elements || [];
                 if (node.id === nodeId) {
-                    // We want the output of the WHOLE node (last element in it)
-                    // So index is current + length - 1
                     targetElementIndex = elementIndex + nodeElements.length - 1;
                 }
 
                 elementIndex += nodeElements.length;
 
-                const outEdges = edges.filter(e => e.source === node.id);
+                const outEdges = currentEdges.filter(e => e.source === node.id);
                 if (outEdges.length > 0) {
-                    // Sorting to ensure deterministic order matching `getPipeline`
-                    // `getPipeline` filters: `targets = outEdges.map...`
-                    // It uses default edge sort? `edges` array order.
                     const nextNodes = outEdges
-                        .map(e => nodes.find(n => n.id === e.target))
+                        .map(e => currentNodes.find(n => n.id === e.target))
                         .filter(n => n && !visited.has(n.id));
                     nextNodes.forEach(traverseElements);
                 }
@@ -462,6 +298,11 @@ export default function PipelineEditor({
             console.log(`Inspect: Node ${nodeId} -> Element Index ${targetElementIndex}`);
 
             // Send request
+            const finalPipeline = getPipelineSnapshot();
+            // We need to flatten the pipeline structure for the 'layers' argument if backend expects usage of it?
+            // Existing logic passed 'flatPipelineConfig' = finalPipeline.flat(Infinity).
+            const flatPipelineConfig = finalPipeline.flat(Infinity);
+
             const payload = { mode: 'pipeline', layers: flatPipelineConfig };
             const response = await fetch(`/api/inspect_node?target_index=${targetElementIndex}`, {
                 method: 'POST',
@@ -485,28 +326,11 @@ export default function PipelineEditor({
         } finally {
             setInspectLoading(false);
         }
-    };
-
-    // Inject handleInspect into nodes
-    useEffect(() => {
-        setNodes((nds) => nds.map(node => {
-            // Avoid infinite loop by checking if func already set? 
-            // React state updates might be safe, but best to be careful.
-            // We just overwrite it.
-            return { ...node, data: { ...node.data, onInspect: handleInspect } };
-        }));
-    }, [nodes.length]); // Updating on structure change mostly. Or just once? 
-    // Ideally we pass it in `initialNodes` or via `onNodesChange` interception.
-    // But `setNodes` inside `useEffect` with dependency on `nodes` is DANGEROUS (loop).
-    // Let's use a ref or memoized nodes?
-    // BETTER: The `nodes` state in `PipelineEditor` is source of truth.
-    // We should update the data there ONCE or pass it via context?
-    // For now, let's update it in the `useMemo` block where we update other data.
-
-    // --> Moving this logic to line 260-275 block.
+    }, []); // No dependencies, stable!
 
     // Update node data when props change + Inspect Handler
-    useMemo(() => {
+    // Changed from useMemo to useEffect to avoid side-effects during render
+    useEffect(() => {
         setNodes((nds) =>
             nds.map((node) => {
                 let newData = { ...node.data, onInspect: handleInspect, t };
@@ -519,10 +343,14 @@ export default function PipelineEditor({
                 } else if (node.type === 'camera') {
                     newData = { ...newData, config: camera, setConfig: setCamera };
                 }
+
+                // Only return new object if something actually changed? 
+                // Hard to check deep equality cheaply. 
+                // Relying on stable references of `stars`, `atmosphere`, `handleInspect`.
                 return { ...node, data: newData };
             })
         );
-    }, [stars, planets, zodiacal, atmosphere, telescope, camera, setNodes, t]); // Added t dependency
+    }, [stars, planets, zodiacal, atmosphere, telescope, camera, setNodes, t, handleInspect]);
 
 
 
@@ -1099,6 +927,24 @@ export default function PipelineEditor({
                 </div>
 
                 <div className="flex items-center gap-2">
+                    {/* View Switcher */}
+                    <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1 border border-slate-200 dark:border-slate-700 mr-2">
+                        <button
+                            onClick={() => setViewMode('graph')}
+                            className={`p-1.5 rounded transition-colors ${viewMode === 'graph' ? 'bg-white dark:bg-slate-700 shadow text-blue-600 dark:text-blue-400' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                            title={t ? t('toolbar.graphView') : "Graph View"} // Fallback if translation missing
+                        >
+                            <GitGraph className="w-5 h-5" />
+                        </button>
+                        <button
+                            onClick={() => setViewMode('layered')}
+                            className={`p-1.5 rounded transition-colors ${viewMode === 'layered' ? 'bg-white dark:bg-slate-700 shadow text-blue-600 dark:text-blue-400' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                            title={t ? t('toolbar.layeredView') : "Layered View"}
+                        >
+                            <LayoutList className="w-5 h-5" />
+                        </button>
+                    </div>
+
                     {/* Support Button */}
                     <a
                         href="https://paypal.me/vincentforiel"
@@ -1236,50 +1082,60 @@ export default function PipelineEditor({
                 </div>
             </div>
 
-            <div className="flex-1" ref={reactFlowWrapper}>
-                <ReactFlow
-                    nodes={nodes}
-                    edges={edges}
-                    onNodesChange={onNodesChange}
-                    onEdgesChange={onEdgesChange}
-                    onConnect={onConnect}
-                    onConnectStart={onConnectStart}
-                    onConnectEnd={onConnectEnd}
-                    onEdgeUpdate={onEdgeUpdate}
-                    onEdgeUpdateStart={onEdgeUpdateStart}
-                    onEdgeUpdateEnd={onEdgeUpdateEnd}
-                    deleteKeyCode={['Backspace', 'Delete']}
-                    isValidConnection={isValidConnection}
-                    onInit={setReactFlowInstance}
-                    onDrop={onDrop}
-                    onDragOver={onDragOver}
-                    nodeTypes={nodeTypes}
-                    edgeTypes={edgeTypes}
-                    connectionLineType="smoothstep"
-                    selectionOnDrag={interactionMode === 'select'}
-                    panOnDrag={interactionMode === 'nav' || [1, 2]}
-                    selectionMode="partial"
-                    fitView
-                    minZoom={0.1}
-                >
-                    <Controls style={{ bottom: isBottomBarExpanded ? '70px' : '10px', transition: 'bottom 0.3s' }}>
-                        <ControlButton
-                            onClick={() => setInteractionMode('nav')}
-                            title="Navigation Mode (Pan)"
-                            className={interactionMode === 'nav' ? 'text-blue-600 bg-blue-100 font-bold' : ''}
-                        >
-                            <Hand className="w-4 h-4 p-0.5" />
-                        </ControlButton>
-                        <ControlButton
-                            onClick={() => setInteractionMode('select')}
-                            title="Selection Mode (Box Select)"
-                            className={interactionMode === 'select' ? 'text-blue-600 bg-blue-100 font-bold' : ''}
-                        >
-                            <MousePointer2 className="w-4 h-4 p-0.5" />
-                        </ControlButton>
-                    </Controls>
-                    <Background color={isDark ? "#1e293b" : "#e2e8f0"} gap={16} />
-                </ReactFlow>
+            <div className="flex-1 relative" ref={reactFlowWrapper}>
+                {viewMode === 'graph' ? (
+                    <ReactFlow
+                        nodes={nodes}
+                        edges={edges}
+                        onNodesChange={onNodesChange}
+                        onEdgesChange={onEdgesChange}
+                        onConnect={onConnect}
+                        onConnectStart={onConnectStart}
+                        onConnectEnd={onConnectEnd}
+                        onEdgeUpdate={onEdgeUpdate}
+                        onEdgeUpdateStart={onEdgeUpdateStart}
+                        onEdgeUpdateEnd={onEdgeUpdateEnd}
+                        deleteKeyCode={['Backspace', 'Delete']}
+                        isValidConnection={isValidConnection}
+                        onInit={setReactFlowInstance}
+                        onDrop={onDrop}
+                        onDragOver={onDragOver}
+                        nodeTypes={nodeTypes}
+                        edgeTypes={edgeTypes}
+                        connectionLineType="smoothstep"
+                        selectionOnDrag={interactionMode === 'select'}
+                        panOnDrag={interactionMode === 'nav' || [1, 2]}
+                        selectionMode="partial"
+                        fitView
+                        minZoom={0.1}
+                    >
+                        <Controls style={{ bottom: isBottomBarExpanded ? '70px' : '10px', transition: 'bottom 0.3s' }}>
+                            <ControlButton
+                                onClick={() => setInteractionMode('nav')}
+                                title="Navigation Mode (Pan)"
+                                className={interactionMode === 'nav' ? 'text-blue-600 bg-blue-100 font-bold' : ''}
+                            >
+                                <Hand className="w-4 h-4 p-0.5" />
+                            </ControlButton>
+                            <ControlButton
+                                onClick={() => setInteractionMode('select')}
+                                title="Selection Mode (Box Select)"
+                                className={interactionMode === 'select' ? 'text-blue-600 bg-blue-100 font-bold' : ''}
+                            >
+                                <MousePointer2 className="w-4 h-4 p-0.5" />
+                            </ControlButton>
+                        </Controls>
+                        <Background color={isDark ? "#1e293b" : "#e2e8f0"} gap={16} />
+                    </ReactFlow>
+                ) : (
+                    <LayeredView
+                        nodes={nodes}
+                        setNodes={setNodes}
+                        edges={edges}
+                        setEdges={setEdges}
+                        isDark={isDark}
+                    />
+                )}
 
                 {/* INSPECT MODAL */}
                 {(inspectLoading || inspectData) && (
