@@ -22,6 +22,7 @@ import { getElementIcon, getPhotonicIcon } from '../../utils/iconMap';
 import LayerNode from './nodes/LayerNode';
 import ParallelEdge from './edges/ParallelEdge';
 import CodeViewer from '../CodeViewer';
+import SimulationControls from '../SimulationControls';
 
 const nodeTypes = {
     layer: LayerNode
@@ -85,6 +86,9 @@ export default function PipelineEditor({
 
     // Toast Notification State
     const [toasts, setToasts] = useState([]); // Array of { id, message, type }
+
+    // Bottom Bar State
+    const [isBottomBarExpanded, setIsBottomBarExpanded] = useState(false);
 
     const showToast = useCallback((message, type = 'error') => {
         const id = Date.now();
@@ -1258,7 +1262,7 @@ export default function PipelineEditor({
                     fitView
                     minZoom={0.1}
                 >
-                    <Controls>
+                    <Controls style={{ bottom: isBottomBarExpanded ? '70px' : '10px', transition: 'bottom 0.3s' }}>
                         <ControlButton
                             onClick={() => setInteractionMode('nav')}
                             title="Navigation Mode (Pan)"
@@ -1352,6 +1356,9 @@ export default function PipelineEditor({
                     }
                 `}</style>
             </div>
+
+            {/* Simulation Controls Bottom Bar */}
+            <SimulationControls onExpandChange={setIsBottomBarExpanded} />
         </div >
     );
 }
