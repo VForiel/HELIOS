@@ -13,7 +13,8 @@ from astropy import units as u
 from typing import Tuple, Optional, Any, Union
 import matplotlib.pyplot as _plt
 
-from ..core.pipeline import Layer, SamplingLayer, Element, Pipeline, serialize_value, deserialize_value
+from ..core.pipeline import Layer, SamplingLayer, Element, Pipeline
+from ..utils.serialization import serialize_value, deserialize_value
 from ..core.simulation import Wavefront, WavefrontArray
 from .pupil import Pupil
 

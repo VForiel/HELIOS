@@ -1,7 +1,8 @@
 import numpy as np
 from typing import Tuple, Optional, Any
 from astropy import units as u
-from ..core.pipeline import Element, Layer, DetectionLayer, Pipeline, serialize_value, deserialize_value
+from ..core.pipeline import Element, Layer, DetectionLayer, Pipeline
+from ..utils.serialization import serialize_value, deserialize_value
 from ..core.simulation import Wavefront, WavefrontArray
 import matplotlib.pyplot as plt
 

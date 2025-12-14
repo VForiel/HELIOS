@@ -3,7 +3,8 @@ from astropy import units as u
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 from typing import Optional, Tuple, Any
-from ..core.pipeline import Layer, GenerationLayer, Element, Pipeline, serialize_value, deserialize_value
+from ..core.pipeline import Layer, GenerationLayer, Element, Pipeline
+from ..utils.serialization import serialize_value, deserialize_value
 from ..core.simulation import Wavefront
 from astropy import constants as const
 

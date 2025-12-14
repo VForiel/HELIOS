@@ -9,7 +9,8 @@ from astropy import units as u
 from typing import Tuple, List, Union, Optional
 import matplotlib.pyplot as _plt
 
-from ..core.pipeline import Element, Layer, GenerationLayer, Pipeline, serialize_value, deserialize_value
+from ..core.pipeline import Element, Layer, GenerationLayer, Pipeline
+from ..utils.serialization import serialize_value, deserialize_value
 from ..core.simulation import Wavefront, WavefrontArray
 from .collector import TelescopeArray
 
