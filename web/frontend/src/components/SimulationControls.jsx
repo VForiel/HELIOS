@@ -7,8 +7,8 @@ export default function SimulationControls({ onExpandChange }) {
     const [observationTime, setObservationTime] = useState('00:00:00');
     const [durationHours, setDurationHours] = useState(1);
     const [durationMinutes, setDurationMinutes] = useState(0);
-    const [currentSeconds, setCurrentSeconds] = useState(0); // Current time in seconds
-    const [currentCentiseconds, setCurrentCentiseconds] = useState(0); // Centiseconds (0-99)
+    const [currentSeconds, setCurrentSeconds] = useState(0); // Current time in seconds (float)
+
     const [isPlaying, setIsPlaying] = useState(false);
 
     // Random seed control state
@@ -39,33 +39,23 @@ export default function SimulationControls({ onExpandChange }) {
 
         const interval = setInterval(() => {
             setCurrentSeconds(prev => {
-                if (prev >= totalDurationSeconds) {
+                const next = prev + 0.01;
+                if (next >= totalDurationSeconds) {
                     setIsPlaying(false);
                     return totalDurationSeconds;
                 }
-                return prev + 1; // Increment by 1 second
+                return next;
             });
-        }, 1000); // Update every 1 second (real-time)
+        }, 10); // Update every 10ms
 
         return () => clearInterval(interval);
     }, [isPlaying, totalDurationSeconds]);
 
-    // Auto-advance centiseconds when playing (for smooth display)
-    useEffect(() => {
-        if (!isPlaying) {
-            setCurrentCentiseconds(0);
-            return;
-        }
-
-        const interval = setInterval(() => {
-            setCurrentCentiseconds(prev => (prev + 1) % 100);
-        }, 10); // Update every 10ms (centisecond)
-
-        return () => clearInterval(interval);
-    }, [isPlaying]);
 
     // Format time as (hh:)mm:ss:cc
-    const formatTime = (seconds, centiseconds) => {
+    const formatTime = (totalSeconds) => {
+        const seconds = Math.floor(totalSeconds);
+        const centiseconds = Math.floor((totalSeconds % 1) * 100);
         const hours = Math.floor(seconds / 3600);
         const minutes = Math.floor((seconds % 3600) / 60);
         const secs = seconds % 60;
@@ -85,15 +75,15 @@ export default function SimulationControls({ onExpandChange }) {
         return `${durationMinutes}m`;
     };
 
-    // Calculate timeline position from current seconds
-    const timelinePosition = totalDurationSeconds > 0 ? (currentSeconds / totalDurationSeconds) * 100 : 0;
+    // Calculate percentage for slider background if needed (optional)
+    // const timelinePercentage = totalDurationSeconds > 0 ? (currentSeconds / totalDurationSeconds) * 100 : 0;
 
     // Handle slider hover for tooltip
     const handleSliderMouseMove = (e) => {
         const rect = e.currentTarget.getBoundingClientRect();
         const x = e.clientX - rect.left;
-        const percentage = (x / rect.width) * 100;
-        const seconds = Math.floor((percentage / 100) * totalDurationSeconds);
+        const percentage = (x / rect.width);
+        const seconds = percentage * totalDurationSeconds;
         setTooltipPosition({ x: e.clientX - rect.left, seconds: Math.max(0, Math.min(seconds, totalDurationSeconds)) });
     };
 
@@ -179,7 +169,7 @@ export default function SimulationControls({ onExpandChange }) {
                                 </button>
 
                                 <span className="text-xs text-slate-400 whitespace-nowrap font-mono">
-                                    {formatTime(currentSeconds, currentCentiseconds)}
+                                    {formatTime(currentSeconds)}
                                 </span>
 
                                 {/* Slider with hover tooltip */}
@@ -192,11 +182,11 @@ export default function SimulationControls({ onExpandChange }) {
                                     <input
                                         type="range"
                                         min="0"
-                                        max="100"
-                                        value={timelinePosition}
+                                        max={totalDurationSeconds}
+                                        step="0.01"
+                                        value={currentSeconds}
                                         onChange={(e) => {
-                                            const newPosition = parseFloat(e.target.value);
-                                            const newSeconds = Math.floor((newPosition / 100) * totalDurationSeconds);
+                                            const newSeconds = parseFloat(e.target.value);
                                             setCurrentSeconds(newSeconds);
                                         }}
                                         className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer slider-thumb"
@@ -214,7 +204,7 @@ export default function SimulationControls({ onExpandChange }) {
                                                 transition: 'opacity 0.15s'
                                             }}
                                         >
-                                            {formatTime(tooltipPosition.seconds, 0)}
+                                            {formatTime(tooltipPosition.seconds)}
                                         </div>
                                     )}
                                 </div>
