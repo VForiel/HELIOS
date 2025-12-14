@@ -66,6 +66,7 @@ class AtmospherePayload(BaseModel):
     enabled: bool = True
     rms_nm: float = 100.0
     wind_speed: float = 5.0
+    seed: Optional[int] = None  # Random seed for reproducible turbulence
 
 class CollectorData(BaseModel):
     id: Optional[str] = None
