@@ -68,22 +68,22 @@ class AtmospherePayload(BaseModel):
     wind_speed: float = 5.0
     seed: Optional[int] = None  # Random seed for reproducible turbulence
 
-class CollectorData(BaseModel):
-    id: Optional[str] = None
+class TelescopePositionData(BaseModel):
+    """Position data for a single telescope in an array (x, y coordinates only)."""
+    id: Optional[str] = None  # For React Flow handles
     x: float = 0
     y: float = 0
-    diameter: float = 8.0
-    pupil_type: str = "Circular"
-    central_obstruction: float = 0
-    spiders: int = 0
 
 class TelescopePayload(BaseModel):
+    """Configuration for TelescopeArray with shared pupil and positions list."""
     preset: str = "Single"
-    diameter: Optional[float] = 8.0
+    # Shared pupil configuration (all telescopes use same pupil)
+    diameter: float = 8.0
     pupil_type: str = "Circular"
     central_obstruction: float = 0.0
     spiders: int = 0
-    collectors: List[CollectorData] = []
+    # List of telescope positions (only positions differ)
+    positions: List[TelescopePositionData] = []
 
 class CameraPayload(BaseModel):
     model_config = ConfigDict(extra='allow')  # Allow view_mode and figsize from frontend
@@ -207,54 +207,52 @@ def create_atmosphere(config: AtmospherePayload):
     )
 
 def create_telescope(config: TelescopePayload):
+    """Create TelescopeArray from configuration using new API."""
+    # Handle presets
     if config.preset == "VLTI-UT":
         return helios.TelescopeArray.vlti(uts=True)
     elif config.preset == "VLTI-AT":
         return helios.TelescopeArray.vlti(uts=False)
     elif config.preset == "LIFE":
         return helios.TelescopeArray.life()
-    elif config.preset == "Single":
-         telescope = helios.TelescopeArray(name="Single Telescope")
-         diam = config.diameter if config.diameter else 8.0
-         
-         if config.pupil_type == "VLT":
-             pupil = helios.Pupil.vlt()
-         elif config.pupil_type == "JWST":
-             pupil = helios.Pupil.jwst()
-         elif config.pupil_type == "Obstructed":
-             pupil = helios.Pupil(diameter=diam * u.m)
-             pupil.add_disk(radius=diam/2 * u.m)
-             pupil.add_central_obscuration(diameter=diam * config.central_obstruction * u.m)
-             if config.spiders > 0:
-                 pupil.add_spiders(arms=config.spiders, width=0.02 * diam * u.m)
-         else:
-             pupil = helios.Pupil(diameter=diam * u.m)
-             pupil.add_disk(radius=diam/2 * u.m)
-             
-         telescope.add_collector(pupil=pupil, position=(0,0), size=diam*u.m)
-         return telescope
+    
+    # For Single or Custom: create pupil based on config
+    diam = config.diameter
+    
+    # Create shared pupil
+    if config.pupil_type == "VLT":
+        pupil = helios.Pupil.vlt()
+    elif config.pupil_type == "JWST":
+        pupil = helios.Pupil.jwst()
+    elif config.pupil_type == "Obstructed":
+        pupil = helios.Pupil(diameter=diam * u.m)
+        pupil.add_disk(radius=diam/2 * u.m)
+        pupil.add_central_obstruction(diameter=diam * config.central_obstruction * u.m)
+        if config.spiders > 0:
+            pupil.add_spiders(arms=config.spiders, width=0.02 * diam * u.m)
+    else:  # Circular
+        pupil = helios.Pupil(diameter=diam * u.m)
+        pupil.add_disk(radius=diam/2 * u.m)
+    
+    # Create positions list
+    if config.preset == "Single" or not config.positions:
+        # Single telescope at origin
+        positions = [(0.0, 0.0)]
+        name = "Single Telescope"
     else:
-        # Custom
-        telescope = helios.TelescopeArray(name="Custom Array")
-        for i, col in enumerate(config.collectors):
-            d = col.diameter * u.m
-            # Simplified pupil creation logic for brevity
-            # (Matches previous implementation logic)
-            if col.pupil_type == "VLT":
-                p = helios.Pupil.vlt()
-            elif col.pupil_type == "JWST":
-                p = helios.Pupil.jwst()
-            elif col.pupil_type == "Obstructed":
-                p = helios.Pupil(diameter=col.diameter * u.m)
-                p.add_disk(radius=col.diameter/2 * u.m) 
-                p.add_central_obscuration(diameter=col.diameter * col.central_obstruction * u.m)
-                if col.spiders > 0: p.add_spiders(arms=col.spiders, width=0.02 * col.diameter * u.m)
-            else: # Circular
-                p = helios.Pupil(diameter=col.diameter * u.m)
-                p.add_disk(radius=col.diameter/2 * u.m)
-            
-            telescope.add_collector(pupil=p, position=(col.x * u.m, col.y * u.m), size=col.diameter * u.m, name=f"T{i+1}")
-        return telescope
+        # Custom array with user-defined positions
+        positions = [(pos.x, pos.y) for pos in config.positions]
+        name = "Custom Array"
+    
+    # Create TelescopeArray with new API
+    telescope = helios.TelescopeArray(
+        pupil=pupil,
+        size=diam * u.m,
+        positions=positions,
+        name=name
+    )
+    
+    return telescope
 
 
 def create_lens(config: LensPayload):
@@ -400,30 +398,35 @@ def atmosphere_to_payload(atm: helios.Atmosphere) -> AtmospherePayload:
     )
 
 def telescope_to_payload(tel: helios.TelescopeArray) -> TelescopePayload:
-    collectors = []
-    max_diam = 8.0
-    for i, col in enumerate(tel.collectors):
-        x = col.position[0]
-        y = col.position[1]
-        
-        diam = 8.0
-        if col.size is not None:
-             diam = u.Quantity(col.size, u.m).to(u.m).value
-        max_diam = max(max_diam, diam)
-        
-        p_type = "Circular"
-        if hasattr(col.pupil, 'elements') and len(col.pupil.elements) > 2:
-                  pass
-        
-        collectors.append(CollectorData(
-            id=f"c{i}", x=float(x), y=float(y), diameter=float(diam),
-            pupil_type=p_type
-        ))
-        
+    """Convert TelescopeArray to TelescopePayload for frontend."""
+    # Detect preset
+    preset = "Custom"
+    if hasattr(tel, 'name'):
+        if tel.name == "VLTI-UTs":
+            preset = "VLTI-UT"
+        elif tel.name == "VLTI-ATs":
+            preset = "VLTI-AT"
+        elif tel.name == "LIFE":
+            preset = "LIFE"
+        elif tel.name == "Single Telescope" or len(tel.positions) == 1:
+            preset = "Single"
+    
+    # Extract shared pupil configuration
+    diameter = tel.size.to(u.m).value if hasattr(tel.size, 'to') else float(tel.size)
+    
+    # Extract positions
+    positions = [
+        TelescopePositionData(id=f"pos-{i}", x=pos[0], y=pos[1])
+        for i, pos in enumerate(tel.positions)
+    ]
+    
     return TelescopePayload(
-        preset="Custom",
-        diameter=float(max_diam),
-        collectors=collectors
+        preset=preset,
+        diameter=diameter,
+        pupil_type="Circular",
+        central_obstruction=0.0,
+        spiders=0,
+        positions=positions
     )
 
 def camera_to_payload(cam: helios.Camera) -> CameraPayload:
@@ -516,35 +519,35 @@ def atmosphere_to_payload(atm: helios.Atmosphere) -> AtmospherePayload:
     )
 
 def telescope_to_payload(tel: helios.TelescopeArray) -> TelescopePayload:
-    # Check if generic preset
-    # For now, always return Custom to be safe
-    collectors = []
-    max_diam = 8.0
-    for i, col in enumerate(tel.collectors):
-        x = col.position[0]
-        y = col.position[1]
-        
-        diam = 8.0
-        if col.size is not None:
-             diam = u.Quantity(col.size, u.m).to(u.m).value
-        max_diam = max(max_diam, diam)
-        
-        # Infer pupil type
-        p_type = "Circular"
-        if hasattr(col.pupil, 'elements'):
-             # Very rough heuristic
-             if len(col.pupil.elements) > 2: #Likely complex
-                  pass
-        
-        collectors.append(CollectorData(
-            id=f"c{i}", x=float(x), y=float(y), diameter=float(diam),
-            pupil_type=p_type
-        ))
-        
+    """Convert TelescopeArray to TelescopePayload for frontend."""
+    # Detect preset
+    preset = "Custom"
+    if hasattr(tel, 'name'):
+        if tel.name == "VLTI-UTs":
+            preset = "VLTI-UT"
+        elif tel.name == "VLTI-ATs":
+            preset = "VLTI-AT"
+        elif tel.name == "LIFE":
+            preset = "LIFE"
+        elif tel.name == "Single Telescope" or len(tel.positions) == 1:
+            preset = "Single"
+    
+    # Extract shared pupil configuration
+    diameter = tel.size.to(u.m).value if hasattr(tel.size, 'to') else float(tel.size)
+    
+    # Extract positions
+    positions = [
+        TelescopePositionData(id=f"pos-{i}", x=pos[0], y=pos[1])
+        for i, pos in enumerate(tel.positions)
+    ]
+    
     return TelescopePayload(
-        preset="Custom",
-        diameter=float(max_diam),
-        collectors=collectors
+        preset=preset,
+        diameter=diameter,
+        pupil_type="Circular",
+        central_obstruction=0.0,
+        spiders=0,
+        positions=positions
     )
 
 def camera_to_payload(cam: helios.Camera) -> CameraPayload:
@@ -628,30 +631,35 @@ def atmosphere_to_payload(atm: helios.Atmosphere) -> AtmospherePayload:
     )
 
 def telescope_to_payload(tel: helios.TelescopeArray) -> TelescopePayload:
-    collectors = []
-    max_diam = 8.0
-    for i, col in enumerate(tel.collectors):
-        x = col.position[0]
-        y = col.position[1]
-        
-        diam = 8.0
-        if col.size is not None:
-             diam = u.Quantity(col.size, u.m).to(u.m).value
-        max_diam = max(max_diam, diam)
-        
-        p_type = "Circular"
-        if hasattr(col.pupil, 'elements') and len(col.pupil.elements) > 2:
-                  pass
-        
-        collectors.append(CollectorData(
-            id=f"c{i}", x=float(x), y=float(y), diameter=float(diam),
-            pupil_type=p_type
-        ))
-        
+    """Convert TelescopeArray to TelescopePayload for frontend."""
+    # Detect preset
+    preset = "Custom"
+    if hasattr(tel, 'name'):
+        if tel.name == "VLTI-UTs":
+            preset = "VLTI-UT"
+        elif tel.name == "VLTI-ATs":
+            preset = "VLTI-AT"
+        elif tel.name == "LIFE":
+            preset = "LIFE"
+        elif tel.name == "Single Telescope" or len(tel.positions) == 1:
+            preset = "Single"
+    
+    # Extract shared pupil configuration
+    diameter = tel.size.to(u.m).value if hasattr(tel.size, 'to') else float(tel.size)
+    
+    # Extract positions
+    positions = [
+        TelescopePositionData(id=f"pos-{i}", x=pos[0], y=pos[1])
+        for i, pos in enumerate(tel.positions)
+    ]
+    
     return TelescopePayload(
-        preset="Custom",
-        diameter=float(max_diam),
-        collectors=collectors
+        preset=preset,
+        diameter=diameter,
+        pupil_type="Circular",
+        central_obstruction=0.0,
+        spiders=0,
+        positions=positions
     )
 
 def camera_to_payload(cam: helios.Camera) -> CameraPayload:
@@ -1301,46 +1309,23 @@ def get_preset(preset_name: str):
         else:
             raise HTTPException(status_code=404, detail="Preset not found")
             
-        collectors_data = []
-        for col in telescope.collectors:
+        # Extract positions from TelescopeArray (new architecture)
+        positions_data = []
+        for i, pos in enumerate(telescope.positions):
             # Extract data. Position is (x, y) in meters.
-            x, y = col.position
-            # Size
-            if hasattr(col.size, 'to'):
-                diameter = col.size.to(u.m).value
-            else:
-                diameter = float(col.size)
+            x, y = pos
             
-            # Pupil inference (simplified)
-            # We need to map back to our simple frontend types if possible, or just default to Custom/Circular
-            # VLT and LIFE have specific pupil classes.
-            # We can try to guess based on name or diameter, or just send "Circular"/generic params.
+            # For now, we only return positions as the frontend "Load Preset" 
+            # currently only expects to update the positions list, not the pupil config.
+            # (See TelescopeConfig.jsx loadPreset logic)
             
-            # Default
-            pupil_type = "Circular"
-            central_obstruction = 0.0
-            spiders = 0
-            
-            # Heuristics
-            if "UT" in str(col.name) or "VLT" in str(col.name):
-                pupil_type = "VLT"
-            elif "LIFE" in str(col.name):
-                # LIFE pupil is obstructed
-                pupil_type = "Obstructed"
-                central_obstruction = 0.5 # Default life obs
-                # Actually checking the pupil object would be better if we exposed attributes
-                # But for now, hardcoded mapping is safer than introspection of complex objects
-    
-            collectors_data.append({
+            positions_data.append({
+                "id": f"{preset_name}-{i}",
                 "x": float(x),
-                "y": float(y),
-                "diameter": float(diameter),
-                "pupil_type": pupil_type,
-                "central_obstruction": central_obstruction,
-                "spiders": spiders
+                "y": float(y)
             })
             
-        return collectors_data
+        return positions_data
 
     except Exception as e:
         import traceback

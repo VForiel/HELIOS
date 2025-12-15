@@ -28,7 +28,7 @@ from .components import (
     # Scene components
     Scene, Star, Planet, ExoZodiacal, Zodiacal,
     # Optical components
-    Pupil, Collector, TelescopeArray, Telescope, Interferometer, Coronagraph, BeamSplitter, FiberIn, FiberOut, Atmosphere, AdaptiveOptics, Lens,
+    Pupil, Collector, TelescopeArray, Telescope, Coronagraph, BeamSplitter, FiberIn, FiberOut, Atmosphere, AdaptiveOptics, Lens,
     # Detector components
     Camera,
     # Photonic components
@@ -48,7 +48,7 @@ __all__ = [
     # Scene components
     'Scene', 'Star', 'Planet', 'ExoZodiacal', 'Zodiacal',
     # Optical components
-    'Pupil', 'Collector', 'TelescopeArray', 'Telescope', 'Interferometer', 'Coronagraph', 'BeamSplitter', 'FiberIn', 'FiberOut', 'Atmosphere', 'AdaptiveOptics', 'Lens',
+    'Pupil', 'Collector', 'TelescopeArray', 'Telescope', 'Coronagraph', 'BeamSplitter', 'FiberIn', 'FiberOut', 'Atmosphere', 'AdaptiveOptics', 'Lens',
     # Detector components
     'Camera',
     # Photonic components

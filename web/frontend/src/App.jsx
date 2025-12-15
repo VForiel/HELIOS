@@ -17,18 +17,28 @@ function App() {
     const { t, language, setLanguage, languages } = useTranslation();
 
     // State
-    const [stars, setStars] = useState([{ temperature: 5778, magnitude: 4.83, x_arcsec: 0, y_arcsec: 0 }]);
-    const [planets, setPlanets] = useState([{ mass: 1.0, separation: 1.0, angle: 0.0, radius: 1.0 }]);
-    const [zodiacal, setZodiacal] = useState({ enabled: false, brightness: 1.0, radius: null });
-
-    const [atmosphere, setAtmosphere] = useState({ enabled: false, rms_nm: 100, wind_speed: 5.0 });
-
-    const [telescope, setTelescope] = useState({
-        preset: 'Custom',
-        diameter: 8.0,
-        collectors: [{ x: 0, y: 0, diameter: 8.0, pupil_type: 'Circular', central_obstruction: 0, spiders: 0 }]
+    const [sceneConfig, setSceneConfig] = React.useState({
+        stars: [{ temperature: 5778, magnitude: 4.83, x_arcsec: 0, y_arcsec: 0 }],
+        planets: [{ mass: 1.0, separation: 1.0, angle: 0.0, radius: 1.0 }],
+        zodiacal: { enabled: false, brightness: 1.0, radius: null }
     });
-    const [camera, setCamera] = useState({ wavelength: 1.0, exposure: 0.1 });
+    const [atmosphereConfig, setAtmosphereConfig] = React.useState({
+        enabled: false,
+        rms_nm: 100,
+        wind_speed: 5.0
+    });
+    const [telescopeConfig, setTelescopeConfig] = React.useState({
+        preset: 'Single',
+        diameter: 8.0,
+        pupil_type: 'Circular',
+        central_obstruction: 0,
+        spiders: 0,
+        positions: [{ id: 'single', x: 0, y: 0 }] // Single telescope always at origin for now?
+    });
+    const [cameraConfig, setCameraConfig] = useState({
+        wavelength: 1.0,
+        exposure: 0.1
+    });
 
     const [loading, setLoading] = useState(false);
     const [image, setImage] = useState(null);
@@ -48,7 +58,7 @@ function App() {
             position: { x: 50, y: 100 },
             data: {
                 elements: [
-                    { type: 'scene', label: 'Scene', config: { stars, planets, zodiacal }, iconPath: getElementIcon('scene') }
+                    { type: 'scene', label: 'Scene', config: sceneConfig, iconPath: getElementIcon('scene') }
                 ]
             }
         },
@@ -58,7 +68,7 @@ function App() {
             position: { x: 500, y: 100 },
             data: {
                 elements: [
-                    { type: 'telescope', label: 'Telescope', config: telescope, iconPath: getElementIcon('telescope') }
+                    { type: 'telescope', label: 'Telescope', config: telescopeConfig, iconPath: getElementIcon('telescope') }
                 ]
             }
         },
@@ -68,7 +78,7 @@ function App() {
             position: { x: 950, y: 100 },
             data: {
                 elements: [
-                    { type: 'camera', label: 'Camera', config: camera, iconPath: getElementIcon('camera') }
+                    { type: 'camera', label: 'Camera', config: cameraConfig, iconPath: getElementIcon('camera') }
                 ]
             }
         }
@@ -167,10 +177,15 @@ function App() {
 
                             {/* Sampling */}
                             <div className="text-xs font-bold text-cyan-500 uppercase tracking-wider mb-2 mt-6">{t('sidebar.sampling')}</div>
-                            <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-cyan-500 transition-colors flex items-center"
+                            <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-cyan-500 transition-colors flex items-center mb-2"
                                 onDragStart={(event) => onDragStart(event, 'telescope')} draggable>
                                 <img src={getElementIcon('telescope')} alt="Telescope" className="w-4 h-4 mr-3 dark:invert dark:opacity-80" />
                                 <span className="text-slate-700 dark:text-slate-200 text-sm">{t('elements.telescope')}</span>
+                            </div>
+                            <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-cyan-500 transition-colors flex items-center"
+                                onDragStart={(event) => onDragStart(event, 'telescope_array')} draggable>
+                                <img src={getElementIcon('telescope')} alt="Telescope Array" className="w-4 h-4 mr-3 dark:invert dark:opacity-80" />
+                                <span className="text-slate-700 dark:text-slate-200 text-sm">Telescope Array</span>
                             </div>
 
                             {/* Bulk Optics */}
@@ -253,12 +268,19 @@ function App() {
                             edges={edges}
                             setEdges={setEdges}
                             onEdgesChange={onEdgesChange}
-                            stars={stars} setStars={setStars}
-                            planets={planets} setPlanets={setPlanets}
-                            zodiacal={zodiacal} setZodiacal={setZodiacal}
-                            atmosphere={atmosphere} setAtmosphere={setAtmosphere}
-                            telescope={telescope} setTelescope={setTelescope}
-                            camera={camera} setCamera={setCamera}
+
+
+                            stars={sceneConfig.stars}
+                            setStars={(v) => setSceneConfig(prev => ({ ...prev, stars: typeof v === 'function' ? v(prev.stars) : v }))}
+                            planets={sceneConfig.planets}
+                            setPlanets={(v) => setSceneConfig(prev => ({ ...prev, planets: typeof v === 'function' ? v(prev.planets) : v }))}
+                            zodiacal={sceneConfig.zodiacal}
+                            setZodiacal={(v) => setSceneConfig(prev => ({ ...prev, zodiacal: typeof v === 'function' ? v(prev.zodiacal) : v }))}
+
+                            atmosphere={atmosphereConfig} setAtmosphere={setAtmosphereConfig}
+                            telescope={telescopeConfig} setTelescope={setTelescopeConfig}
+                            camera={cameraConfig} setCamera={setCameraConfig}
+
                             runSimulation={runPipeline}
                             onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
                             onToggleTheme={toggleTheme}

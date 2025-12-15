@@ -74,7 +74,9 @@ export default function ElementRow({ element, index, onChange, onRemove }) {
                             zodiacal={config.zodiacal} setZodiacal={setZodiacal}
                         />
                     ) : type === 'telescope' ? (
-                        <TelescopeConfig config={config} setConfig={setConfig} />
+                        <TelescopeConfig config={config} setConfig={setConfig} mode="single" />
+                    ) : type === 'telescope_array' ? (
+                        <TelescopeConfig config={config} setConfig={setConfig} mode="array" />
                     ) : (
                         /* Generic Config Rendering */
                         <div className="space-y-2">

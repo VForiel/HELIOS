@@ -1,16 +1,16 @@
 """Telescope array classes for single and interferometric observations.
 
 This module provides classes for managing telescope configurations:
-- Collector: Single telescope with pupil geometry and position (Component subclass)
-- TelescopeArray: Array of one or more collectors with spatial positioning (Layer subclass)
+- Telescope: Single telescope with pupil geometry and position (Component subclass)
+- TelescopeArray: Array of one or more telescopes with spatial positioning (Component subclass)
 
 TelescopeArray unifies single-telescope and interferometric observations:
-- Single telescope: Add one collector at position (0, 0)
-- Interferometer: Add multiple collectors at different baseline positions
+- Single telescope: Add one telescope at position (0, 0)
+- Interferometer: Add multiple telescopes at different baseline positions
 """
 import numpy as np
 from astropy import units as u
-from typing import Tuple, Optional, Any, Union
+from typing import Tuple, Optional, Any, Union, List
 import matplotlib.pyplot as _plt
 
 from ..core.pipeline import Layer, SamplingLayer, Component, SamplingComponent, Pipeline
@@ -19,15 +19,15 @@ from ..core.simulation import Wavefront, WavefrontArray
 from .pupil import Pupil
 
 
-class Collector(SamplingComponent):
+class Telescope(SamplingComponent):
     __slots__ = ("pupil", "position", "size", "name")
-    """Represents a single telescope/collector with pupil geometry and position.
+    """Represents a single telescope with pupil geometry and position.
     
-    A Collector is a Component that encapsulates the properties of an individual
+    A Telescope is a Component that encapsulates the properties of an individual
     telescope aperture, including its pupil geometry (transmission pattern), 
     physical size, and position in the aperture plane (for interferometric arrays).
     
-    Collectors are grouped within a TelescopeArray layer for parallel processing
+    Telescopes are grouped within a TelescopeArray component for parallel processing
     in interferometric configurations or co-located single telescope observations.
     
     Parameters
@@ -39,9 +39,9 @@ class Collector(SamplingComponent):
         Can also be astropy Quantities. For single telescopes, use (0, 0).
         For interferometric arrays, specify baseline coordinates.
     size : astropy.Quantity, optional
-        Diameter of the collector aperture. If None, inferred from pupil.diameter.
+        Diameter of the telescope aperture. If None, inferred from pupil.diameter.
     name : str, optional
-        Descriptive name for this collector (e.g., "UT1", "AT3").
+        Descriptive name for this telescope (e.g., "UT1", "AT3").
     **metadata
         Additional metadata (e.g., mount type, coating, location).
     
@@ -54,15 +54,15 @@ class Collector(SamplingComponent):
     size : astropy.Quantity
         Aperture diameter in meters.
     name : str
-        Collector identifier (inherited from Component).
+        Telescope identifier (inherited from Component).
     metadata : dict
         Additional properties.
     
     Examples
     --------
-    >>> # Create a VLT UT collector
+    >>> # Create a VLT UT telescope
     >>> pupil_vlt = Pupil.like('VLT')
-    >>> ut1 = Collector(pupil=pupil_vlt, position=(0, 0), size=8.2*u.m, name="UT1")
+    >>> ut1 = Telescope(pupil=pupil_vlt, position=(0, 0), size=8.2*u.m, name="UT1")
     >>> print(ut1.name, ut1.size)
     UT1 8.2 m
     """
@@ -76,7 +76,7 @@ class Collector(SamplingComponent):
         self.position = (x, y)
 
         # Initialize Component with name
-        default_name = f"Collector@({self.position[0]:.1f},{self.position[1]:.1f})"
+        default_name = f"Telescope@({self.position[0]:.1f},{self.position[1]:.1f})"
         super().__init__(name=name or default_name)
         
         self.pupil = pupil
@@ -95,7 +95,7 @@ class Collector(SamplingComponent):
         self.metadata = metadata
         
     def to_dict(self) -> dict:
-        """Serialize collector."""
+        """Serialize telescope."""
         data = super().to_dict()
         data.update({
             "pupil": self.pupil.to_dict(),
@@ -106,8 +106,8 @@ class Collector(SamplingComponent):
         return data
 
     @classmethod
-    def from_dict(cls, data: dict) -> 'Collector':
-        """Create collector from dict."""
+    def from_dict(cls, data: dict) -> 'Telescope':
+        """Create telescope from dict."""
         name = data.get("name")
         pupil_data = data.get("pupil")
         pupil = Pupil.from_dict(pupil_data) if pupil_data else None
@@ -125,20 +125,20 @@ class Collector(SamplingComponent):
     
     def process(self, wavefront: Wavefront, pipeline: Optional['Pipeline'] = None, auto_magnify: Optional[bool] = None) -> Any:
         """
-        Process the wavefront through this collector's pupil.
+        Process the wavefront through this telescope's pupil.
         
         Applies the pupil transmission pattern to the wavefront field.
-        Also updates the wavefront's pixel scale to match the collector size.
+        Also updates the wavefront's pixel scale to match the telescope size.
         
         Parameters
         ----------
         wavefront : Wavefront
             Input wavefront to process.
         pipeline : Pipeline, optional
-            The simulation pipeline (unused in Collector but required by Layer protocol).
+            The simulation pipeline (unused in Telescope but required by Layer protocol).
         auto_magnify : bool, optional
-            If True, resize wavefront to match collector size.
-            If False, crop wavefront to collector size.
+            If True, resize wavefront to match telescope size.
+            If False, crop wavefront to telescope size.
             If None, check sizes and warn if mismatch.
         
         Returns
@@ -154,40 +154,40 @@ class Collector(SamplingComponent):
         # Handle auto_magnify logic
         if self.size is not None:
             # Ensure size is in meters
-            collector_size = self.size
-            if not isinstance(collector_size, u.Quantity):
-                collector_size = collector_size * u.m
+            telescope_size = self.size
+            if not isinstance(telescope_size, u.Quantity):
+                telescope_size = telescope_size * u.m
                 
             wf_size = wavefront.width
             if not isinstance(wf_size, u.Quantity):
                 wf_size = wf_size * u.m
             
             # Check if sizes match (with some tolerance)
-            sizes_match = np.isclose(collector_size.to(u.m).value, wf_size.to(u.m).value, rtol=1e-5)
+            sizes_match = np.isclose(telescope_size.to(u.m).value, wf_size.to(u.m).value, rtol=1e-5)
             
             if auto_magnify is None:
                 if not sizes_match:
                     import warnings
-                    warnings.warn(f"Wavefront size ({wf_size}) does not match Collector size ({collector_size}). "
-                                  f"Resizing wavefront metadata to match collector (auto_magnify=True).")
+                    warnings.warn(f"Wavefront size ({wf_size}) does not match Telescope size ({telescope_size}). "
+                                  f"Resizing wavefront metadata to match telescope (auto_magnify=True).")
                     auto_magnify = True
                 else:
                     auto_magnify = False
             
             if auto_magnify:
                 # Modify wavefront size metadata
-                wavefront.width = collector_size
-                wavefront.pixel_scale = (collector_size / wavefront.npix).to(u.m)
+                wavefront.width = telescope_size
+                wavefront.pixel_scale = (telescope_size / wavefront.npix).to(u.m)
             else:
                 # Crop wavefront
-                wavefront = wavefront.crop(new_size=collector_size, center=(0*u.m, 0*u.m))
+                wavefront = wavefront.crop(new_size=telescope_size, center=(0*u.m, 0*u.m))
         
         # Use the last dimension for spatial size (assuming square)
         # field shape is typically (samples, height, width) or just (height, width)
         N = wavefront.shape[-1]
         
-        # Update pixel scale based on collector size
-        # The wavefront now represents the field at the pupil plane of this collector
+        # Update pixel scale based on telescope size
+        # The wavefront now represents the field at the pupil plane of this telescope
         if self.size is not None:
             # Ensure size is in meters
             size_m = self.size.to(u.m).value if hasattr(self.size, 'to') else float(self.size)
@@ -205,10 +205,10 @@ class Collector(SamplingComponent):
         return wavefront
     
     def __repr__(self):
-        return f"Collector(name='{self.name}', position={self.position}, size={self.size})"
+        return f"Telescope(name='{self.name}', position={self.position}, size={self.size})"
     
     def _get_detailed_attributes(self) -> dict:
-        """Return detailed attributes for Collector."""
+        """Return detailed attributes for Telescope."""
         attrs = {}
         attrs['position'] = f"({self.position[0]:.2f}, {self.position[1]:.2f}) m"
         attrs['size'] = str(self.size)
@@ -217,26 +217,39 @@ class Collector(SamplingComponent):
         return attrs
 
 
-class TelescopeArray(SamplingLayer):
-    """Array of one or more telescopes with pupil geometries and spatial positioning.
+class TelescopeArray(Telescope):
+    __slots__ = ("positions", "latitude", "longitude", "altitude")
+    """Array of identical telescopes at different spatial positions.
     
-    This class unifies single-telescope and interferometric observations by managing
-    an array of Collector elements with arbitrary spatial positions. It handles both:
+    Inherits from Telescope to share common attributes (pupil, size).
+    Extends it by adding multiple positions and observatory coordinates.
     
-    **Single telescope**: Add one collector at position (0, 0)
+    This class represents a telescope array where all telescopes share the same
+    pupil geometry and size (inherited from Telescope), but are positioned at 
+    different locations. This is the physical reality for most telescope arrays 
+    (VLTI, LIFE, etc.).
+    
+    **Inheritance**:
+    - Inherits from `Telescope`: shares `pupil`, `size`, `position` (set to first position)
+    - Adds: `positions` (list of all positions), `latitude`, `longitude`, `altitude`
+    
+    **Single telescope**: One position at (0, 0)
         - Used for conventional single-aperture observations
         - The pupil mask is applied at the center of the wavefront
         
-    **Interferometer**: Add multiple collectors at different positions
+    **Interferometer**: Multiple positions at different coordinates
         - Used for interferometric imaging with spatially separated apertures
-        - Each pupil is positioned at its baseline coordinates (u,v plane)
+        - Each position receives a copy of the input wavefront
         - Enables aperture synthesis and high angular resolution
-    
-    The spatial positioning is automatically handled: collectors at (0,0) are 
-    treated as co-located, while non-zero positions create a dilute aperture array.
     
     Parameters
     ----------
+    pupil : Pupil
+        Shared pupil geometry for all telescopes in the array.
+    size : astropy.Quantity
+        Diameter of each telescope aperture.
+    positions : List[Tuple[float, float]], optional
+        List of (x, y) baseline coordinates in meters. Default [(0, 0)].
     name : str, optional
         Name of the telescope configuration (e.g., "VLT-UT4", "VLTI", "CHARA").
     latitude : astropy.Quantity, optional
@@ -248,42 +261,62 @@ class TelescopeArray(SamplingLayer):
     
     Attributes
     ----------
-    elements : List[Collector]
-        List of Collector elements, each with pupil, position, and metadata (inherited from Layer).
+    pupil : Pupil
+        Shared pupil geometry object (inherited from Telescope).
+    size : astropy.Quantity
+        Telescope aperture diameter (inherited from Telescope).
+    position : Tuple[float, float]
+        Position of first telescope (inherited from Telescope).
+    positions : List[Tuple[float, float]]
+        List of all telescope positions in meters.
     name : str
-        Configuration name (inherited from Layer).
+        Configuration name.
     latitude, longitude, altitude : astropy.Quantity
         Observatory geographic coordinates.
     
     Examples
     --------
     >>> # Single telescope (VLT UT4)
-    >>> vlt = TelescopeArray(name="VLT-UT4", latitude=-24.6*u.deg, altitude=2635*u.m)
     >>> pupil_vlt = helios.Pupil.vlt()
-    >>> vlt.add_collector(pupil=pupil_vlt, position=(0, 0), size=8.2*u.m)
+    >>> vlt = TelescopeArray(pupil=pupil_vlt, size=8.2*u.m, positions=[(0, 0)], 
+    ...                      name="VLT-UT4", latitude=-24.6*u.deg, altitude=2635*u.m)
     >>> 
     >>> # Interferometer (VLTI with 4 UTs)
-    >>> vlti = TelescopeArray(name="VLTI")
-    >>> for i, pos in enumerate([(0,0), (47,0), (47,47), (0,47)]):
-    >>>     vlti.add_collector(pupil=pupil_vlt, position=pos, size=8.2*u.m, name=f"UT{i+1}")
+    >>> positions = [(0,0), (47,0), (47,47), (0,47)]
+    >>> vlti = TelescopeArray(pupil=pupil_vlt, size=8.2*u.m, positions=positions, name="VLTI")
     >>> 
     >>> # Check if this is interferometric (multiple non-colocated apertures)
     >>> print(f"Interferometric: {vlti.is_interferometric()}")
     """
     
-    def __init__(self, name: Optional[str] = None,
+    def __init__(self, pupil: Pupil, size: u.Quantity,
+                 positions: Optional[List[Tuple[float, float]]] = None,
+                 name: Optional[str] = None,
                  latitude: u.Quantity = 0*u.deg, 
                  longitude: u.Quantity = 0*u.deg, 
                  altitude: u.Quantity = 0*u.m):
-        super().__init__(name=name or "TelescopeArray")
+        # Initialize parent Telescope with first position
+        if positions is None:
+            positions = [(0.0, 0.0)]
+        first_position = positions[0]
+        
+        # Call parent __init__ with first position
+        super().__init__(pupil=pupil, position=first_position, size=size, 
+                        name=name or "TelescopeArray")
+        
+        # Add array-specific attributes
+        self.positions = positions
         self.latitude = latitude
         self.longitude = longitude
         self.altitude = altitude
-        # Note: self.elements is inherited from Layer
 
     def to_dict(self) -> dict:
+        """Serialize telescope array, extending parent Telescope serialization."""
+        # Get parent serialization (includes pupil, size, position, name)
         data = super().to_dict()
+        # Add array-specific attributes
         data.update({
+            "positions": serialize_value(self.positions),
             "latitude": serialize_value(self.latitude),
             "longitude": serialize_value(self.longitude),
             "altitude": serialize_value(self.altitude)
@@ -292,78 +325,74 @@ class TelescopeArray(SamplingLayer):
 
     @classmethod
     def from_dict(cls, data: dict, pipeline: Optional[Pipeline] = None) -> 'TelescopeArray':
+        """Create telescope array from dict."""
+        # Extract parent attributes
         name = data.get("name")
-        latitude = deserialize_value(data.get("latitude"))
-        longitude = deserialize_value(data.get("longitude"))
-        altitude = deserialize_value(data.get("altitude"))
+        pupil_data = data.get("pupil")
+        pupil = Pupil.from_dict(pupil_data) if pupil_data else None
+        size = deserialize_value(data.get("size"))
         
-        array = cls(name=name, latitude=latitude, longitude=longitude, altitude=altitude)
+        # Extract array-specific attributes
+        positions = deserialize_value(data.get("positions", [(0.0, 0.0)]))
+        latitude = deserialize_value(data.get("latitude", 0*u.deg))
+        longitude = deserialize_value(data.get("longitude", 0*u.deg))
+        altitude = deserialize_value(data.get("altitude", 0*u.m))
+        
+        # Create array (parent __init__ will be called)
+        array = cls(pupil=pupil, size=size, positions=positions, name=name,
+                   latitude=latitude, longitude=longitude, altitude=altitude)
         array.metadata = data.get("metadata", {})
-        
-        # Restore collectors (elements)
-        elements_data = data.get("elements", [])
-        for elem_data in elements_data:
-            type_name = elem_data.get("type", "Collector")
-            # We assume it's a Collector if part of TelescopeArray
-            if "Collector" in type_name: 
-                try:
-                    collector = Collector.from_dict(elem_data)
-                    array.add_element(collector)
-                except Exception as e:
-                    print(f"Error restoring collector: {e}")
-            else:
-                 print(f"Unknown TelescopeArray element type: {type_name}")
-                 
         return array
     
     @property
     def num_outputs(self) -> int:
-        """Number of outputs produced by this array (one per collector)."""
-        return len(self.elements)
+        """Number of outputs produced by this array (one per telescope position)."""
+        return len(self.positions)
+    
+    @num_outputs.setter
+    def num_outputs(self, value):
+        # Component.__init__ tries to set this, but we ignore it 
+        # as it is dynamically derived from positions.
+        pass
     
     @property
-    def collectors(self):
-        """Backward compatibility: alias for elements."""
-        return self.elements
+    def num_telescopes(self) -> int:
+        """Number of telescopes in the array."""
+        return len(self.positions)
     
-    def add_collector(self, pupil: Pupil, position: Tuple[float, float] = (0, 0), 
-                     size: Optional[u.Quantity] = None, name: Optional[str] = None, **kwargs):
-        """Add a collector to the telescope array.
+    def add_position(self, x: float, y: float):
+        """Add a telescope position to the array.
         
         Parameters
         ----------
-        pupil : Pupil
-            Pupil geometry for this collector (defines aperture shape).
-        position : Tuple[float, float], optional
-            (x, y) baseline coordinates in meters. Default (0, 0) for single telescope.
-            For interferometers, specify spatial separation between apertures.
-        size : astropy.Quantity, optional
-            Diameter of the collector. If None, inferred from pupil.diameter.
-        name : str, optional
-            Descriptive name for this collector (e.g., "UT1", "AT2").
-        **kwargs
-            Additional metadata (e.g., mount type, coating).
+        x : float
+            X coordinate in meters.
+        y : float
+            Y coordinate in meters.
         
         Examples
         --------
-        >>> array = TelescopeArray(name="CHARA")
-        >>> pupil = helios.Pupil(diameter=1*u.m)
-        >>> array.add_collector(pupil, position=(0, 0), size=1*u.m, name="S1")
-        >>> array.add_collector(pupil, position=(100, 0), size=1*u.m, name="S2")
+        >>> array = TelescopeArray(pupil=pupil, size=8*u.m)
+        >>> array.add_position(0, 0)
+        >>> array.add_position(47, 0)
         """
-        collector = Collector(pupil=pupil, position=position, size=size, name=name, **kwargs)
-        self.add_element(collector)
+        # Convert to float if Quantity
+        if hasattr(x, 'to'):
+            x = x.to(u.m).value
+        if hasattr(y, 'to'):
+            y = y.to(u.m).value
+        self.positions.append((float(x), float(y)))
     
     def is_interferometric(self) -> bool:
         """Check if this array has multiple non-colocated apertures (interferometric).
         
-        Returns True if there are multiple collectors at different positions,
-        False for single telescope or all collectors at (0, 0).
+        Returns True if there are multiple telescopes at different positions,
+        False for single telescope or all telescopes at (0, 0).
         """
-        if len(self.collectors) <= 1:
+        if len(self.positions) <= 1:
             return False
-        positions = {c.position for c in self.collectors}
-        return len(positions) > 1
+        unique_positions = set(self.positions)
+        return len(unique_positions) > 1
     
     def get_baseline_array(self) -> np.ndarray:
         """Return array of baseline vectors (u,v coordinates) in meters.
@@ -371,15 +400,16 @@ class TelescopeArray(SamplingLayer):
         Returns
         -------
         baselines : ndarray
-            Array of shape (N, 2) where N is the number of collectors.
+            Array of shape (N, 2) where N is the number of telescopes.
             Each row is (x, y) position in meters.
         """
-        return np.array([c.position for c in self.collectors], dtype=float)
+        return np.array(self.positions, dtype=float)
     
     def _get_detailed_attributes(self) -> dict:
         """Return detailed attributes for TelescopeArray."""
         attrs = {}
-        attrs['num_collectors'] = len(self.elements)
+        attrs['num_telescopes'] = len(self.positions)
+        attrs['pupil_diameter'] = str(self.size)
         if self.is_interferometric():
             attrs['configuration'] = "Interferometric"
             baselines = self.get_baseline_array()
@@ -413,7 +443,7 @@ class TelescopeArray(SamplingLayer):
         Returns
         -------
         vlti : TelescopeArray
-            VLTI interferometric array with 4 collectors.
+            VLTI interferometric array with 4 telescopes.
         
         Notes
         -----
@@ -437,7 +467,7 @@ class TelescopeArray(SamplingLayer):
         --------
         >>> # Create VLTI with Unit Telescopes
         >>> vlti_ut = TelescopeArray.vlti(uts=True)
-        >>> print(f"VLTI UTs: {len(vlti_ut.collectors)} telescopes")
+        >>> print(f"VLTI UTs: {vlti_ut.num_telescopes} telescopes")
         >>> print(vlti_ut.get_baseline_array())
         
         >>> # Create VLTI with Auxiliary Telescopes
@@ -448,8 +478,6 @@ class TelescopeArray(SamplingLayer):
             # VLTI Unit Telescopes (8.2m diameter)
             # Real baseline positions from GPS coordinates
             # Source: PHISE project telescope.py get_UT_telescopes()
-            vlti = cls(name="VLTI-UTs", latitude=-24.627*u.deg, 
-                      longitude=-70.404*u.deg, altitude=2635*u.m)
             pupil = Pupil.like('VLT')
             diameter = 8.2 * u.m
             
@@ -461,14 +489,12 @@ class TelescopeArray(SamplingLayer):
                 (101.99, 34.54)    # UT4
             ]
             
-            for i, pos in enumerate(positions, 1):
-                vlti.add_collector(pupil=pupil, position=pos, size=diameter, 
-                                  name=f"UT{i}")
+            vlti = cls(pupil=pupil, size=diameter, positions=positions,
+                      name="VLTI-UTs", latitude=-24.627*u.deg, 
+                      longitude=-70.404*u.deg, altitude=2635*u.m)
         else:
             # VLTI Auxiliary Telescopes (1.8m diameter)
             # Representative compact configuration
-            vlti = cls(name="VLTI-ATs", latitude=-24.627*u.deg, 
-                      longitude=-70.404*u.deg, altitude=2635*u.m)
             
             # Simple circular pupil for ATs
             pupil_at = Pupil(diameter=1.8*u.m)
@@ -484,9 +510,9 @@ class TelescopeArray(SamplingLayer):
                 (16.00, -27.71)    # AT4
             ]
             
-            for i, pos in enumerate(positions, 1):
-                vlti.add_collector(pupil=pupil_at, position=pos, size=diameter, 
-                                  name=f"AT{i}")
+            vlti = cls(pupil=pupil_at, size=diameter, positions=positions,
+                      name="VLTI-ATs", latitude=-24.627*u.deg, 
+                      longitude=-70.404*u.deg, altitude=2635*u.m)
         
         return vlti
     
@@ -496,12 +522,12 @@ class TelescopeArray(SamplingLayer):
         
         LIFE is a proposed space-based nulling interferometer mission concept 
         for direct detection and characterization of exoplanets. It consists 
-        of 4 free-flying collector spacecraft arranged in a planar formation.
+        of 4 free-flying telescope spacecraft arranged in a planar formation.
         
         Returns
         -------
         life : TelescopeArray
-            LIFE interferometric array with 4 collectors in space.
+            LIFE interferometric array with 4 telescopes in space.
         
         Notes
         -----
@@ -512,10 +538,10 @@ class TelescopeArray(SamplingLayer):
         - Continuous observation geometry
         
         The baseline configuration is based on the LIFE mission concept with:
-        - 4 collectors of 2m diameter each
+        - 4 telescopes of 2m diameter each
         - Baselines: 100m to 608m (rectangular configuration)
-        - **Centered array**: all collectors orbit around the central point (0,0)
-        - All collectors are equidistant (~304m) from the array center
+        - **Centered array**: all telescopes orbit around the central point (0,0)
+        - All telescopes are equidistant (~304m) from the array center
         - Planar arrangement in the XY plane
         
         Reference: PHISE project (https://github.com/VForiel/PHISE)
@@ -524,17 +550,13 @@ class TelescopeArray(SamplingLayer):
         --------
         >>> # Create LIFE array
         >>> life = TelescopeArray.life()
-        >>> print(f"LIFE: {len(life.collectors)} collectors")
+        >>> print(f"LIFE: {life.num_telescopes} telescopes")
         >>> life.plot_array(show_pupils=True)
         
         >>> # Check it's interferometric
         >>> print(f"Interferometric: {life.is_interferometric()}")
         """
-        # Space-based: North Pole configuration for perfect Earth rotation tracking
-        life = cls(name="LIFE", latitude=90*u.deg, longitude=0*u.deg, 
-                  altitude=0*u.m)  # altitude=0 for space (not applicable)
-        
-        # Simple circular pupil for LIFE collectors (2m diameter)
+        # Simple circular pupil for LIFE telescopes (2m diameter)
         pupil_life = Pupil(diameter=2.0*u.m)
         pupil_life.add_disk(radius=1.0*u.m)
         diameter = 2.0 * u.m
@@ -543,10 +565,10 @@ class TelescopeArray(SamplingLayer):
         # Centered configuration: all telescopes orbit around central point (0,0)
         # Original PHISE positions centered to ensure (0,0) is the array center
         positions_original = [
-            (0, 0),        # Collector 1
-            (100, 0),      # Collector 2
-            (0, 600),      # Collector 3
-            (100, 600)     # Collector 4
+            (0, 0),        # Telescope 1
+            (100, 0),      # Telescope 2
+            (0, 600),      # Telescope 3
+            (100, 600)     # Telescope 4
         ]
         
         # Center the array: compute centroid and shift all positions
@@ -557,9 +579,10 @@ class TelescopeArray(SamplingLayer):
             (x - centroid_x, y - centroid_y) for x, y in positions_original
         ]
         
-        for i, pos in enumerate(positions, 1):
-            life.add_collector(pupil=pupil_life, position=pos, size=diameter, 
-                              name=f"LIFE-{i}")
+        # Space-based: North Pole configuration for perfect Earth rotation tracking
+        life = cls(pupil=pupil_life, size=diameter, positions=positions,
+                  name="LIFE", latitude=90*u.deg, longitude=0*u.deg, 
+                  altitude=0*u.m)  # altitude=0 for space (not applicable)
         
         return life
     
@@ -584,9 +607,9 @@ class TelescopeArray(SamplingLayer):
         if ax is None:
             fig, ax = _plt.subplots(figsize=(8, 8))
         
-        # Handle empty collector list gracefully
-        if len(self.collectors) == 0:
-            ax.text(0.5, 0.5, "No Collectors Defined", ha='center', va='center', fontsize=12)
+        # Handle empty positions list gracefully
+        if len(self.positions) == 0:
+            ax.text(0.5, 0.5, "No Telescopes Defined", ha='center', va='center', fontsize=12)
             ax.set_xticks([])
             ax.set_yticks([])
             ax.set_title(f'{self.name} - Empty Configuration')
@@ -595,20 +618,20 @@ class TelescopeArray(SamplingLayer):
         baselines = self.get_baseline_array()
         
         if show_pupils:
-            # Determine bounding box of all collectors
+            # Determine bounding box of all telescope positions
             min_x, max_x = float('inf'), float('-inf')
             min_y, max_y = float('inf'), float('-inf')
             
-            for collector in self.collectors:
-                x, y = collector.position
-                size = collector.size.to(u.m).value if hasattr(collector.size, 'to') else float(collector.size)
-                radius = size / 2.0
+            size = self.size.to(u.m).value if hasattr(self.size, 'to') else float(self.size)
+            radius = size / 2.0
+            
+            for x, y in self.positions:
                 min_x = min(min_x, x - radius)
                 max_x = max(max_x, x + radius)
                 min_y = min(min_y, y - radius)
                 max_y = max(max_y, y + radius)
                 
-            # If no collectors or single point, handle defaults
+            # If no positions or single point, handle defaults
             if min_x == float('inf'):
                 cx, cy = 0.0, 0.0
                 span = 10.0 # Default span
@@ -618,7 +641,7 @@ class TelescopeArray(SamplingLayer):
                 span_x = max_x - min_x
                 span_y = max_y - min_y
                 span = max(span_x, span_y)
-                if span == 0: span = collector.size.to(u.m).value * 2.0 # Fallback for single point
+                if span == 0: span = size * 2.0 # Fallback for single point
             
             # Add margin
             margin = span * 0.15
@@ -636,21 +659,15 @@ class TelescopeArray(SamplingLayer):
             # Canvas extent
             extent = [cx - canvas_span/2, cx + canvas_span/2, cy - canvas_span/2, cy + canvas_span/2]
             
-            # Render each pupil onto the canvas
-            for collector in self.collectors:
-                pupil = collector.pupil
-                x_pos, y_pos = collector.position
-                
-                # Render pupil
-                diam_m = pupil.diameter.to(u.m).value if isinstance(pupil.diameter, u.Quantity) else float(pupil.diameter)
-                diam = diam_m * pupil_scale 
-                npix_pupil = int(diam / pixel_scale)
-                npix_pupil = max(32, min(npix_pupil, 256))
-                pupil_arr = pupil.get_array(npix=npix_pupil, soft=True)
-                
+            # Render pupil at each position
+            diam_m = self.pupil.diameter.to(u.m).value if isinstance(self.pupil.diameter, u.Quantity) else float(self.pupil.diameter)
+            diam = diam_m * pupil_scale 
+            npix_pupil = int(diam / pixel_scale)
+            npix_pupil = max(32, min(npix_pupil, 256))
+            pupil_arr = self.pupil.get_array(npix=npix_pupil, soft=True)
+            
+            for x_pos, y_pos in self.positions:
                 # Calculate pixel position on canvas relative to bottom-left corner of extent
-                # content_x = x_pos - extent[0]
-                
                 x_pix = int((x_pos - extent[0]) / pixel_scale)
                 y_pix = int((y_pos - extent[2]) / pixel_scale)
                 
@@ -695,116 +712,89 @@ class TelescopeArray(SamplingLayer):
         
         # Title indicates if interferometric
         mode = "Interferometric" if self.is_interferometric() else "Single Telescope"
-        ax.set_title(f'{self.name} - {mode} ({len(self.collectors)} collector{"s" if len(self.collectors) > 1 else ""})')
+        ax.set_title(f'{self.name} - {mode} ({len(self.positions)} telescope{"s" if len(self.positions) > 1 else ""})')
         
         return ax
     
     def process(self, wavefront: Any, pipeline: Optional['Pipeline'] = None) -> Any:
         """Apply telescope array aperture mask to wavefront.
         
-        This method overrides the default Layer.process() to implement custom
-        combination logic for telescope collectors.
-        
-        It supports two modes of operation:
-
-        1. **Single Wavefront Input**:
-            - The input wavefront is broadcasted to all collectors (copied).
-            - Each collector applies its pupil mask to its copy.
-            - Returns a WavefrontArray containing one wavefront per collector.
-
-        2. **WavefrontArray/List Input** (Optimization Mode):
-            - If input is a list of wavefronts (one per collector), each collector's
-              pupil is applied to the corresponding wavefront.
-            - This allows simulating large arrays without huge wavefront arrays,
-              by processing each pupil in its own local coordinate system.
+        Takes a single input wavefront and produces N output wavefronts (one per telescope position),
+        each with the shared pupil mask applied and position-dependent phase shifts.
         
         Parameters
         ----------
-        wavefront : Wavefront or WavefrontArray or List[Wavefront]
-            Input wavefront(s) to process.
+        wavefront : Wavefront
+            Input wavefront to process.
         pipeline : Pipeline, optional
             Simulation pipeline.
         
         Returns
         -------
-        wavefront : WavefrontArray
-            Wavefronts with aperture mask applied (one per collector).
+        wavefront : WavefrontArray or Wavefront
+            If single telescope: returns single Wavefront
+            If multiple telescopes: returns WavefrontArray with one wavefront per position
         """
-        # If pipeline provided, use it (or update self.pipeline)
-        pipe = pipeline if pipeline is not None else self.pipeline
-
-        # Check for list/WavefrontArray input
-        is_list_input = isinstance(wavefront, list) or (hasattr(wavefront, '__iter__') and not hasattr(wavefront, 'field'))
+        # Create temporary Telescope objects for each position to reuse existing logic
+        # This maintains compatibility while using the new architecture
+        telescopes = []
+        for i, pos in enumerate(self.positions):
+            tel = Telescope(pupil=self.pupil, position=pos, size=self.size, 
+                          name=f"{self.name}-{i+1}")
+            telescopes.append(tel)
         
-        if not is_list_input:
-            # If no input provided, generate input wavefronts from pipeline
-            if wavefront is None:
-                if pipe is None:
-                    raise ValueError("Pipeline required to generate input wavefront if none provided")
-                wf_generated = pipe.get_input_wavefront(collectors=self.elements)
-                # wf_generated is WavefrontArray; convert to list
-                wf_list = [wf_generated[i] for i in range(len(self.elements))]
-            else:
-                # Broadcast single wavefront to all collectors
-                wf_list = [wavefront.copy() for _ in range(len(self.elements))]
-        else:
-            wf_list = list(wavefront)
-            # Handle mismatch length if needed (broadcast if len=1)
-            if len(wf_list) == 1 and len(self.elements) > 1:
-                 wf_list = [wf_list[0].copy() for _ in range(len(self.elements))]
+        # Broadcast single wavefront to all telescope positions
+        if wavefront is None:
+            raise ValueError("Wavefront input required for TelescopeArray.process()")
+        
+        wf_list = [wavefront.copy() for _ in range(len(telescopes))]
         
         output_list = []
         locations = []
-        for i, collector in enumerate(self.elements):
-            if i < len(wf_list):
-                wf = wf_list[i]
-                # Ensure 3D field shape for downstream components even with single sample
-                if wf.ndim == 2:
-                    wf = wf[np.newaxis, ...]
+        for i, tel in enumerate(telescopes):
+            wf = wf_list[i]
+            # Ensure 3D field shape for downstream components even with single sample
+            if wf.ndim == 2:
+                wf = wf[np.newaxis, ...]
 
-                # Apply geometric phase (piston + tilt) for off-axis sources when input provided
+            # Apply geometric phase (piston + tilt) for off-axis sources
+            try:
+                wavelength = wf.wavelength if hasattr(wf, 'wavelength') else None
+            except Exception:
+                wavelength = None
+            if wavelength is not None and hasattr(wf, 'source_directions') and wf.source_directions is not None:
+                cx, cy = tel.position
+                k = 2 * np.pi / wavelength.to(u.m).value
+                # Build local coordinate grid from wavefront size
                 try:
-                    wavelength = wf.wavelength if hasattr(wf, 'wavelength') else None
+                    size_m = wf.width.to(u.m).value
                 except Exception:
-                    wavelength = None
-                if wavelength is not None and hasattr(wf, 'source_directions') and wf.source_directions is not None:
-                    cx, cy = getattr(collector, 'position', (0.0, 0.0))
-                    print(f"DEBUG: Applying phase shift. cx={cx}, cy={cy}, dirs={wf.source_directions}")
-                    k = 2 * np.pi / wavelength.to(u.m).value
-                    # Build local coordinate grid from wavefront size
-                    try:
-                        size_m = wf.width.to(u.m).value
-                    except Exception:
-                        size_m = float(wf.width)
-                    npix = wf.npix
-                    u_vec = np.linspace(-size_m/2, size_m/2, npix)
-                    v_vec = np.linspace(-size_m/2, size_m/2, npix)
-                    U, V = np.meshgrid(u_vec, v_vec)
-                    dirs = wf.source_directions
-                    for s in range(wf.shape[0]):
-                        tx = u.Quantity(dirs[s][0], u.rad).to(u.rad).value
-                        ty = u.Quantity(dirs[s][1], u.rad).to(u.rad).value
-                        piston = k * (cx * tx + cy * ty)
-                        tilt = k * (U * tx + V * ty)
-                        phasor = np.exp(1j * (piston + tilt))
-                        wf[s] *= phasor
-                
-                # Phase shift is now handled in Pipeline.get_input_wavefront if collectors were passed.
-                # If a generic wavefront was passed, we assume it's already correct or we might need
-                # to re-implement piston here if needed for external wavefronts.
-                # But for now, we assume Pipeline handles it.
-                
-                # Apply collector pupil
-                wf_processed = collector.process(wf)
-                output_list.append(wf_processed)
-                locations.append(collector.position)
+                    size_m = float(wf.width)
+                npix = wf.npix
+                u_vec = np.linspace(-size_m/2, size_m/2, npix)
+                v_vec = np.linspace(-size_m/2, size_m/2, npix)
+                U, V = np.meshgrid(u_vec, v_vec)
+                dirs = wf.source_directions
+                for s in range(wf.shape[0]):
+                    tx = u.Quantity(dirs[s][0], u.rad).to(u.rad).value
+                    ty = u.Quantity(dirs[s][1], u.rad).to(u.rad).value
+                    piston = k * (cx * tx + cy * ty)
+                    tilt = k * (U * tx + V * ty)
+                    phasor = np.exp(1j * (piston + tilt))
+                    wf[s] *= phasor
+            
+            # Apply telescope pupil
+            wf_processed = tel.process(wf)
+            output_list.append(wf_processed)
+            locations.append(tel.position)
         
-        # If single collector, return single Wavefront for backward compatibility
+        # If single telescope, return single Wavefront for backward compatibility
         if len(output_list) == 1:
             return output_list[0]
         return WavefrontArray(output_list, locations=locations)
 
 
-# Legacy aliases for backward compatibility
-Telescope = TelescopeArray  # Single telescope is just TelescopeArray with one collector at (0,0)
-Interferometer = TelescopeArray  # Interferometer is just TelescopeArray with multiple collectors at different positions
+# Backward compatibility aliases
+Collector = Telescope  # Old name for Telescope class
+# Note: Old TelescopeArray API is not directly compatible due to architectural changes
+# Users should migrate to new constructor: TelescopeArray(pupil=..., size=..., positions=...)

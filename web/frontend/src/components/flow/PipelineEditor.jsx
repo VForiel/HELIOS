@@ -9,9 +9,10 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import TelescopeNode from './nodes/TelescopeNode';
+import TelescopeArrayNode from './nodes/TelescopeArrayNode'; // Imported
 import CameraNode from './nodes/CameraNode';
 import GenericNode from './nodes/GenericNode';
-import { Menu, Sun, Moon, Heart, Github, Book, Download, Upload, Cpu, Disc, Divide, GitFork, Zap, Activity, Hand, MousePointer2, Stars, Search, Camera, CloudFog, X, Code, Languages, LayoutList, GitGraph } from 'lucide-react';
+import { Menu, Sun, Moon, Heart, Github, Book, Download, Upload, Cpu, Disc, Divide, GitFork, Zap, Activity, Hand, MousePointer2, Stars, Search, Camera, CloudFog, X, Code, Languages, LayoutList, GitGraph, Grid } from 'lucide-react'; // Added Grid
 import { getElementIcon, getPhotonicIcon } from '../../utils/iconMap';
 
 import LayerNode from './nodes/LayerNode';
@@ -21,8 +22,17 @@ import SimulationControls from '../SimulationControls';
 import LayeredView from '../LayeredView';
 
 const nodeTypes = {
-    layer: LayerNode
+    layer: LayerNode,
+    telescope_array: TelescopeArrayNode // Registered (though we use LayerNode wrapping usually? Wait, checking code...)
 };
+// Wait, the previous code showed TelescopeNode is NOT in nodeTypes?
+// Line 23: const nodeTypes = { layer: LayerNode };
+// It seems nodes are rendered INSIDE LayerNode? Or are TelescopeNode/CameraNode used directly?
+// Looking at onDrop (line 573):
+// It creates "newElement" which is added to a "layer" node's data.elements.
+// Or it creates a new "layer" node containing the element.
+// So LayerNode renders the specific component based on type?
+// Let's check LayerNode.jsx.
 
 const edgeTypes = {
     parallel: ParallelEdge
@@ -361,6 +371,7 @@ export default function PipelineEditor({
             'scene': 'GenerationLayer',
             'atmosphere': 'GenerationLayer',
             'telescope': 'SamplingLayer',
+            'telescope_array': 'SamplingLayer',
             'lens': 'OpticalLayer',
             'beam_splitter': 'OpticalLayer',
             'coronagraph': 'OpticalLayer',
@@ -598,6 +609,7 @@ export default function PipelineEditor({
             if (type === 'scene') newElement = { type, label: 'Scene', config: { stars, planets, zodiacal }, iconPath: getElementIcon('scene') };
             else if (type === 'atmosphere') newElement = { type, label: 'Atmosphere', config: atmosphere, iconPath: getElementIcon('atmosphere') };
             else if (type === 'telescope') newElement = { type, label: 'Telescope', config: telescope, iconPath: getElementIcon('telescope') };
+            else if (type === 'telescope_array') newElement = { type, label: 'Telescope Array', config: { ...telescope, preset: 'VLTI-UT' }, iconPath: getElementIcon('telescope') }; // Use Telescope icon for now or Grid?
             else if (type === 'camera') newElement = { type, label: 'Camera', config: camera, iconPath: getElementIcon('camera') };
             else if (type === 'lens') newElement = { type, label: 'Lens', config: { focal_length: 1.0 }, iconPath: getElementIcon('lens'), fields: [{ name: 'focal_length', type: 'number', label: 'Focal Length', step: 0.1 }] };
             else if (type === 'beam_splitter') newElement = { type, label: 'Beam Splitter', config: { split_ratio: 0.5 }, iconPath: getElementIcon('beam_splitter'), fields: [{ name: 'split_ratio', type: 'number', label: 'Split Ratio', step: 0.1 }] };
