@@ -1,7 +1,7 @@
 """Telescope array classes for single and interferometric observations.
 
 This module provides classes for managing telescope configurations:
-- Collector: Single telescope with pupil geometry and position (Element subclass)
+- Collector: Single telescope with pupil geometry and position (Component subclass)
 - TelescopeArray: Array of one or more collectors with spatial positioning (Layer subclass)
 
 TelescopeArray unifies single-telescope and interferometric observations:
@@ -13,17 +13,17 @@ from astropy import units as u
 from typing import Tuple, Optional, Any, Union
 import matplotlib.pyplot as _plt
 
-from ..core.pipeline import Layer, SamplingLayer, Element, Pipeline
+from ..core.pipeline import Layer, SamplingLayer, Component, SamplingComponent, Pipeline
 from ..utils.serialization import serialize_value, deserialize_value
 from ..core.simulation import Wavefront, WavefrontArray
 from .pupil import Pupil
 
 
-class Collector(Element):
+class Collector(SamplingComponent):
     __slots__ = ("pupil", "position", "size", "name")
     """Represents a single telescope/collector with pupil geometry and position.
     
-    A Collector is an Element that encapsulates the properties of an individual
+    A Collector is a Component that encapsulates the properties of an individual
     telescope aperture, including its pupil geometry (transmission pattern), 
     physical size, and position in the aperture plane (for interferometric arrays).
     
@@ -54,7 +54,7 @@ class Collector(Element):
     size : astropy.Quantity
         Aperture diameter in meters.
     name : str
-        Collector identifier (inherited from Element).
+        Collector identifier (inherited from Component).
     metadata : dict
         Additional properties.
     
@@ -75,7 +75,7 @@ class Collector(Element):
         y = y.to(u.m).value if hasattr(y, 'to') else float(y)
         self.position = (x, y)
 
-        # Initialize Element with name
+        # Initialize Component with name
         default_name = f"Collector@({self.position[0]:.1f},{self.position[1]:.1f})"
         super().__init__(name=name or default_name)
         

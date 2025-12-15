@@ -2,7 +2,7 @@ import numpy as np
 from typing import Optional, Tuple, Any
 from astropy import units as u
 
-from ..core.pipeline import Element, Layer, OpticalLayer, Pipeline
+from ..core.pipeline import Component, OpticalComponent, Layer, OpticalLayer, Pipeline
 from ..core.simulation import Wavefront, WavefrontArray
 
 

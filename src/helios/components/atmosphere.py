@@ -9,7 +9,7 @@ from astropy import units as u
 from typing import Tuple, List, Union, Optional
 import matplotlib.pyplot as _plt
 
-from ..core.pipeline import Element, Layer, GenerationLayer, Pipeline
+from ..core.pipeline import Component, OpticalComponent, Layer, GenerationLayer, Pipeline
 from ..utils.serialization import serialize_value, deserialize_value
 from ..core.simulation import Wavefront, WavefrontArray
 from .collector import TelescopeArray
@@ -920,8 +920,26 @@ class Atmosphere(GenerationLayer):
         # Initialize with first frame
         wf_init = Wavefront(wavelength=wavelength, npix=npix)
         wf_init[:] = np.ones((npix, npix), dtype=np.complex128)
-        ctx_init = TimeContext(times[0])
-        wf_atm_init = self.process(wf_init, ctx_init)
+        
+        # Create temporary pipeline for time management if needed
+        temp_pipeline = None
+        if self.pipeline is None:
+            from ..core.pipeline import Pipeline
+            temp_pipeline = Pipeline()
+            self.pipeline = temp_pipeline
+        
+        # Set time
+        old_time = getattr(self.pipeline, 'time', None)
+        self.pipeline.time = times[0] * u.s
+        
+        wf_atm_init = self.process(wf_init)
+        
+        # Restore state
+        if temp_pipeline is not None:
+            self.pipeline = None
+        elif old_time is not None:
+            self.pipeline.time = old_time
+        
         phase_init = np.angle(wf_atm_init)
         # Squeeze to 2D if needed (wavefront has shape (samples, h, w))
         if phase_init.ndim == 3:
@@ -980,8 +998,26 @@ class Atmosphere(GenerationLayer):
             # Generate phase screen at time t
             wf = Wavefront(wavelength=wavelength, npix=npix)
             wf[:] = np.ones((npix, npix), dtype=np.complex128)
-            ctx = TimeContext(t)
-            wf_atm = self.process(wf, ctx)
+            
+            # Create temporary pipeline for time management if needed
+            temp_pipeline = None
+            if self.pipeline is None:
+                from ..core.pipeline import Pipeline
+                temp_pipeline = Pipeline()
+                self.pipeline = temp_pipeline
+            
+            # Set time
+            old_time = getattr(self.pipeline, 'time', None)
+            self.pipeline.time = t * u.s
+            
+            wf_atm = self.process(wf)
+            
+            # Restore state
+            if temp_pipeline is not None:
+                self.pipeline = None
+            elif old_time is not None:
+                self.pipeline.time = old_time
+            
             phase = np.angle(wf_atm)
             # Squeeze to 2D if needed
             if phase.ndim == 3:
@@ -1016,7 +1052,7 @@ class Atmosphere(GenerationLayer):
 
 
 
-class AdaptiveOptics(Element):
+class AdaptiveOptics(OpticalComponent):
     """Adaptive optics layer applying Zernike-based correction.
 
     Parameters

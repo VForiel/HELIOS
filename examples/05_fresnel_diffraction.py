@@ -80,7 +80,7 @@ def demo_fresnel():
         ax = axes[i]
         
         # On utilise les coordonnées physiques pour l'affichage
-        extent, xlabel, ylabel = helios.core.simulation._get_smart_extent(wf_prop.shape, wf_prop.pixel_scale)
+        extent, xlabel, ylabel = helios.core.simulation.get_smart_extent(wf_prop.shape, wf_prop.pixel_scale)
         
         im = ax.imshow(intensity, extent=extent, cmap='inferno', origin='lower')
         
@@ -97,7 +97,17 @@ def demo_fresnel():
 
     plt.suptitle(f"Diffraction de Fresnel (Ouverture circulaire r={radius})", fontsize=14)
     plt.tight_layout()
-    plt.show()
+    
+    if os.environ.get("HELIOS_SAVE_PLOTS") == "true":
+        output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../generated/examples'))
+        os.makedirs(output_dir, exist_ok=True)
+        filename = os.path.basename(__file__).replace('.py', '_1.png')
+        save_path = os.path.join(output_dir, filename)
+        plt.savefig(save_path)
+        print(f"Saved plot to {save_path}")
+        plt.close()
+    else:
+        plt.show()
 
     # --- Comparaison au Plan Focal (f = 1 m) ---
     print("\n--- Comparaison au Plan Focal (f = 1 m) ---")
@@ -120,7 +130,7 @@ def demo_fresnel():
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
     
     # Plot Fraunhofer
-    ext_fft, xl_fft, yl_fft = helios.core.simulation._get_smart_extent(wf_fft.shape, wf_fft.pixel_scale)
+    ext_fft, xl_fft, yl_fft = helios.core.simulation.get_smart_extent(wf_fft.shape, wf_fft.pixel_scale)
     im1 = axes[0].imshow(wf_fft.intensity.value[0] if wf_fft.ndim==3 else wf_fft.intensity.value, 
                    extent=ext_fft, cmap='inferno', origin='lower')
     axes[0].set_title("Fraunhofer (FFT)\n(Grille redimensionnée)")
@@ -129,7 +139,7 @@ def demo_fresnel():
     plt.colorbar(im1, ax=axes[0], label='Intensité')
     
     # Plot Fresnel
-    ext_fres, xl_fres, yl_fres = helios.core.simulation._get_smart_extent(wf_fresnel.shape, wf_fresnel.pixel_scale)
+    ext_fres, xl_fres, yl_fres = helios.core.simulation.get_smart_extent(wf_fresnel.shape, wf_fresnel.pixel_scale)
     im2 = axes[1].imshow(wf_fresnel.intensity.value[0] if wf_fresnel.ndim==3 else wf_fresnel.intensity.value, 
                    extent=ext_fres, cmap='inferno', origin='lower')
     axes[1].set_title("Fresnel (Lentille + ASM)\n(Grille fixe)")
@@ -158,7 +168,17 @@ def demo_fresnel():
 
     plt.suptitle(f"Comparaison au foyer f={focal_length}\nNotez la différence de résolution (FFT vs ASM fixe)", fontsize=14)
     plt.tight_layout()
-    plt.show()
+    
+    if os.environ.get("HELIOS_SAVE_PLOTS") == "true":
+        output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../generated/examples'))
+        os.makedirs(output_dir, exist_ok=True)
+        filename = os.path.basename(__file__).replace('.py', '_2.png')
+        save_path = os.path.join(output_dir, filename)
+        plt.savefig(save_path)
+        print(f"Saved plot to {save_path}")
+        plt.close()
+    else:
+        plt.show()
 
 if __name__ == "__main__":
     demo_fresnel()

@@ -1,7 +1,7 @@
 import numpy as np
 from typing import Tuple, Optional, Any
 from astropy import units as u
-from ..core.pipeline import Element, Layer, DetectionLayer, Pipeline
+from ..core.pipeline import Component, DetectionComponent, Layer, DetectionLayer, Pipeline
 from ..utils.serialization import serialize_value, deserialize_value
 from ..core.simulation import Wavefront, WavefrontArray
 import matplotlib.pyplot as plt
@@ -406,7 +406,7 @@ class Camera(DetectionLayer):
         """
         Process wavefront and return reduced detector image.
         
-        This is the Layer/Element interface method called by Pipeline.observe().
+        This is the Layer/Component interface method called by Pipeline.observe().
         By default, it returns a dark-subtracted (reduced) image.
         
         For raw images or dark frames, use get_raw_image() or get_dark() directly.

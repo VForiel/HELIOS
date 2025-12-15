@@ -3,16 +3,16 @@ from astropy import units as u
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 from typing import Optional, Tuple, Any
-from ..core.pipeline import Layer, GenerationLayer, Element, Pipeline
+from ..core.pipeline import Layer, GenerationLayer, Component, GenerationComponent, Pipeline
 from ..utils.serialization import serialize_value, deserialize_value
 from ..core.simulation import Wavefront
 from astropy import constants as const
 
-class CelestialBody(Element):
+class CelestialBody(GenerationComponent):
     """
     Base class for all celestial objects (stars, planets, zodiacal light, etc.).
     
-    CelestialBody inherits from Element, making each celestial object an independent
+    CelestialBody inherits from GenerationComponent, making each celestial object an independent
     processing unit that can be combined in parallel within a Scene layer.
     
     Parameters

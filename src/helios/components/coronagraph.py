@@ -8,7 +8,7 @@ from astropy import units as u
 from typing import Optional
 import matplotlib.pyplot as _plt
 
-from ..core.pipeline import Element, Layer, OpticalLayer, Pipeline
+from ..core.pipeline import Component, OpticalComponent, Layer, OpticalLayer, Pipeline
 from ..core.simulation import Wavefront
 
 

@@ -1,7 +1,7 @@
 import numpy as np
 from astropy import units as u
 from typing import List, Union, Tuple, Optional
-from ..core.pipeline import Layer, Element, Pipeline, OpticalLayer
+from ..core.pipeline import Layer, Component, OpticalComponent, Pipeline, OpticalLayer
 from ..core.simulation import Wavefront
 import copy
 
@@ -19,9 +19,9 @@ class PhotonicChip(OpticalLayer):
         super().__init__()
         self.num_inputs = inputs
 
-    def add_element(self, element: Element):
-        """Add an element to the chip and link it."""
-        super().add_element(element)
+    def add_element(self, component: Component):
+        """Add a component to the chip and link it."""
+        super().add_element(component)
         # We can also explicitly set a property on the element if needed,
         # but accessing via self.layer (which is this chip) is cleaner.
         # For convenience, we can check if the element has a set_chip method or similar.
@@ -52,12 +52,12 @@ class PhotonicChip(OpticalLayer):
             # For complex routing, use Pipeline directly
             
             # Ensure element has access to chip properties if needed
-            # (Already handled by parent link in Element)
+            # (Already handled by parent link in Component)
             
             current_signal = element.process(current_signal)
         return current_signal
 
-class YSplitter(Element):
+class YSplitter(OpticalComponent):
     __slots__ = ("num_inputs", "num_outputs", "name")
     """
     Y-Junction Beam Splitter.
@@ -99,7 +99,7 @@ class YSplitter(Element):
         
         return [out1, out2]
 
-class ThermoOpticPhaseShifter(Element):
+class ThermoOpticPhaseShifter(OpticalComponent):
     __slots__ = ("phase", "num_inputs", "name")
     """
     Thermo-Optic Phase Shifter (TOPS).
@@ -139,7 +139,7 @@ class ThermoOpticPhaseShifter(Element):
 # Alias for convenience
 TOPS = ThermoOpticPhaseShifter
 
-class MultiModeInterferometer(Element):
+class MultiModeInterferometer(OpticalComponent):
     __slots__ = ("matrix", "num_outputs", "num_inputs", "name")
     """
     Multi-Mode Interferometer (MMI).

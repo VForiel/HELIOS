@@ -15,33 +15,33 @@ from .simulation import Wavefront, WavefrontArray
 
 from ..utils.serialization import serialize_value, deserialize_value
 
-class Element:
+class Component:
     """
-    Base class for all simulation elements (physical components).
+    Base class for all simulation components (physical elements).
     
-    An Element represents a physical component in the optical system that can
-    process wavefronts independently. Elements are grouped within Layers for
+    A Component represents a physical element in the optical system that can
+    process wavefronts independently. Components are grouped within Layers for
     parallel processing.
     
     Parameters
     ----------
     name : str, optional
-        Descriptive name for this element (used in diagrams and logging)
+        Descriptive name for this component (used in diagrams and logging)
     
     Attributes
     ----------
     name : str
-        Descriptive name for this element
+        Descriptive name for this component
     layer : Layer
-        Reference to the parent layer containing this element
+        Reference to the parent layer containing this component
     pipeline : Pipeline
         Shortcut to access the parent pipeline (equivalent to self.layer.pipeline)
     
     Examples
     --------
-    >>> class CustomElement(Element):
+    >>> class CustomComponent(Component):
     ...     def __init__(self, parameter, name=None):
-    ...         super().__init__(name=name or "CustomElement")
+    ...         super().__init__(name=name or "CustomComponent")
     ...         self.parameter = parameter
     ...
     ...     def process(self, wavefront, pipeline):
@@ -53,44 +53,44 @@ class Element:
         self.name = name
         self.layer: Optional['Layer'] = None
         self.pipeline: Optional['Pipeline'] = None
-        self.num_inputs: int = 1  # Number of inputs this element consumes
-        self.num_outputs: int = 1 # Number of outputs this element produces
+        self.num_inputs: int = 1  # Number of inputs this component consumes
+        self.num_outputs: int = 1 # Number of outputs this component produces
         self.metadata: dict = {}  # Store for UI/Application specific data
 
-    def twin(self) -> 'Element':
+    def twin(self) -> 'Component':
         """
-        Create a twin copy of this element.
+        Create a twin copy of this component.
         
-        A twin is a deep copy of the element that preserves the reference to its
+        A twin is a deep copy of the component that preserves the reference to its
         parent layer (if any). This is useful for creating multiple instances
         of the same component type that share the same physical container (e.g.,
         multiple MMI components on the same PhotonicChip).
         
         Returns
         -------
-        Element
-            A new instance of the element with identical attributes but sharing
+        Component
+            A new instance of the component with identical attributes but sharing
             the parent layer reference.
         """
-        # Create a deep copy of the element
+        # Create a deep copy of the component
         # We need to temporarily detach the layer to avoid deep copying the parent
         parent_layer = self.layer
         self.layer = None
         
         try:
-            new_element = copy.deepcopy(self)
+            new_component = copy.deepcopy(self)
         finally:
             # Restore the layer reference on the original object
             self.layer = parent_layer
             
         # Restore the layer reference on the new object
-        new_element.layer = parent_layer
+        new_component.layer = parent_layer
         
-        return new_element
+        return new_component
 
     def description(self, indent: int = 0, full: bool = False) -> str:
         """
-        Generate a text description of this element.
+        Generate a text description of this component.
         
         Parameters
         ----------
@@ -102,15 +102,15 @@ class Element:
         Returns
         -------
         str
-            Formatted description of the element
+            Formatted description of the component
         
         Examples
         --------
-        >>> element = CustomElement()
-        >>> print(element.description())
-        CustomElement
-        >>> print(element.description(full=True))
-        CustomElement
+        >>> component = CustomComponent()
+        >>> print(component.description())
+        CustomComponent
+        >>> print(component.description(full=True))
+        CustomComponent
         >>>   - parameter: value
         """
         prefix = " " * indent
@@ -146,7 +146,7 @@ class Element:
         Process the incoming wavefront/signal and return the result.
         
         This method must be implemented by all subclasses. It defines how
-        the element transforms the electromagnetic field or signal.
+        the component transforms the electromagnetic field or signal.
         
         Parameters
         ----------
@@ -156,7 +156,7 @@ class Element:
         Returns
         -------
         wavefront : Wavefront or list of Wavefront or ndarray
-            The transformed wavefront(s). Terminal elements (e.g., Camera) may
+            The transformed wavefront(s). Terminal components (e.g., Camera) may
             return numpy arrays instead of Wavefront objects.
         
         Raises
@@ -168,7 +168,7 @@ class Element:
 
     def to_dict(self) -> dict:
         """
-        Serialize element configuration to dictionary.
+        Serialize component configuration to dictionary.
         
         Returns
         -------
@@ -185,33 +185,98 @@ class Element:
         }
     
     @classmethod
-    def from_dict(cls, data: dict) -> 'Element':
+    def from_dict(cls, data: dict) -> 'Component':
         """
-        Create element instance from dictionary.
+        Create component instance from dictionary.
         
         Parameters
         ----------
         data : dict
-            Dictionary containing element configuration
+            Dictionary containing component configuration
             
         Returns
         -------
-        Element
-            New element instance
+        Component
+            New component instance
         """
         name = data.get("name")
         name = data.get("name")
-        elem = cls(name=name)
-        elem.metadata = data.get("metadata", {})
-        return elem
+        comp = cls(name=name)
+        comp.metadata = data.get("metadata", {})
+        return comp
+
+# =============================================================================
+# COMPONENT TYPES
+# =============================================================================
+
+class GenerationComponent(Component):
+    """
+    Component that generates electromagnetic fields (Scene elements).
+    
+    GenerationComponents create the initial wavefront from celestial sources
+    (stars, planets, zodiacal light, etc.). They typically don't require input
+    wavefronts and generate fields based on physical models.
+    
+    Examples: Star, Planet, ExoZodiacal, Zodiacal
+    """
+    pass
+
+class SamplingComponent(Component):
+    """
+    Component that samples continuous fields into discrete optical paths.
+    
+    SamplingComponents convert a continuous electromagnetic field into discrete
+    optical beams by sampling at specific spatial locations (e.g., telescope
+    apertures in an interferometric array).
+    
+    Examples: Collector (individual telescope aperture)
+    """
+    pass
+
+class OpticalComponent(Component):
+    """
+    Component that propagates or modifies optical beams.
+    
+    OpticalComponents transform wavefronts through optical elements such as
+    lenses, mirrors, beam splitters, phase shifters, and integrated photonic
+    circuits. They preserve the optical nature of the signal.
+    
+    Examples: YSplitter, ThermoOpticPhaseShifter, MultiModeInterferometer,
+              BeamSplitter, Coronagraph, AdaptiveOptics, Lens
+    """
+    pass
+
+class DetectionComponent(Component):
+    """
+    Component that converts photons to digital data.
+    
+    DetectionComponents model the detection process, converting optical signals
+    into electronic signals and digital data. They typically include noise models
+    (dark current, read noise, shot noise) and detector characteristics.
+    
+    Examples: Camera, Detector
+    """
+    pass
+
+class DataComponent(Component):
+    """
+    Component that processes digital data.
+    
+    DataComponents operate on digital data arrays, performing post-processing
+    operations such as image stacking, calibration, or data reduction algorithms.
+    
+    Examples: ImageStacker, CalibrationPipeline (future components)
+    """
+    pass
 
 
 class Layer:
+
     """
-    Base class for all simulation layers (logical grouping of elements).
+    Base class for all simulation layers (logical grouping of components).
     
     A Layer represents a logical stage in the simulation pipeline and contains
-    one or more Elements that process wavefronts in parallel.
+    one or more Components that process wavefronts in parallel.
     
     The layer abstraction enables flexible composition of simulation pipelines:
     - Layers are processed sequentially by the Context
@@ -225,8 +290,8 @@ class Layer:
     
     Attributes
     ----------
-    elements : list of Element
-        Physical components contained in this layer
+    elements : list of Component
+        Physical components contained in this layer (also accessible via .components)
     pipeline : Pipeline
         Reference to the parent pipeline managing this layer
     
@@ -244,11 +309,11 @@ class Layer:
     See Also
     --------
     Pipeline : Orchestrates layer execution
-    Element : Physical components within layers
+    Component : Physical components within layers
     """
     def __init__(self, name: Optional[str] = None):
         self.name = name
-        self.elements: List[Element] = []
+        self.elements: List[Component] = []  # List of components (kept as 'elements' for compatibility)
         self.pipeline: Optional['Pipeline'] = None
         self.metadata: dict = {} # Store for UI/Application specific data
         self.num_inputs: int = 1  # Number of inputs this layer consumes (if single layer)
@@ -316,12 +381,12 @@ class Layer:
         Layer
             A new instance of the layer with identical attributes.
         """
-        # Similar logic to Element.twin() if needed, but Layer usually doesn't have a 'parent' 
-        # in the same way Element has 'layer'. Layer has 'pipeline'.
-        # However, the user asked for "elements" to have twin().
+        # Similar logic to Component.twin() if needed, but Layer usually doesn't have a 'parent' 
+        # in the same way Component has 'layer'. Layer has 'pipeline'.
+        # However, the user asked for "components" to have twin().
         # Since Layer is also used as a component (e.g. MMI inherits from Layer),
-        # we should implement it here too or ensure MMI inherits from Element?
-        # Wait, in HELIOS, components like MMI inherit from Layer, not Element?
+        # we should implement it here too or ensure MMI inherits from Component?
+        # Wait, in HELIOS, components like MMI inherit from Layer, not Component?
         # Let's check photonics.py.
         
         # If MMI inherits from Layer, then we need twin() on Layer.
@@ -366,26 +431,44 @@ class Layer:
             
         return new_layer
 
-    def add_element(self, element: Element):
+    def add_element(self, component: Component):
         """
-        Add an element to this layer.
+        Add a component to this layer.
         
-        Automatically sets the element's layer and pipeline references.
+        Automatically sets the component's layer and pipeline references.
         
         Parameters
         ----------
-        element : Element
-            The element to add to this layer
+        component : Component
+            The component to add to this layer
         """
-        self.elements.append(element)
-        element.layer = self
+        self.elements.append(component)
+        component.layer = self
         # Set pipeline if the layer is already attached to a pipeline
         if self.pipeline is not None:
-            element.pipeline = self.pipeline
+            component.pipeline = self.pipeline
+    
+    def add_component(self, component: Component):
+        """
+        Add a component to this layer (alias for add_element for clarity).
+        
+        Automatically sets the component's layer and pipeline references.
+        
+        Parameters
+        ----------
+        component : Component
+            The component to add to this layer
+        """
+        self.add_element(component)
+    
+    @property
+    def components(self) -> List[Component]:
+        """Alias for elements attribute for better semantic clarity."""
+        return self.elements
 
     def description(self, indent: int = 0, full: bool = False) -> str:
         """
-        Generate a text description of this layer and all its elements.
+        Generate a text description of this layer and all its components.
         
         Parameters
         ----------
@@ -397,20 +480,20 @@ class Layer:
         Returns
         -------
         str
-            Formatted description of the layer and all sub-elements
+            Formatted description of the layer and all sub-components
         
         Examples
         --------
         >>> layer = CustomLayer()
-        >>> layer.add_element(CustomElement())
+        >>> layer.add_component(CustomComponent())
         >>> print(layer.description())
         CustomLayer
-        >>>   └─ CustomElement
+        >>>   └─ CustomComponent
         >>> print(layer.description(full=True))
         CustomLayer
         >>>   • parameter: value
-        >>>   └─ CustomElement
-        >>>     • element_param: value
+        >>>   └─ CustomComponent
+        >>>     • component_param: value
         """
         prefix = " " * indent
         class_name = self.__class__.__name__
@@ -817,7 +900,7 @@ class Pipeline:
         
         # Reconstruct layers
         from ..components import scene, atmosphere, collector, detectors
-        from .context import Layer # import self for check? No need.
+        # Layer is already defined in this module (pipeline.py)
         
         # Mapping of type names to classes
         type_map = {
@@ -2397,6 +2480,9 @@ class Pipeline:
             zorder=1
         )
         ax.add_patch(arrow)
+# Backward compatibility alias
+Context = Pipeline
+
 
 def test_pipeline_initialization():
     pipe = Pipeline(date="2025-01-01", declination=10)
