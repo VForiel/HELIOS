@@ -72,6 +72,7 @@ export default function ParallelEdge({
                 style={{
                     ...style,
                     strokeWidth: 1.5,
+                    vectorEffect: 'non-scaling-stroke', // Keep thickness constant during zoom
                     // Force consistent animation timing for all paths
                     animationDelay: '0s',
                     animationDuration: '1s'

@@ -1,6 +1,6 @@
 import React, { memo, useState } from 'react';
-import { Handle, Position } from 'reactflow';
-import { Settings, Trash2, ChevronDown, ChevronRight, Save, Eye } from 'lucide-react';
+import { Handle, Position, useStore } from 'reactflow';
+import { Settings, Trash2, ChevronDown, ChevronRight, Save, Eye, Layers } from 'lucide-react';
 import { getElementIcon } from '../../../utils/iconMap';
 import { usePipelineContext } from '../../../contexts/PipelineContext';
 
@@ -15,6 +15,9 @@ const NoDrag = ({ children }) => (
     </div>
 );
 
+// Zoom Selector for performance
+const zoomSelector = (s) => s.transform[2];
+
 export default memo(({ data, selected, id }) => {
     // Robust Data Unpacking
     let effectiveData = data;
@@ -23,6 +26,10 @@ export default memo(({ data, selected, id }) => {
             ...data.elements[0],
         };
     }
+
+    // Zoom Level
+    const zoom = useStore(zoomSelector);
+    const showIconOnly = zoom < 0.6; // Semantic Zoom Threshold
 
     // State for expansion
     const [expanded, setExpanded] = useState(true);
@@ -103,104 +110,168 @@ export default memo(({ data, selected, id }) => {
                     </div>
                 </div>
             );
+        } else if (type === 'atmosphere') {
+            return (
+                <div className="space-y-2 p-2">
+                    <div>
+                        <label className="block text-[10px] font-medium text-slate-500 mb-1">Seeing (arcsec)</label>
+                        <input
+                            type="number"
+                            step={0.1}
+                            value={config.seeing || 0.8}
+                            onChange={(e) => handleConfigChange({ ...config, seeing: parseFloat(e.target.value) })}
+                            className="w-full text-xs p-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded"
+                        />
+                    </div>
+                </div>
+            )
         }
-        return <div className="p-2 text-xs italic text-slate-400">No inline config</div>;
+        else {
+            // Generic or unknown
+            return <div className="p-2 text-xs text-slate-400">No settings available</div>;
+        }
     };
 
-    // Helper to generate handles
-    const renderHandles = (handleType, count, position) => {
-        return Array.from({ length: count }).map((_, i) => (
-            <Handle
-                key={`${handleType}-${i}`}
-                type={handleType}
-                position={position}
-                id={`${handleType}-${i}`}
-                style={{
-                    top: `${((i + 1) / (count + 1)) * 100}%`,
-                    width: '6px',
-                    height: '6px',
-                    background: '#94a3b8',
-                    border: '1px solid white'
-                }}
-                className={`!w-1.5 !h-1.5 transition-colors hover:!bg-blue-500 hover:!border-blue-500`}
-            />
-        ));
-    };
-
-    return (
-        <div className={`
-            relative flex flex-col min-w-[200px] bg-white dark:bg-slate-900 
-            border rounded-md shadow-sm transition-all
-            ${selected ? 'border-blue-500 ring-2 ring-blue-500/30' : 'border-slate-300 dark:border-slate-700'}
-        `}>
-            {/* Header / Title */}
-            <div
+    // SEMANTIC ZOOM: Icon View
+    if (showIconOnly) {
+        return (
+            <div 
                 className={`
-                    flex items-center gap-2 px-2 py-2 border-b border-inherit rounded-t-md
-                    ${selected ? 'bg-blue-50 dark:bg-blue-900/20' : 'bg-slate-50 dark:bg-slate-800'}
+                    w-64 h-64 rounded-3xl flex flex-col items-center justify-center gap-4
+                    bg-white dark:bg-slate-900 border-4 transition-all shadow-xl
+                    ${selected ? 'border-blue-500 shadow-blue-500/30 ring-4 ring-blue-500/20' : 'border-slate-300 dark:border-slate-700'}
                 `}
             >
-                {/* Fixed Expanded State - No Toggle */}
-                <div className="p-1 rounded bg-white dark:bg-slate-700 shadow-sm shrink-0">
-                    {iconPath ? (
-                        <img src={iconPath} alt={label} className="w-4 h-4 dark:invert" />
-                    ) : Icon ? (
-                        <Icon className="w-4 h-4 text-slate-600 dark:text-slate-300" />
-                    ) : (
-                        <Settings className="w-4 h-4 text-slate-400" />
-                    )}
-                </div>
-                <span className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate flex-1" title={label}>
+                {/* Inputs */}
+                {Array.from({ length: inputCount }).map((_, i) => (
+                    <Handle
+                        key={`in-${i}`}
+                        type="target"
+                        position={Position.Left}
+                        id={`input-${i}`}
+                        style={{ top: '50%', background: '#3b82f6', width: '24px', height: '24px', border: '4px solid white', left: '-12px' }}
+                    />
+                ))}
+
+                {/* Icon */}
+                {iconPath ? (
+                    <img src={iconPath} alt={label} className="w-32 h-32 dark:invert opacity-90" />
+                ) : Icon ? (
+                    <Icon className="w-32 h-32 text-slate-600 dark:text-slate-300" />
+                ) : (
+                    <Layers className="w-32 h-32 text-slate-400" />
+                )}
+
+                {/* Label (Bold & Large) */}
+                <span className="text-2xl font-black text-slate-700 dark:text-slate-200 truncate max-w-[90%] pointer-events-none mt-2">
                     {label}
                 </span>
 
-                {/* Quick Actions */}
-                {onInspect && (
+                {/* Outputs */}
+                {Array.from({ length: outputCount }).map((_, i) => (
+                    <Handle
+                        key={`out-${i}`}
+                        type="source"
+                        position={Position.Right}
+                        id={`output-${i}`}
+                        style={{ top: '50%', background: '#3b82f6', width: '24px', height: '24px', border: '4px solid white', right: '-12px' }}
+                    />
+                ))}
+            </div>
+        );
+    }
+
+    // STANDARD MODE (Expanded/Detailed)
+    return (
+        <div className={`
+            min-w-[280px] rounded-lg border bg-white dark:bg-slate-900 shadow-lg transition-all duration-200
+            ${selected ? 'border-blue-500 ring-1 ring-blue-500' : 'border-slate-200 dark:border-slate-800 hover:border-slate-300'}
+        `}>
+            {/* Header */}
+            <div className={`
+                flex items-center justify-between p-3 border-b border-slate-100 dark:border-slate-800
+                ${selected ? 'bg-blue-50/50 dark:bg-blue-900/10' : ''}
+            `}>
+                <div className="flex items-center gap-3">
+                    <div className="p-1.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                        {iconPath ? (
+                            <img src={iconPath} className="w-4 h-4 dark:invert" alt="" />
+                        ) : Icon ? (
+                            <Icon size={16} />
+                        ) : (
+                            <Layers size={16} />
+                        )}
+                    </div>
+                    <span className="font-semibold text-slate-700 dark:text-slate-200 text-sm">
+                        {label}
+                    </span>
+                </div>
+
+                <div className="flex items-center gap-1">
                     <button
-                        onClick={(e) => { e.stopPropagation(); onInspect(id); }}
-                        className="p-1 rounded hover:bg-blue-100 hover:text-blue-500 text-slate-400 transition-colors"
-                        title="Inspect"
+                        onClick={onInspect ? () => onInspect(id, config) : undefined}
+                        className="p-1 text-slate-400 hover:text-blue-500 transition-colors rounded"
+                        title="Inspect Output"
                     >
-                        <Eye className="w-3 h-3" />
+                        <Eye size={14} />
                     </button>
-                )}
-                <button
-                    onClick={(e) => { e.stopPropagation(); onDelete && onDelete(id); }}
-                    className="p-1 rounded hover:bg-red-100 hover:text-red-500 text-slate-400 transition-colors"
-                >
-                    <Trash2 className="w-3 h-3" />
-                </button>
+                    {onDelete && (
+                        <button
+                            onClick={(e) => { e.stopPropagation(); onDelete(id); }}
+                            className="p-1 text-slate-400 hover:text-red-500 transition-colors rounded"
+                        >
+                            <Trash2 size={14} />
+                        </button>
+                    )}
+                    <button
+                        onClick={() => setExpanded(!expanded)}
+                        className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                    >
+                        {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                    </button>
+                </div>
             </div>
 
-            {/* Body */}
-            <div className="relative">
-                {/* Input Handles Container - Stick to Left */}
-                <div className="absolute left-0 top-0 bottom-0 w-1 z-10">
-                    {renderHandles('target', inputCount, Position.Left)}
+            {/* Content (Collapsible) */}
+            {expanded && (
+                <div className="p-3 bg-white dark:bg-slate-900 rounded-b-lg">
+                    <NoDrag>
+                        {renderConfig()}
+                    </NoDrag>
                 </div>
+            )}
 
-                {/* Content Area */}
-                <div className="bg-white dark:bg-slate-900 rounded-b-md overflow-hidden">
-                    {expanded && (
-                        <NoDrag>
-                            <div className="border-t border-slate-100 dark:border-slate-800 p-1 max-h-[300px] overflow-y-auto custom-scrollbar">
-                                {renderConfig()}
-                            </div>
-                        </NoDrag>
-                    )}
+            {/* Inputs - Left Side */}
+            {Array.from({ length: inputCount }).map((_, i) => (
+                <Handle
+                    key={`in-${i}`}
+                    type="target"
+                    position={Position.Left}
+                    id={`input-${i}`}
+                    style={{
+                        top: inputCount === 1 ? '50%' : `${((i + 1) * 100) / (inputCount + 1)}%`,
+                        background: '#3b82f6',
+                        width: '10px', height: '10px',
+                        border: '2px solid white'
+                    }}
+                />
+            ))}
 
-                    {!expanded && (
-                        <div className="h-6 flex items-center justify-center">
-                            <span className="text-[9px] text-slate-400 uppercase tracking-widest">{type}</span>
-                        </div>
-                    )}
-                </div>
-
-                {/* Output Handles Container - Stick to Right */}
-                <div className="absolute right-0 top-0 bottom-0 w-1 z-10">
-                    {renderHandles('source', outputCount, Position.Right)}
-                </div>
-            </div>
+            {/* Outputs - Right Side */}
+            {Array.from({ length: outputCount }).map((_, i) => (
+                <Handle
+                    key={`out-${i}`}
+                    type="source"
+                    position={Position.Right}
+                    id={`output-${i}`}
+                    style={{
+                        top: outputCount === 1 ? '50%' : `${((i + 1) * 100) / (outputCount + 1)}%`,
+                        background: '#3b82f6',
+                        width: '10px', height: '10px',
+                        border: '2px solid white'
+                    }}
+                />
+            ))}
         </div>
     );
 });
