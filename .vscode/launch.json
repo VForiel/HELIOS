@@ -1,0 +1,35 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug Backend (Local)",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/web/backend/app.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src"
+            },
+            "args": []
+        },
+        {
+            "name": "Debug Frontend (Chrome)",
+            "type": "chrome",
+            "request": "launch",
+            "url": "http://localhost:3000",
+            "webRoot": "${workspaceFolder}/web/frontend/src",
+            "preLaunchTask": "Start Frontend"
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Run HELIOS (Full Stack)",
+            "configurations": [
+                "Debug Backend (Local)",
+                "Debug Frontend (Chrome)"
+            ],
+            "stopAll": true
+        }
+    ]
+}

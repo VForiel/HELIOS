@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Layers } from 'lucide-react';
+import { Layers, Eye } from 'lucide-react';
 import { useTranslation } from '../utils/i18n';
 import ComponentConfigModal from './ComponentConfigModal';
 import { getElementIcon } from '../utils/iconMap';
@@ -8,7 +8,8 @@ export default function LayeredView({
     nodes,
     setNodes,
     edges,
-    isDark
+    isDark,
+    onInspect
 }) {
     const { t } = useTranslation();
     const [selectedNode, setSelectedNode] = useState(null);
@@ -127,6 +128,7 @@ export default function LayeredView({
                 isOpen={!!selectedNode}
                 onClose={() => setSelectedNode(null)}
                 onChange={handleNodeChange}
+                onInspect={onInspect}
             />
         </div>
     );

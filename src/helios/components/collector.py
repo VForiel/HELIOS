@@ -216,6 +216,38 @@ class Telescope(SamplingComponent):
             attrs['pupil_diameter'] = f"{self.pupil.diameter:.2f} m"
         return attrs
 
+    def plot(self, ax: Optional[_plt.Axes] = None, title: Optional[str] = None) -> _plt.Axes:
+        """Plot the telescope pupil.
+        
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes, optional
+            Axes to plot on.
+        title : str, optional
+            Plot title.
+            
+        Returns
+        -------
+        ax : matplotlib.axes.Axes
+        """
+        if ax is None:
+            fig, ax = _plt.subplots(figsize=(6, 6))
+            
+        # Get pupil array
+        N = 512
+        pupil_arr = self.pupil.get_array(npix=N, soft=True)
+        
+        # Extent in meters
+        size_m = self.size.to(u.m).value if hasattr(self.size, 'to') else float(self.size)
+        extent = [-size_m/2, size_m/2, -size_m/2, size_m/2]
+        
+        ax.imshow(pupil_arr, origin='lower', extent=extent, cmap='gray', vmin=0, vmax=1)
+        ax.set_xlabel('x [m]')
+        ax.set_ylabel('y [m]')
+        ax.set_title(title or f"Pupil: {self.name} ({size_m:.1f}m)")
+        ax.grid(False)
+        return ax
+
 
 class TelescopeArray(Telescope):
     __slots__ = ("positions", "latitude", "longitude", "altitude")
@@ -309,6 +341,19 @@ class TelescopeArray(Telescope):
         self.latitude = latitude
         self.longitude = longitude
         self.altitude = altitude
+
+    @property
+    def elements(self) -> List['Telescope']:
+        """
+        Generate list of individual Telescope objects for each position.
+        This provides compatibility with pipeline logic expecting 'elements'.
+        """
+        telescopes = []
+        for i, pos in enumerate(self.positions):
+            tel = Telescope(pupil=self.pupil, position=pos, size=self.size, 
+                          name=f"{self.name}-{i+1}")
+            telescopes.append(tel)
+        return telescopes
 
     def to_dict(self) -> dict:
         """Serialize telescope array, extending parent Telescope serialization."""
@@ -586,6 +631,10 @@ class TelescopeArray(Telescope):
         
         return life
     
+    def plot(self, ax: Optional[_plt.Axes] = None, **kwargs) -> _plt.Axes:
+        """Alias for plot_array to satisfy generic inspection interface."""
+        return self.plot_array(ax=ax, **kwargs)
+
     def plot_array(self, ax: Optional[_plt.Axes] = None, show_pupils: bool = True,
                   pupil_scale: float = 1.0) -> _plt.Axes:
         """Plot the telescope array configuration.

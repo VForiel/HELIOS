@@ -2,16 +2,43 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
-			"label": "pytest-collectors",
+			"label": "Start Frontend",
+			"type": "npm",
+			"script": "dev",
+			"path": "web/frontend",
+			"problemMatcher": [],
+			"detail": "Starts the Vite development server",
+			"isBackground": true,
+			"presentation": {
+				"group": "workbench",
+				"reveal": "always",
+				"panel": "new"
+			}
+		},
+		{
+			"label": "Start Backend (Shell)",
 			"type": "shell",
-			"command": "powershell",
-			"args": [
-				"-NoLogo",
-				"-NoProfile",
-				"-Command",
-				"& d:\\HELIOS\\.venv\\Scripts\\Activate.ps1; cd tests; pytest -k \"collector or telescopearray\" -q"
-			],
-			"group": "build"
+			"command": "python web/backend/app.py",
+			"options": {
+				"env": {
+					"PYTHONPATH": "${workspaceFolder}/src"
+				}
+			},
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "new"
+			},
+			"group": {
+				"kind": "build",
+				"isDefault": false
+			}
+		},
+		{
+			"label": "Install Backend Dependencies",
+			"type": "shell",
+			"command": "pip install -r requirements.txt",
+			"problemMatcher": []
 		}
 	]
 }

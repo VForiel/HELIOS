@@ -825,7 +825,15 @@ class Scene(GenerationLayer):
 
         ax.set_xlabel('Wavelength [um]')
         ax.set_ylabel('Spectral Radiance [W m^-2 um^-1 sr^-1]')
-        ax.grid(True, which='both', linestyle='--', alpha=0.4)
+        
+        # Grid crashes xkcd style on log plots ("dash list must be positive")
+        is_xkcd = plt.rcParams.get('path.sketch') is not None
+        if not is_xkcd:
+            ax.grid(True, which='both', linestyle='--', alpha=0.4)
+        else:
+            # Optionally remove loglog if it's still unstable, but usually disabling grid fixes it
+            pass
+
         ax.legend()
         ax.set_title(f"Scene SED: {self.name}")
         
@@ -951,7 +959,11 @@ class Scene(GenerationLayer):
         by_label = dict(zip(labels, handles))
         ax.legend(by_label.values(), by_label.keys())
 
-        plt.grid(True, linestyle='--', alpha=0.5)
+        # Check for xkcd style (path.sketch is set)
+        is_xkcd = plt.rcParams.get('path.sketch') is not None
+        if not is_xkcd:
+            plt.grid(True, linestyle='--', alpha=0.5)
+
         plt.title(f"Scene (Distance: {self.distance})")
         return fig, ax
 

@@ -1,7 +1,8 @@
 import React, { memo, useState } from 'react';
 import { Handle, Position } from 'reactflow';
-import { Settings, Trash2, ChevronDown, ChevronRight, Save } from 'lucide-react';
+import { Settings, Trash2, ChevronDown, ChevronRight, Save, Eye } from 'lucide-react';
 import { getElementIcon } from '../../../utils/iconMap';
+import { usePipelineContext } from '../../../contexts/PipelineContext';
 
 // Config Components
 import SceneConfig from '../../SceneConfig';
@@ -30,6 +31,8 @@ export default memo(({ data, selected, id }) => {
     const type = effectiveData.type || 'unknown';
     const label = effectiveData.label || type;
     const iconPath = effectiveData.iconPath || getElementIcon(type);
+    // Fix: onInspect from Context
+    const { onInspect } = usePipelineContext();
     const { icon: Icon, onEdit, onDelete, config: initialConfig } = effectiveData;
 
     // Internal state for config editing (shallow copy)
@@ -151,7 +154,16 @@ export default memo(({ data, selected, id }) => {
                     {label}
                 </span>
 
-                {/* Quick Actions (Delete only to reduce clutter, edit is now inline or via modal) */}
+                {/* Quick Actions */}
+                {onInspect && (
+                    <button
+                        onClick={(e) => { e.stopPropagation(); onInspect(id); }}
+                        className="p-1 rounded hover:bg-blue-100 hover:text-blue-500 text-slate-400 transition-colors"
+                        title="Inspect"
+                    >
+                        <Eye className="w-3 h-3" />
+                    </button>
+                )}
                 <button
                     onClick={(e) => { e.stopPropagation(); onDelete && onDelete(id); }}
                     className="p-1 rounded hover:bg-red-100 hover:text-red-500 text-slate-400 transition-colors"

@@ -1,4 +1,5 @@
 import io
+import base64
 import matplotlib
 matplotlib.use('Agg')
 import numpy as np
@@ -10,6 +11,7 @@ from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Tuple, Literal, Union, Dict, Any
 from datetime import datetime
 from astropy import units as u
+import contextlib # Added for plotting context
 
 import helios
 from helios.components import Zodiacal, Atmosphere, Pupil
@@ -117,7 +119,7 @@ class LayerConfig(BaseModel):
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
 
 class PipelineRequest(BaseModel):
-    mode: Literal['pipeline'] = 'pipeline'
+    mode: Literal['pipeline', 'inspection'] = 'pipeline'
     layers: List[Union[LayerConfig, List[LayerConfig]]]
 
 # --- Helper Functions ---
@@ -668,7 +670,6 @@ def camera_to_payload(cam: helios.Camera) -> CameraPayload:
         exp = u.Quantity(cam.integration_time, u.s).to(u.s).value
     return CameraPayload(exposure=float(exp), wavelength=1.0)
 
-# --- Endpoint ---
 
 @app.post("/api/pipeline/export_file")
 def export_pipeline_file(request: PipelineRequest):
@@ -763,6 +764,248 @@ def export_pipeline_file(request: PipelineRequest):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/inspect_node")
+def inspect_node(
+    request: PipelineRequest, 
+    target_id: str,
+    width: float = 6.0,
+    height: float = 6.0,
+    style: str = 'default'
+):
+    """
+    Inspect a specific node in the pipeline by its frontend ID.
+    Returns:
+    - Image (PNG) if the node produces an optical field or image.
+    - Text/Code if the node is configuration-only or has no visual output.
+    """
+    try:
+        # 1. Build Context (same logic as run_pipeline)
+        context = helios.Context()
+        
+        # We need to rebuild the context exactly as run_pipeline does.
+        # We also need to keep track of ALL layers created to search for the ID.
+        all_created_layers = []
+
+        for layer_conf in request.layers:
+            layer_obj = None
+            if layer_conf.type == 'scene':
+                 layer_obj = create_scene(ScenePayload(**get_config_dict(layer_conf.config)))
+            elif layer_conf.type == 'atmosphere':
+                 layer_obj = create_atmosphere(AtmospherePayload(**get_config_dict(layer_conf.config)))
+            elif layer_conf.type == 'telescope':
+                 layer_obj = create_telescope(TelescopePayload(**get_config_dict(layer_conf.config)))
+            elif layer_conf.type == 'camera':
+                 layer_obj = create_camera(CameraPayload(**get_config_dict(layer_conf.config)), context)
+            elif layer_conf.type == 'lens':
+                 layer_obj = create_lens(LensPayload(**get_config_dict(layer_conf.config)))
+            elif layer_conf.type == 'beam_splitter':
+                 layer_obj = create_beam_splitter(BeamSplitterPayload(**get_config_dict(layer_conf.config)))
+            elif layer_conf.type == 'coronagraph':
+                 layer_obj = create_coronagraph(CoronagraphPayload(**get_config_dict(layer_conf.config)))
+            elif layer_conf.type == 'fiber_in':
+                 layer_obj = create_fiber(FiberPayload(**get_config_dict(layer_conf.config)), is_input=True)
+            elif layer_conf.type == 'fiber_out':
+                 layer_obj = create_fiber(FiberPayload(**get_config_dict(layer_conf.config)), is_input=False)
+            elif layer_conf.type == 'photonic':
+                 layer_obj = create_photonic(PhotonicPayload(**get_config_dict(layer_conf.config)))
+            
+            if layer_obj:
+                # Add metadata if present
+                if layer_conf.metadata:
+                    layer_obj.metadata = layer_conf.metadata
+                context.add_layer(layer_obj)
+                all_created_layers.append(layer_obj)
+
+        # 2. Find target layer by ID
+        target_layer = None
+        for layer in all_created_layers:
+            # Metadata keys might be 'id' or other, frontend sends { id: "node-id" } usually?
+            # Let's check what metadata is passed.
+            # Frontend usually sends the Reaflow Node ID.
+            # In create_pipeline (frontend), we map node.id to metadata.id or similar.
+            # Let's assume metadata contains 'id'.
+            if hasattr(layer, 'metadata') and layer.metadata:
+                if layer.metadata.get('id') == target_id:
+                    target_layer = layer
+                    break
+        
+        if not target_layer:
+             # Fallback: maybe target_id IS the name?
+             for layer in all_created_layers:
+                 if layer.name == target_id:
+                     target_layer = layer
+                     break
+        
+        if not target_layer:
+             # Debug info
+             ids = [l.metadata.get('id') for l in all_created_layers if hasattr(l, 'metadata')]
+             raise HTTPException(status_code=404, detail=f"Layer with ID '{target_id}' not found. Available IDs: {ids}")
+
+        print(f"Inspecting Layer: {target_layer.name} (ID: {target_id})")
+
+        # 3. Visualize based on component type
+        plots = [] # List of {title, image}
+
+        # Validate Style
+        valid_styles = plt.style.available + ['default', 'xkcd']
+        if style not in valid_styles:
+            style = 'default'
+
+        def encode_figure(fig, title):
+             buf = io.BytesIO()
+             fig.savefig(buf, format='png', bbox_inches='tight', pad_inches=0.1)
+             plt.close(fig)
+             buf.seek(0)
+             b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+             return {"title": title, "image": f"data:image/png;base64,{b64}"}
+        
+        # Context Manager Helper
+        @contextlib.contextmanager
+        def plot_context(style_name):
+            if style_name == 'xkcd':
+                with plt.xkcd():
+                    yield
+            else:
+                with plt.style.context(style_name):
+                    yield
+
+        def generate_plots(current_style):
+            plots_list = []
+            with plot_context(current_style):
+                # Specific visualization logic
+                if isinstance(target_layer, helios.Scene):
+                    # Plot 1: Geometry
+                    fig1, ax1 = plt.subplots(figsize=(width, height))
+                    target_layer.plot(ax=ax1)
+                    plots_list.append(encode_figure(fig1, "Geometry"))
+                    
+                    # Plot 2: SED
+                    fig2, ax2 = plt.subplots(figsize=(width, height))
+                    target_layer.plot_sed(ax=ax2)
+                    plots_list.append(encode_figure(fig2, "Spectral Energy Distribution"))
+                    
+                elif isinstance(target_layer, (helios.Telescope, helios.TelescopeArray)):
+                    # Plot 1: Pupil
+                    fig, ax = plt.subplots(figsize=(width, height))
+                    try:
+                        target_layer.plot(ax=ax)
+                    except TypeError:
+                        plt.close(fig)
+                        ax = target_layer.plot()
+                        fig = ax.figure
+                        fig.set_size_inches(width, height)
+                    
+                    plots_list.append(encode_figure(fig, "Pupil Configuration"))
+                    
+                elif isinstance(target_layer, helios.Camera):
+                    # 1. Generate Input Wavefront
+                    input_wf = None
+                    reduced_img = None
+                    try:
+                        if hasattr(context, 'get_input_wavefront'):
+                            input_wf = context.get_input_wavefront()
+                            
+                        if input_wf is not None:
+                            reduced_img = target_layer.process(input_wf)
+                    except Exception as e:
+                        print(f"Warning: Camera simulation failed during inspection: {e}")
+
+                    # Plot 1: Reduced Image
+                    fig1, ax1 = plt.subplots(figsize=(width, height))
+                    if reduced_img is not None:
+                        im1 = ax1.imshow(reduced_img, origin='lower', cmap='inferno')
+                        plt.colorbar(im1, ax=ax1, fraction=0.046, pad=0.04)
+                        ax1.set_title("Reduced Image (Output)")
+                        ax1.set_xlabel('x [pix]')
+                        ax1.set_ylabel('y [pix]')
+                    else:
+                        ax1.text(0.5, 0.5, "No Output Data", ha='center')
+                    plots_list.append(encode_figure(fig1, "Reduced Image"))
+                    
+                    # Plot 2: Raw Image
+                    fig2, ax2 = plt.subplots(figsize=(width, height))
+                    if input_wf is not None:
+                        target_layer.plot_raw(input_wf, ax=ax2, show=False)
+                    else:
+                        ax2.text(0.5, 0.5, "No Input Wavefront", ha='center')
+                    plots_list.append(encode_figure(fig2, "Raw Image (Simulated)"))
+                    
+                    # Plot 3: Dark Frame
+                    fig3, ax3 = plt.subplots(figsize=(width, height))
+                    target_layer.plot_dark(ax=ax3, show=False)
+                    plots_list.append(encode_figure(fig3, "Dark Frame"))
+                    
+                else:
+                    # Generic visualization
+                    if hasattr(target_layer, 'get_output_wavefront'):
+                         output = target_layer.get_output_wavefront()
+                    else:
+                         output = None
+
+                    fig, ax = plt.subplots(figsize=(width, height))
+                    if output is None:
+                         ax.text(0.5, 0.5, "No Wavefront Data Available", ha='center')
+                         ax.axis('off')
+                    
+                    elif isinstance(output, helios.Wavefront) or isinstance(output, helios.WavefrontArray):
+                         try:
+                             if isinstance(output, helios.WavefrontArray):
+                                 n = len(output)
+                                 if n == 1:
+                                     data = np.abs(output[0].value)**2
+                                 else:
+                                     data = np.sum([np.abs(w.value)**2 for w in output], axis=0)
+                             else:
+                                 data = np.abs(output.value)**2
+                                 if data.ndim == 3:
+                                     data = np.sum(data, axis=0)
+                             
+                             if data.max() > 0:
+                                 data = data / data.max()
+                                 data = np.power(data, 0.5) 
+                             
+                             ax.imshow(data, cmap='inferno', origin='lower')
+                             ax.set_title(f"Output of {target_layer.name}")
+                         except Exception as plot_err:
+                             print(f"Plotting error: {plot_err}")
+                             ax.text(0.5, 0.5, f"Plot Error: {plot_err}")
+
+                    elif isinstance(output, np.ndarray):
+                         disp = output
+                         if disp.max() > 0:
+                             disp = disp / disp.max()
+                             disp = np.power(disp, 0.5)
+                         ax.imshow(disp, cmap='gray', origin='lower')
+                         ax.set_title(f"Data Output: {target_layer.name}")
+                         ax.axis('off')
+                         
+                    else:
+                         ax.text(0.5, 0.5, f"Unknown Output Type: {type(output)}")
+
+                    plots_list.append(encode_figure(fig, "Output Visualization"))
+            return plots_list
+
+        try:
+             plots = generate_plots(style)
+        except Exception as e:
+             if style == 'xkcd':
+                  print(f"XKCD style failed: {e}. Falling back to default.")
+                  plots = generate_plots('default')
+             else:
+                  raise e
+
+        return {"plots": plots}
+
+    except ValueError as e:
+         import traceback
+         traceback.print_exc()
+         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print(tb)
+        raise HTTPException(status_code=500, detail=f"{str(e)}\n\n{tb}")
 
 def _help_convert(layer):
     l_type = None

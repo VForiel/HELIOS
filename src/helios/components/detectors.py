@@ -518,6 +518,41 @@ class Camera(DetectionLayer):
             
         return ax
     
+    def plot_raw(self, wavefront: Optional[Wavefront] = None, 
+                 ax: Optional[plt.Axes] = None, show: bool = True) -> plt.Axes:
+        """Plot the raw image (with noise and dark current)."""
+        raw_img = self.get_raw_image(wavefront)
+        
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(8, 8))
+            
+        im = ax.imshow(raw_img, origin='lower', cmap='inferno')
+        plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label='Counts (e-)')
+        ax.set_title(f"Raw Image ({self.integration_time})")
+        ax.set_xlabel('x [pix]')
+        ax.set_ylabel('y [pix]')
+        
+        if show:
+            plt.show()
+        return ax
+
+    def plot_dark(self, ax: Optional[plt.Axes] = None, show: bool = True) -> plt.Axes:
+        """Plot the dark frame."""
+        dark_img = self.get_dark()
+        
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(8, 8))
+            
+        im = ax.imshow(dark_img, origin='lower', cmap='inferno')
+        plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label='Counts (e-)')
+        ax.set_title(f"Dark Frame ({self.integration_time})")
+        ax.set_xlabel('x [pix]')
+        ax.set_ylabel('y [pix]')
+        
+        if show:
+            plt.show()
+        return ax
+
     def _get_detailed_attributes(self) -> dict:
         """Return detailed attributes for Camera."""
         attrs = {}
