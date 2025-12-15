@@ -6,11 +6,23 @@ import TelescopeConfig from './TelescopeConfig';
 export default function ComponentConfigModal({ node, isOpen, onClose, onChange }) {
     if (!isOpen || !node) return null;
 
-    const { type, config, label } = node.data;
-    const [localConfig, setLocalConfig] = useState(config);
+    // Robust Unpacking for Legacy "Layer" Nodes
+    let effectiveData = node.data;
+    if (node.data.elements && node.data.elements.length > 0) {
+        effectiveData = { ...node.data.elements[0] };
+    }
+
+    const { type, label } = effectiveData;
+    // We initialize local config from effectiveData found above
+    const [localConfig, setLocalConfig] = useState(effectiveData.config || {});
 
     useEffect(() => {
-        setLocalConfig(node.data.config);
+        // re-evaluate effectiveData inside effect or trust node prop change triggers render
+        let currentData = node.data;
+        if (node.data.elements && node.data.elements.length > 0) {
+            currentData = node.data.elements[0];
+        }
+        setLocalConfig(currentData.config || {});
     }, [node]);
 
     const handleSave = () => {

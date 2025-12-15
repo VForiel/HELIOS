@@ -48,6 +48,13 @@ export default function LayeredView({
     const handleNodeChange = (nodeId, newConfig) => {
         setNodes(nds => nds.map(n => {
             if (n.id === nodeId) {
+                // Legacy Node Support: Update inner element config
+                if (n.data.elements && n.data.elements.length > 0) {
+                    const updatedElements = [...n.data.elements];
+                    updatedElements[0] = { ...updatedElements[0], config: newConfig };
+                    return { ...n, data: { ...n.data, elements: updatedElements } };
+                }
+                // New Component Node: Update direct config
                 return { ...n, data: { ...n.data, config: newConfig } };
             }
             return n;
@@ -66,7 +73,14 @@ export default function LayeredView({
                 )}
 
                 {orderedNodes.map((node, index) => {
-                    const { label, type, icon, iconPath } = node.data;
+                    // Robust Data Unpacking for Legacy Compatibility
+                    let effectiveData = node.data;
+                    if (node.data.elements && node.data.elements.length > 0) {
+                        effectiveData = { ...node.data.elements[0] };
+                    }
+
+                    const { label, type, icon } = effectiveData;
+                    const iconPath = effectiveData.iconPath || getElementIcon(type);
                     const Icon = icon;
 
                     return (
