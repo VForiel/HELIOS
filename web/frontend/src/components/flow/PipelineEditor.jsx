@@ -15,15 +15,17 @@ import GenericNode from './nodes/GenericNode';
 import { Menu, Sun, Moon, Heart, Github, Book, Download, Upload, Cpu, Disc, Divide, GitFork, Zap, Activity, Hand, MousePointer2, Stars, Search, Camera, CloudFog, X, Code, Languages, LayoutList, GitGraph, Grid } from 'lucide-react'; // Added Grid
 import { getElementIcon, getPhotonicIcon } from '../../utils/iconMap';
 
-import LayerNode from './nodes/LayerNode';
+// import LayerNode from './nodes/LayerNode'; // Deprecated
+import ComponentNode from './nodes/ComponentNode';
 import ParallelEdge from './edges/ParallelEdge';
 import CodeViewer from '../CodeViewer';
 import SimulationControls from '../SimulationControls';
 import LayeredView from '../LayeredView';
 
 const nodeTypes = {
-    layer: LayerNode,
-    telescope_array: TelescopeArrayNode // Registered (though we use LayerNode wrapping usually? Wait, checking code...)
+    component: ComponentNode,
+    layer: ComponentNode, // Legacy compatibility: Render layers as components
+    // telescope_array: TelescopeArrayNode // Deprecated
 };
 // Wait, the previous code showed TelescopeNode is NOT in nodeTypes?
 // Line 23: const nodeTypes = { layer: LayerNode };
@@ -388,139 +390,61 @@ export default function PipelineEditor({
     const lastInvalidConnection = useRef(null);
 
     // Comprehensive connection validation with layer types (NO TOAST - only returns boolean)
+    // Simplified Connection Validation for Components
     const isValidConnection = useCallback((connection) => {
-        // Prevent self-loops
-        if (connection.source === connection.target) {
-            lastInvalidConnection.current = {
-                sourceType: 'self',
-                targetType: 'self',
-                message: t('validation.selfLoop')
-            };
-            return false;
-        }
+        if (connection.source === connection.target) return false;
 
-        // Get source and target nodes
         const sourceNode = nodes.find(n => n.id === connection.source);
         const targetNode = nodes.find(n => n.id === connection.target);
 
         if (!sourceNode || !targetNode) return false;
 
-        // Determine layer types from elements
-        const getNodeLayerType = (node) => {
-            if (!node.data.elements || node.data.elements.length === 0) return null;
-            // Use the first element's layer type (nodes should be homogeneous)
-            return getLayerType(node.data.elements[0].type);
+        // Allow N-to-M by default unless we implement strict strict rules later
+        // We can restrict based on type compatibility (Scene -> Telescope, etc.)
+
+        const sourceType = sourceNode.data.type;
+        const targetType = targetNode.data.type;
+
+        const validFlow = {
+            'scene': ['telescope', 'telescope_array', 'lens', 'beam_splitter', 'mmi', 'fiber_in'], // Optical start
+            'atmosphere': ['telescope', 'telescope_array'],
+            'telescope': ['camera', 'lens', 'beam_splitter', 'fiber_in', 'mmi', 'coronagraph', 'photonic'],
+            'telescope_array': ['camera', 'lens', 'beam_splitter', 'fiber_in', 'mmi', 'coronagraph', 'photonic'],
+            'lens': ['camera', 'lens', 'beam_splitter', 'fiber_in', 'mmi', 'coronagraph', 'photonic', 'fiber_out'],
+            'beam_splitter': ['camera', 'lens', 'beam_splitter', 'fiber_in', 'mmi', 'coronagraph', 'photonic', 'fiber_out'],
+            'coronagraph': ['camera', 'lens', 'beam_splitter', 'fiber_in', 'mmi', 'fiber_out'],
+            'fiber_in': ['fiber_out', 'mmi', 'photonic'], // Photonics world
+            'fiber_out': ['camera', 'lens'],
+            'mmi': ['fiber_out', 'mmi', 'photonic', 'camera'],
+            'photonic': ['fiber_out', 'mmi', 'photonic', 'camera'],
+            'camera': [] // End of line
         };
 
-        const sourceType = getNodeLayerType(sourceNode);
-        const targetType = getNodeLayerType(targetNode);
-
-        if (!sourceType || !targetType) return true; // Allow if types unknown (fallback)
-
-        // Strict validation rules matching backend
-        const validConnections = {
-            'GenerationLayer': ['GenerationLayer', 'SamplingLayer'],
-            'SamplingLayer': ['OpticalLayer', 'DetectionLayer'],  // Can connect to BOTH
-            'OpticalLayer': ['OpticalLayer', 'DetectionLayer'],
-            'DetectionLayer': ['DataLayer'],
-            'DataLayer': ['DataLayer'],
-            'Layer': ['Layer', 'GenerationLayer', 'SamplingLayer', 'OpticalLayer', 'DetectionLayer', 'DataLayer'] // Fallback
-        };
-
-        const allowed = validConnections[sourceType] || [];
-        const isValid = allowed.includes(targetType);
-
-        if (!isValid) {
-            // Store the invalid connection details for onConnectEnd to show toast
-            lastInvalidConnection.current = {
-                sourceType,
-                targetType
-            };
+        // If defined, check. If not defined, allow? Or block?
+        // Let's be permissive for now but block Camera->Scene
+        if (validFlow[sourceType] && !validFlow[sourceType].includes(targetType)) {
+            return false;
         }
 
-        return isValid;
-    }, [nodes, getLayerType, t]);
+        return true;
+    }, [nodes]);
 
 
+
+    // Hydrate nodes with handlers on load
+    useEffect(() => {
+        setNodes((nds) => nds.map(n => {
+            if (!n.data.onChange) {
+                return { ...n, data: { ...n.data, onChange: onNodeConfigChange } };
+            }
+            return n;
+        }));
+    }, [setNodes]);
 
     const onConnect = useCallback((params) => {
-        if (!reactFlowInstance) return;
-
-        // Validate connection and show toast if invalid
-        const sourceNode = reactFlowInstance.getNode(params.source);
-        const targetNode = reactFlowInstance.getNode(params.target);
-
-        if (!sourceNode || !targetNode) return;
-
-        // Check for self-loop
-        if (params.source === params.target) {
-            showToast(`❌ ${t('validation.invalidConnection')} : ${t('validation.selfLoop')}`);
-            return;
-        }
-
-        // Get layer types
-        const getNodeLayerType = (node) => {
-            if (!node.data.elements || node.data.elements.length === 0) return null;
-            return getLayerType(node.data.elements[0].type);
-        };
-
-        const sourceType = getNodeLayerType(sourceNode);
-        const targetType = getNodeLayerType(targetNode);
-
-        // Validate if types are known
-        if (sourceType && targetType) {
-            const validConnections = {
-                'GenerationLayer': ['GenerationLayer', 'SamplingLayer'],
-                'SamplingLayer': ['OpticalLayer', 'DetectionLayer'],
-                'OpticalLayer': ['OpticalLayer', 'DetectionLayer'],
-                'DetectionLayer': ['DataLayer'],
-                'DataLayer': ['DataLayer'],
-                'Layer': ['Layer', 'GenerationLayer', 'SamplingLayer', 'OpticalLayer', 'DetectionLayer', 'DataLayer']
-            };
-
-            const allowed = validConnections[sourceType] || [];
-            const isValid = allowed.includes(targetType);
-
-            if (!isValid) {
-                // Show toast with explanation
-                const ruleExplanations = {
-                    'GenerationLayer': t('validation.generationLayer'),
-                    'SamplingLayer': t('validation.samplingLayer'),
-                    'OpticalLayer': t('validation.opticalLayer'),
-                    'DetectionLayer': t('validation.detectionLayer'),
-                    'DataLayer': t('validation.dataLayer')
-                };
-
-                const explanation = ruleExplanations[sourceType] || `${sourceType} cannot connect to ${targetType}`;
-                showToast(`❌ ${t('validation.invalidConnection')} : ${explanation}`);
-                console.warn(`Invalid connection: ${sourceType} cannot connect to ${targetType}`);
-                return; // Don't create the connection
-            }
-        }
-
-        registerChange();
-
-        // Edge Type Logic based on Layer Content
-        let edgeType = 'default';
-        let edgeData = { pathCount: 1 };
-
-        if (sourceNode && sourceNode.data.elements) {
-            const telescopeElem = sourceNode.data.elements.find(el => el.type === 'telescope');
-            if (telescopeElem) {
-                edgeType = 'parallel';
-                edgeData = { pathCount: telescopeElem.config.collectors ? telescopeElem.config.collectors.length : 1 };
-            }
-        }
-
-        setEdges((eds) => {
-            // Remove existing connections TO the target (prevents multiple inputs)
-            // AND remove existing connections FROM the source (prevents multiple outputs)
-            const filtered = eds.filter(e =>
-                e.target !== params.target && e.source !== params.source
-            );
-            return addEdge({ ...params, animated: true, type: edgeType, data: edgeData }, filtered);
-        });
-    }, [setEdges, reactFlowInstance, registerChange, showToast, getLayerType, t]);
+        if (params.source === params.target) return;
+        setEdges((eds) => addEdge({ ...params, animated: true, type: 'default' }, eds));
+    }, [setEdges]);
 
     const onEdgeUpdateStart = useCallback(() => {
         edgeUpdateSuccessful.current = false;
@@ -576,6 +500,16 @@ export default function PipelineEditor({
 
 
 
+    const onNodeConfigChange = (id, newData) => {
+        setNodes((nds) => nds.map((node) => {
+            if (node.id === id) {
+                // Update specific node data
+                return { ...node, data: { ...node.data, ...newData } };
+            }
+            return node;
+        }));
+    };
+
     const onDragOver = useCallback((event) => {
         event.preventDefault();
         event.dataTransfer.dropEffect = 'move';
@@ -584,118 +518,102 @@ export default function PipelineEditor({
     const onDrop = useCallback(
         (event) => {
             event.preventDefault();
-            registerChange();
 
             const type = event.dataTransfer.getData('application/reactflow');
-            if (typeof type === 'undefined' || !type) return;
-
-            const clientX = event.clientX;
-            const clientY = event.clientY;
+            if (!type) return;
 
             const position = reactFlowInstance.project({
-                x: clientX - reactFlowWrapper.current.getBoundingClientRect().left,
-                y: clientY - reactFlowWrapper.current.getBoundingClientRect().top,
+                x: event.clientX - reactFlowWrapper.current.getBoundingClientRect().left,
+                y: event.clientY - reactFlowWrapper.current.getBoundingClientRect().top,
             });
 
-            // Check intersection with existing nodes
-            const hitBox = { x: position.x - 20, y: position.y - 20, width: 40, height: 40 };
-            const intersections = reactFlowInstance.getIntersectingNodes(hitBox);
+            // Create Component Node
+            const nodeId = getId();
 
-            // Define new element
-            // Icons already imported
+            // Define Basic Data
+            let data = {
+                type,
+                label: type,
+                config: {},
+                iconPath: getElementIcon(type),
+                inputs: (type === 'scene' ? 0 : 1),
+                outputs: (type === 'camera' ? 0 : 1)
+            };
 
-            let newElement = { type, config: {}, label: type, iconPath: getElementIcon(type) };
+            // Specific Configs
+            if (type === 'scene') data = { ...data, label: 'Scene', config: { stars: [], planets: [], zodiacal: {} }, inputs: 0, outputs: 1 };
+            else if (type === 'atmosphere') data = { ...data, label: 'Atmosphere', config: atmosphere, inputs: 1, outputs: 1 };
+            else if (type === 'telescope') data = { ...data, label: 'Telescope', config: telescope, inputs: 1, outputs: 1 };
+            else if (type === 'telescope_array') data = { ...data, label: 'Telescope Array', config: { ...telescope, preset: 'VLTI-UT' }, inputs: 1, outputs: 1 };
+            else if (type === 'camera') data = { ...data, label: 'Camera', config: camera, inputs: 1, outputs: 0 };
 
-            if (type === 'scene') newElement = { type, label: 'Scene', config: { stars, planets, zodiacal }, iconPath: getElementIcon('scene') };
-            else if (type === 'atmosphere') newElement = { type, label: 'Atmosphere', config: atmosphere, iconPath: getElementIcon('atmosphere') };
-            else if (type === 'telescope') newElement = { type, label: 'Telescope', config: telescope, iconPath: getElementIcon('telescope') };
-            else if (type === 'telescope_array') newElement = { type, label: 'Telescope Array', config: { ...telescope, preset: 'VLTI-UT' }, iconPath: getElementIcon('telescope') }; // Use Telescope icon for now or Grid?
-            else if (type === 'camera') newElement = { type, label: 'Camera', config: camera, iconPath: getElementIcon('camera') };
-            else if (type === 'lens') newElement = { type, label: 'Lens', config: { focal_length: 1.0 }, iconPath: getElementIcon('lens'), fields: [{ name: 'focal_length', type: 'number', label: 'Focal Length', step: 0.1 }] };
-            else if (type === 'beam_splitter') newElement = { type, label: 'Beam Splitter', config: { split_ratio: 0.5 }, iconPath: getElementIcon('beam_splitter'), fields: [{ name: 'split_ratio', type: 'number', label: 'Split Ratio', step: 0.1 }] };
-            else if (type === 'coronagraph') newElement = { type, label: 'Coronagraph', config: { type: '4quadrants' }, iconPath: getElementIcon('coronagraph'), fields: [{ name: 'type', type: 'select', label: 'Mask Type', options: [{ value: '4quadrants', label: '4-Quadrants' }, { value: 'vortex', label: 'Vortex' }] }] };
-            else if (type === 'fiber_in') newElement = { type, label: 'Fiber Injection', config: { modes: 1 }, iconPath: getElementIcon('fiber_in'), fields: [{ name: 'modes', type: 'number', label: 'Modes', step: 1 }] };
-            else if (type === 'fiber_out') newElement = { type, label: 'Fiber Output', config: {}, iconPath: getElementIcon('fiber_out'), fields: [] };
-            else if (type === 'mmi') newElement = { type, label: 'MMI Coupler', config: { inputs: 2, outputs: 2 }, iconPath: getElementIcon('mmi'), fields: [{ name: 'inputs', type: 'number', label: 'Inputs', step: 1 }, { name: 'outputs', type: 'number', label: 'Outputs', step: 1 }] };
+            // Default "Layer" Type mapping for styling if needed, but we use ComponentNode now.
+            // We store specialized config in data.config.
 
+            const newNode = {
+                id: nodeId,
+                type: 'component', // Uses ComponentNode
+                position,
+                data: {
+                    ...data,
+                    onChange: onNodeConfigChange // Enable inline editing
+                }
+            };
 
-            if (intersections.length > 0) {
-                // Add to existing Layer
-                const targetNode = intersections[0]; // Take top one
-                const newElements = [...(targetNode.data.elements || []), newElement];
-
-                setNodes((nds) => nds.map((n) => {
-                    if (n.id === targetNode.id) {
-                        return { ...n, data: { ...n.data, elements: newElements } };
-                    }
-                    return n;
-                }));
-            } else {
-                // Create New Layer Node
-                const nodeId = getId();
-                const newNode = {
-                    id: nodeId,
-                    type: 'layer',
-                    position,
-                    data: {
-                        elements: [newElement]
-
-                    }
-                };
-                setNodes((nds) => nds.concat(newNode));
-            }
+            setNodes((nds) => nds.concat(newNode));
+            // Trigger change or just rely on state? registerChange might be needed for undo/redo if implemented.
         },
-        [reactFlowInstance, registerChange, setNodes, stars, telescope, camera, atmosphere]
+        [reactFlowInstance, setNodes, onNodeConfigChange, atmosphere, telescope, camera]
     );
 
+
+
     const getPipeline = () => {
-        // Traversal Logic - Refactored for Layers
-        // We traverse Layers. For each Layer, we just append its Elements to the chain.
-        // Parallel branching logic now applies to LAYERS.
+        // Reconstruct Layers via Topological Sort / BFS grouping
+        // 1. Identify Roots (Scene)
+        const roots = nodes.filter(n => n.data.type === 'scene');
+        if (roots.length === 0) return [];
 
-        const startNodes = nodes.filter(n =>
-            n.data.elements && n.data.elements.some(el => el.type === 'scene')
-        );
-        const root = startNodes.length > 0 ? startNodes[0] : nodes[0]; // Fallback
-
-        if (!root) return [];
-
+        let layers = [];
         let visited = new Set();
+        let queue = [...roots];
 
-        const buildChain = (node) => {
-            // 1. Current Layer Elements
-            // We need to return a List of Configs.
-            const layerElements = node.data.elements.map(el => ({
-                type: el.type,
-                config: el.config,
+        // Grouping by "Depth" might be insufficient if branches interact. 
+        // But for backend compatibility which expects "List of Layers", where each layer contains ONE OR MORE elements...
+        // We will assume that all nodes at the same "step" are one layer.
+
+        while (queue.length > 0) {
+            // Collect all nodes at current level
+            const currentLevelNodes = [...queue];
+            queue = []; // Reset for next level
+
+            // Add to layers
+            const layerElements = currentLevelNodes.map(node => ({
+                type: node.data.type,
+                config: node.data.config,
                 metadata: { position: node.position }
             }));
 
-            // 2. Children
-            const outEdges = edges.filter(e => e.source === node.id);
-            const targets = outEdges
-                .map(e => nodes.find(n => n.id === e.target))
-                .filter(n => n && !visited.has(n.id));
+            if (layerElements.length > 0) layers.push(layerElements);
 
-            targets.forEach(t => visited.add(t.id));
+            // Find next level
+            currentLevelNodes.forEach(node => {
+                visited.add(node.id);
+                const outEdges = edges.filter(e => e.source === node.id);
 
-            if (targets.length === 0) return [layerElements];
-            else if (targets.length === 1) {
-                // Linear connection to next Layer
-                return [layerElements, ...buildChain(targets[0])];
-            } else {
-                // Parallel Layers from this Layer
-                const branches = targets.map(t => {
-                    const res = buildChain(t);
-                    return res;
+                outEdges.forEach(e => {
+                    const target = nodes.find(n => n.id === e.target);
+                    if (target && !visited.has(target.id) && !queue.find(q => q.id === target.id)) {
+                        // Check if ALL parents of this target have been visited? 
+                        // To ensure strict topological order.
+                        // For now, simple BFS. 
+                        queue.push(target);
+                    }
                 });
-                return [layerElements, branches];
-            }
-        };
+            });
+        }
 
-        visited.add(root.id);
-        const configList = buildChain(root);
-        return configList;
+        return layers;
     };
 
     const handleRun = () => {
