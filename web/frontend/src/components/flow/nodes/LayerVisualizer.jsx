@@ -101,7 +101,7 @@ export default function LayerVisualizer({ type, config }) {
 
             {showPreview && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setShowPreview(false)}>
-                    <div className="bg-white dark:bg-slate-900 rounded-lg shadow-2xl border border-slate-200 dark:border-slate-700 max-w-3xl w-full flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+                    <div className="bg-white dark:bg-slate-900 rounded-lg shadow-2xl border border-slate-200 dark:border-slate-700 max-w-3xl w-full flex flex-col overflow-hidden max-h-[90vh] max-w-[95vw]" onClick={e => e.stopPropagation()}>
                         {/* Header */}
                         <div className="flex items-center justify-between p-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950">
                             <div className="flex items-center gap-2 flex-wrap">

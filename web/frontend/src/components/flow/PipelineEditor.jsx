@@ -8,6 +8,7 @@ import ReactFlow, {
     updateEdge
 } from 'reactflow';
 import 'reactflow/dist/style.css';
+import { ZoomableImage } from '../ZoomableImage';
 import TelescopeNode from './nodes/TelescopeNode';
 import TelescopeArrayNode from './nodes/TelescopeArrayNode'; // Imported
 import CameraNode from './nodes/CameraNode';
@@ -326,12 +327,12 @@ export default function PipelineEditor({
             // Append params
             // Use overrideSettings if provided (for immediate UI updates), otherwise use current state
             const currentSettings = overrideSettings || plotSettings;
-            const { width, height, style } = currentSettings;
+            const { width = 6, height = 6, style = 'default' } = currentSettings || {};
 
             const query = new URLSearchParams({
                 target_id: nodeId,
-                width: width.toString(),
-                height: height.toString(),
+                width: String(width),
+                height: String(height),
                 style: style
             });
 
@@ -1114,7 +1115,7 @@ export default function PipelineEditor({
                     {/* INSPECT MODAL */}
                     {(inspectLoading || inspectData) && (
                         <div className="fixed inset-0 z-[105] flex items-center justify-center bg-black/50 backdrop-blur-sm">
-                            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-2xl border border-slate-200 dark:border-slate-700 p-4 max-w-2xl w-full mx-4 flex flex-col gap-4 relative">
+                            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-2xl border border-slate-200 dark:border-slate-700 p-4 max-w-[95vw] w-full mx-4 flex flex-col gap-4 relative h-[90vh]">
                                 <button
                                     onClick={() => { setInspectData(null); setInspectLoading(false); }}
                                     className="absolute top-2 right-2 p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
@@ -1131,7 +1132,27 @@ export default function PipelineEditor({
                                     </div>
                                 </div>
 
-                                <div className="flex-1 overflow-auto min-h-[300px] flex items-center justify-center bg-slate-100 dark:bg-slate-900 rounded border border-slate-200 dark:border-slate-800 p-4">
+                                {/* Tabs Control - Fixed at top of content area */}
+                                {inspectData.plots && inspectData.plots.length > 0 && (
+                                    <div className="flex gap-2 pb-2 overflow-x-auto border-b border-slate-200 dark:border-slate-700 mb-2 shrink-0">
+                                        {inspectData.plots.map((plot, index) => (
+                                            <button
+                                                key={index}
+                                                onClick={() => setActiveTab(index)}
+                                                className={`
+                                                        px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 ease-in-out whitespace-nowrap
+                                                        ${activeTab === index
+                                                        ? 'bg-blue-600 text-white shadow-md'
+                                                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600'}
+                                                    `}
+                                            >
+                                                {plot.title}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+
+                                <div className="flex-1 overflow-hidden min-h-0 min-w-0 flex items-center justify-center bg-slate-100 dark:bg-slate-900 rounded border border-slate-200 dark:border-slate-800 p-4 relative">
                                     {inspectLoading ? (
                                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                                     ) : inspectData.error ? (
@@ -1140,138 +1161,126 @@ export default function PipelineEditor({
                                             <p>{inspectData.message}</p>
                                         </div>
                                     ) : (
-                                        <div className="flex flex-col w-full h-full">
-                                            {/* Tabs Control */}
-                                            {/* Tabs Control */}
-                                            {inspectData.plots && inspectData.plots.length > 1 && (
-                                                <div className="flex gap-2 p-2 overflow-x-auto">
-                                                    {inspectData.plots.map((plot, index) => (
-                                                        <button
-                                                            key={index}
-                                                            onClick={() => setActiveTab(index)}
-                                                            className={`
-                                                                 px-4 py-2 text-sm font-medium rounded-full transition-all duration-200 ease-in-out whitespace-nowrap
-                                                                 ${activeTab === index
-                                                                    ? 'bg-blue-600 text-white shadow-md transform scale-105'
-                                                                    : 'bg-white/50 text-slate-600 hover:bg-white hover:text-slate-900 dark:bg-slate-800/50 dark:text-slate-300 dark:hover:bg-slate-700'}
-                                                             `}
-                                                        >
-                                                            {plot.title}
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            )}
-
-                                            {/* Image Content */}
-                                            <div className="flex-1 flex items-center justify-center p-4 bg-transparent overflow-auto">
-                                                {inspectData.plots && inspectData.plots[activeTab] ? (
-                                                    <img
-                                                        src={inspectData.plots[activeTab].image}
-                                                        alt={inspectData.plots[activeTab].title}
-                                                        className="max-w-full max-h-full object-contain shadow-sm"
-                                                    />
-                                                ) : (
-                                                    <p className="text-slate-400">No image data</p>
-                                                )}
-                                            </div>
-
-                                            {/* Toolbar */}
-                                            <div className="flex items-center gap-4 p-4">
-                                                <button
-                                                    onClick={() => handleInspect(inspectData.nodeId || nodes.find(n => n.selected)?.id)} // Improve ID finding if inspectData missing it
-                                                    className="p-2 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors"
-                                                    title="Refresh Plot"
-                                                >
-                                                    <RefreshCw className="w-5 h-5" />
-                                                </button>
-
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-sm font-medium text-slate-500">W:</span>
-                                                    <input
-                                                        type="number"
-                                                        min="1" max="20" step="0.5"
-                                                        value={plotSettings.width}
-                                                        onChange={(e) => {
-                                                            const val = e.target.value;
-                                                            if (val === '') {
-                                                                setPlotSettings({ ...plotSettings, width: '' });
-                                                                return;
-                                                            }
-                                                            const numVal = parseFloat(val);
-                                                            if (!isNaN(numVal)) {
-                                                                const newSettings = { ...plotSettings, width: numVal };
-                                                                setPlotSettings(newSettings);
-                                                                handleInspect(inspectData.nodeId || nodes.find(n => n.selected)?.id, newSettings);
-                                                            }
-                                                        }}
-                                                        className="w-16 text-sm border rounded px-2 py-1 bg-white dark:bg-slate-700 dark:border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                                    />
-                                                </div>
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-sm font-medium text-slate-500">H:</span>
-                                                    <input
-                                                        type="number"
-                                                        min="1" max="20" step="0.5"
-                                                        value={plotSettings.height}
-                                                        onChange={(e) => {
-                                                            const val = e.target.value;
-                                                            if (val === '') {
-                                                                setPlotSettings({ ...plotSettings, height: '' });
-                                                                return;
-                                                            }
-                                                            const numVal = parseFloat(val);
-                                                            if (!isNaN(numVal)) {
-                                                                const newSettings = { ...plotSettings, height: numVal };
-                                                                setPlotSettings(newSettings);
-                                                                handleInspect(inspectData.nodeId || nodes.find(n => n.selected)?.id, newSettings);
-                                                            }
-                                                        }}
-                                                        className="w-16 text-sm border rounded px-2 py-1 bg-white dark:bg-slate-700 dark:border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                                    />
-                                                </div>
-
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-sm font-medium text-slate-500">Style:</span>
-                                                    <select
-                                                        value={plotSettings.style}
-                                                        onChange={(e) => {
-                                                            const newSettings = { ...plotSettings, style: e.target.value };
-                                                            setPlotSettings(newSettings);
-                                                            handleInspect(inspectData.nodeId || nodes.find(n => n.selected)?.id, newSettings);
-                                                        }}
-                                                        className="text-sm border rounded px-2 py-1 bg-white dark:bg-slate-700 dark:border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                                    >
-                                                        <option value="default">Default</option>
-                                                        <option value="xkcd">xkcd</option>
-                                                        <option value="dark_background">Dark</option>
-                                                        <option value="ggplot">ggplot</option>
-                                                        <option value="seaborn-v0_8">Seaborn</option>
-                                                        <option value="fast">Fast</option>
-                                                        <option value="bmh">BMH</option>
-                                                    </select>
-                                                </div>
-
-                                                <div className="flex-1"></div>
-
-                                                <button
-                                                    onClick={() => {
-                                                        const link = document.createElement('a');
-                                                        link.href = inspectData.plots[activeTab].image;
-                                                        link.download = `${inspectData.plots[activeTab].title.replace(/\s+/g, '_').toLowerCase()}.png`;
-                                                        document.body.appendChild(link);
-                                                        link.click();
-                                                        document.body.removeChild(link);
-                                                    }}
-                                                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium transition-colors"
-                                                >
-                                                    <Download className="w-4 h-4" />
-                                                    Download
-                                                </button>
-                                            </div>
-                                        </div>
+                                        inspectData.plots && inspectData.plots[activeTab] ? (
+                                            <ZoomableImage
+                                                src={inspectData.plots[activeTab].image}
+                                                alt={inspectData.plots[activeTab].title}
+                                            />
+                                        ) : (
+                                            <p className="text-slate-400">No image data</p>
+                                        )
                                     )}
                                 </div>
+                                <style jsx>{`
+                                    .custom-scrollbar::-webkit-scrollbar {
+                                        width: 8px;
+                                        height: 8px;
+                                    }
+                                    .custom-scrollbar::-webkit-scrollbar-track {
+                                        background: rgba(0, 0, 0, 0.05); 
+                                        border-radius: 4px;
+                                    }
+                                    .custom-scrollbar::-webkit-scrollbar-thumb {
+                                        background: rgba(156, 163, 175, 0.5); 
+                                        border-radius: 4px;
+                                    }
+                                    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+                                        background: rgba(107, 114, 128, 0.8); 
+                                    }
+                                    .dark .custom-scrollbar::-webkit-scrollbar-track {
+                                        background: rgba(255, 255, 255, 0.05); 
+                                    }
+                                `}</style>
+
+                                {/* Toolbar */}
+                                <div className="flex items-center gap-4 p-4">
+                                    <button
+                                        onClick={() => handleInspect(inspectData.nodeId || nodes.find(n => n.selected)?.id)} // Improve ID finding if inspectData missing it
+                                        className="p-2 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors"
+                                        title="Refresh Plot (Apply Settings)"
+                                    >
+                                        <RefreshCw className="w-5 h-5" />
+                                    </button>
+
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-sm font-medium text-slate-500">W:</span>
+                                        <input
+                                            type="number"
+                                            min="1" max="20" step="0.5"
+                                            value={plotSettings.width}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                if (val === '') {
+                                                    setPlotSettings({ ...plotSettings, width: '' });
+                                                    return;
+                                                }
+                                                const numVal = parseFloat(val);
+                                                if (!isNaN(numVal)) {
+                                                    setPlotSettings({ ...plotSettings, width: numVal });
+                                                }
+                                            }}
+                                            className="w-16 text-sm border rounded px-2 py-1 bg-white dark:bg-slate-700 dark:border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        />
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-sm font-medium text-slate-500">H:</span>
+                                        <input
+                                            type="number"
+                                            min="1" max="20" step="0.5"
+                                            value={plotSettings.height}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                if (val === '') {
+                                                    setPlotSettings({ ...plotSettings, height: '' });
+                                                    return;
+                                                }
+                                                const numVal = parseFloat(val);
+                                                if (!isNaN(numVal)) {
+                                                    setPlotSettings({ ...plotSettings, height: numVal });
+                                                }
+                                            }}
+                                            className="w-16 text-sm border rounded px-2 py-1 bg-white dark:bg-slate-700 dark:border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        />
+                                    </div>
+
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-sm font-medium text-slate-500">Style:</span>
+                                        <select
+                                            value={plotSettings.style}
+                                            onChange={(e) => {
+                                                setPlotSettings({ ...plotSettings, style: e.target.value });
+                                            }}
+                                            className="text-sm border rounded px-2 py-1 bg-white dark:bg-slate-700 dark:border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        >
+                                            <option value="default">Default</option>
+                                            <option value="xkcd">xkcd</option>
+                                            <option value="dark_background">Dark</option>
+                                            <option value="ggplot">ggplot</option>
+                                            <option value="seaborn-v0_8">Seaborn</option>
+                                            <option value="fast">Fast</option>
+                                            <option value="bmh">BMH</option>
+                                        </select>
+                                    </div>
+
+                                    <div className="flex-1"></div>
+
+                                    <button
+                                        onClick={() => {
+                                            const link = document.createElement('a');
+                                            link.href = inspectData.plots[activeTab].image;
+                                            link.download = `${inspectData.plots[activeTab].title.replace(/\s+/g, '_').toLowerCase()}.png`;
+                                            document.body.appendChild(link);
+                                            link.click();
+                                            document.body.removeChild(link);
+                                        }}
+                                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium transition-colors"
+                                    >
+                                        <Download className="w-4 h-4" />
+                                        Download
+                                    </button>
+                                </div>
                             </div>
+
                         </div>
                     )}
 
@@ -1321,11 +1330,11 @@ export default function PipelineEditor({
                         }
                     }
                 `}</style>
-                </div>
+                </div >
 
                 {/* Simulation Controls Bottom Bar */}
-                <SimulationControls onExpandChange={setIsBottomBarExpanded} />
-            </PipelineContext.Provider>
+                < SimulationControls onExpandChange={setIsBottomBarExpanded} />
+            </PipelineContext.Provider >
         </div >
     );
 }

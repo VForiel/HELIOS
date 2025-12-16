@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Clock, Lock, Unlock, ChevronUp, ChevronDown, Play, Pause } from 'lucide-react';
+import NumberInput from './NumberInput';
 
 export default function SimulationControls({ onExpandChange }) {
     // Temporal controls state
@@ -62,9 +63,9 @@ export default function SimulationControls({ onExpandChange }) {
         const cs = centiseconds;
 
         if (hours > 0) {
-            return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}:${cs.toString().padStart(2, '0')}`;
+            return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}:${String(cs).padStart(2, '0')}`;
         }
-        return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}:${cs.toString().padStart(2, '0')}`;
+        return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}:${String(cs).padStart(2, '0')}`;
     };
 
     // Format duration as (hh)h (mm)m
@@ -75,8 +76,8 @@ export default function SimulationControls({ onExpandChange }) {
         return `${durationMinutes}m`;
     };
 
-    // Calculate percentage for slider background if needed (optional)
-    // const timelinePercentage = totalDurationSeconds > 0 ? (currentSeconds / totalDurationSeconds) * 100 : 0;
+    // Calculate percentage for slider background
+    const timelinePercentage = totalDurationSeconds > 0 ? (currentSeconds / totalDurationSeconds) * 100 : 0;
 
     // Handle slider hover for tooltip
     const handleSliderMouseMove = (e) => {
@@ -90,156 +91,173 @@ export default function SimulationControls({ onExpandChange }) {
     return (
         <>
             {/* Bottom Bar - Collapsible */}
-            <div className={`fixed bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-700 shadow-lg z-40 transition-transform duration-300 ${isExpanded ? 'translate-y-0' : 'translate-y-full'
+            <div className={`fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-md border-t border-slate-700 shadow-2xl z-40 transition-transform duration-300 ${isExpanded ? 'translate-y-0' : 'translate-y-full'
                 }`}>
                 {/* Toggle Button - Inside the bar at top-right */}
                 <button
                     onClick={() => setIsExpanded(!isExpanded)}
-                    className="absolute -top-10 right-4 p-2 bg-slate-900 border border-slate-700 border-b-0 rounded-t-lg hover:bg-slate-800 transition-colors shadow-lg"
+                    className="absolute -top-10 right-4 p-2 bg-slate-900 border border-slate-700 border-b-0 rounded-t-lg hover:bg-slate-800 transition-colors shadow-lg group"
                     title={isExpanded ? 'Hide simulation controls' : 'Show simulation controls'}
                 >
-                    {isExpanded ? <ChevronDown className="w-5 h-5 text-slate-400" /> : <ChevronUp className="w-5 h-5 text-slate-400" />}
+                    {isExpanded ? <ChevronDown className="w-5 h-5 text-slate-400 group-hover:text-white" /> : <ChevronUp className="w-5 h-5 text-slate-400 group-hover:text-white" />}
                 </button>
 
-                <div className="px-4 py-3">
-                    <div className="flex items-center justify-between gap-6 max-w-screen-2xl mx-auto">
+                <div className="px-6 py-4">
+                    <div className="flex items-center justify-between gap-8 max-w-screen-2xl mx-auto">
                         {/* Left section - Temporal Controls */}
-                        <div className="flex items-center gap-4 flex-1">
-                            {/* Date Picker */}
-                            <div className="flex items-center gap-2">
-                                <Calendar className="w-4 h-4 text-slate-400" />
-                                <input
-                                    type="date"
-                                    value={observationDate}
-                                    onChange={(e) => setObservationDate(e.target.value)}
-                                    className="px-2 py-1 text-sm bg-slate-800 border border-slate-700 rounded text-slate-200 focus:outline-none focus:border-blue-500"
-                                />
-                            </div>
+                        <div className="flex items-center gap-6 flex-1">
 
-                            {/* Time Picker */}
-                            <div className="flex items-center gap-2">
-                                <Clock className="w-4 h-4 text-slate-400" />
-                                <input
-                                    type="time"
-                                    step="1"
-                                    value={observationTime}
-                                    onChange={(e) => setObservationTime(e.target.value)}
-                                    className="px-2 py-1 text-sm bg-slate-800 border border-slate-700 rounded text-slate-200 focus:outline-none focus:border-blue-500"
-                                />
+                            {/* Time Config Group */}
+                            <div className="flex items-center gap-4 bg-slate-800/50 p-2 rounded-lg border border-slate-700/50">
+                                {/* Date Picker */}
+                                <div className="flex items-center gap-2">
+                                    <Calendar className="w-4 h-4 text-purple-400" />
+                                    <input
+                                        type="date"
+                                        value={observationDate}
+                                        onChange={(e) => setObservationDate(e.target.value)}
+                                        className="px-2 py-1 text-sm bg-slate-800 border border-slate-600 rounded text-slate-200 focus:outline-none focus:border-blue-500 hover:border-slate-500 transition-colors"
+                                    />
+                                </div>
+
+                                {/* Time Picker */}
+                                <div className="flex items-center gap-2">
+                                    <Clock className="w-4 h-4 text-purple-400" />
+                                    <input
+                                        type="time"
+                                        step="1"
+                                        value={observationTime}
+                                        onChange={(e) => setObservationTime(e.target.value)}
+                                        className="px-2 py-1 text-sm bg-slate-800 border border-slate-600 rounded text-slate-200 focus:outline-none focus:border-blue-500 hover:border-slate-500 transition-colors"
+                                    />
+                                </div>
                             </div>
 
                             {/* Duration */}
-                            <div className="flex items-center gap-2">
-                                <span className="text-xs text-slate-400">Duration:</span>
-                                <input
-                                    type="number"
-                                    min="0"
-                                    max="24"
-                                    value={durationHours}
-                                    onChange={(e) => setDurationHours(Math.max(0, parseInt(e.target.value) || 0))}
-                                    className="w-12 px-2 py-1 text-sm bg-slate-800 border border-slate-700 rounded text-slate-200 focus:outline-none focus:border-blue-500"
-                                />
-                                <span className="text-xs text-slate-400">h</span>
-                                <input
-                                    type="number"
-                                    min="0"
-                                    max="59"
-                                    value={durationMinutes}
-                                    onChange={(e) => setDurationMinutes(Math.max(0, Math.min(59, parseInt(e.target.value) || 0)))}
-                                    className="w-12 px-2 py-1 text-sm bg-slate-800 border border-slate-700 rounded text-slate-200 focus:outline-none focus:border-blue-500"
-                                />
-                                <span className="text-xs text-slate-400">m</span>
+                            <div className="flex items-center gap-2 bg-slate-800/50 p-2 rounded-lg border border-slate-700/50">
+                                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider mr-1">Duration</span>
+
+                                <div className="flex items-center gap-1">
+                                    <NumberInput
+                                        value={durationHours}
+                                        onChange={(val) => setDurationHours(Math.max(0, parseInt(val) || 0))}
+                                        min={0}
+                                        max={24}
+                                        size="sm"
+                                        className="!w-20 !bg-slate-900 !border-slate-700"
+                                    />
+                                    <span className="text-xs text-slate-500 font-mono">h</span>
+                                </div>
+
+                                <div className="flex items-center gap-1">
+                                    <NumberInput
+                                        value={durationMinutes}
+                                        onChange={(val) => setDurationMinutes(Math.max(0, Math.min(59, parseInt(val) || 0)))}
+                                        min={0}
+                                        max={59}
+                                        size="sm"
+                                        className="!w-20 !bg-slate-900 !border-slate-700"
+                                    />
+                                    <span className="text-xs text-slate-500 font-mono">m</span>
+                                </div>
                             </div>
 
                             {/* Timeline Slider with Play/Pause */}
-                            <div className="flex-1 flex items-center gap-2 min-w-[200px]">
+                            <div className="flex-1 flex items-center gap-4 min-w-[300px] bg-slate-800/30 p-2 rounded-xl border border-slate-700/30">
                                 {/* Play/Pause Button */}
                                 <button
                                     onClick={() => setIsPlaying(!isPlaying)}
                                     disabled={totalDurationMinutes === 0}
-                                    className={`p-1.5 rounded transition-colors ${totalDurationMinutes === 0
-                                        ? 'bg-slate-800 text-slate-600 cursor-not-allowed'
+                                    className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition-all shadow-lg ${totalDurationMinutes === 0
+                                        ? 'bg-slate-800 text-slate-600 cursor-not-allowed opacity-50'
                                         : isPlaying
-                                            ? 'bg-blue-600 hover:bg-blue-500 text-white'
-                                            : 'bg-slate-800 hover:bg-slate-700 text-slate-400'
+                                            ? 'bg-gradient-to-tr from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-500/30'
+                                            : 'bg-slate-700 hover:bg-slate-600 text-slate-200 hover:text-white'
                                         }`}
                                     title={isPlaying ? 'Pause' : 'Play'}
                                 >
-                                    {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                                    {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current ml-0.5" />}
                                 </button>
 
-                                <span className="text-xs text-slate-400 whitespace-nowrap font-mono">
-                                    {formatTime(currentSeconds)}
-                                </span>
+                                <div className="flex-1 relative flex flex-col justify-center h-10">
+                                    <div className="flex justify-between items-end mb-1 px-1">
+                                        <span className="text-xs text-blue-400 font-mono font-bold tracking-tight">
+                                            {formatTime(currentSeconds)}
+                                        </span>
+                                        <span className="text-[10px] text-slate-500 font-mono">
+                                            {formatDuration()}
+                                        </span>
+                                    </div>
 
-                                {/* Slider with hover tooltip */}
-                                <div
-                                    className="flex-1 relative"
-                                    onMouseEnter={() => setShowTooltip(true)}
-                                    onMouseLeave={() => setShowTooltip(false)}
-                                    onMouseMove={handleSliderMouseMove}
-                                >
-                                    <input
-                                        type="range"
-                                        min="0"
-                                        max={totalDurationSeconds}
-                                        step="0.01"
-                                        value={currentSeconds}
-                                        onChange={(e) => {
-                                            const newSeconds = parseFloat(e.target.value);
-                                            setCurrentSeconds(newSeconds);
-                                        }}
-                                        className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer slider-thumb"
-                                        disabled={totalDurationMinutes === 0}
-                                    />
-
-                                    {/* Tooltip */}
-                                    {showTooltip && totalDurationMinutes > 0 && (
-                                        <div
-                                            className="absolute -top-8 bg-slate-800 text-slate-200 text-xs px-2 py-1 rounded shadow-lg pointer-events-none font-mono whitespace-nowrap"
-                                            style={{
-                                                left: `${tooltipPosition.x}px`,
-                                                transform: 'translateX(-50%)',
-                                                opacity: showTooltip ? 1 : 0,
-                                                transition: 'opacity 0.15s'
+                                    {/* Slider with hover tooltip */}
+                                    <div
+                                        className="relative h-4 group"
+                                        onMouseEnter={() => setShowTooltip(true)}
+                                        onMouseLeave={() => setShowTooltip(false)}
+                                        onMouseMove={handleSliderMouseMove}
+                                    >
+                                        <input
+                                            type="range"
+                                            min="0"
+                                            max={totalDurationSeconds}
+                                            step="0.01"
+                                            value={currentSeconds}
+                                            onChange={(e) => {
+                                                const newSeconds = parseFloat(e.target.value);
+                                                setCurrentSeconds(newSeconds);
                                             }}
-                                        >
-                                            {formatTime(tooltipPosition.seconds)}
-                                        </div>
-                                    )}
-                                </div>
+                                            className="w-full h-1.5 rounded-full appearance-none cursor-pointer focus:outline-none slider-track"
+                                            style={{
+                                                background: `linear-gradient(to right, #3b82f6 ${timelinePercentage}%, #1e293b ${timelinePercentage}%)`
+                                            }}
+                                            disabled={totalDurationMinutes === 0}
+                                        />
 
-                                <span className="text-xs text-slate-400 whitespace-nowrap">
-                                    {formatDuration()}
-                                </span>
+                                        {/* Tooltip */}
+                                        {showTooltip && totalDurationMinutes > 0 && (
+                                            <div
+                                                className="absolute -top-10 bg-slate-800 text-white text-[10px] px-2 py-1 rounded shadow-xl border border-slate-600 pointer-events-none font-mono whitespace-nowrap z-50"
+                                                style={{
+                                                    left: `${tooltipPosition.x}px`,
+                                                    transform: 'translateX(-50%)',
+                                                    opacity: showTooltip ? 1 : 0,
+                                                    transition: 'opacity 0.15s'
+                                                }}
+                                            >
+                                                {formatTime(tooltipPosition.seconds)}
+                                                <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-slate-800 border-b border-r border-slate-600 rotate-45"></div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
                         {/* Right section - Random Seed Control */}
-                        <div className="flex items-center gap-3 border-l border-slate-700 pl-4">
+                        <div className="flex items-center gap-3 border-l border-slate-700 pl-6">
                             <button
                                 onClick={() => setSeedLocked(!seedLocked)}
-                                className={`p-2 rounded transition-colors ${seedLocked
-                                    ? 'bg-amber-600 hover:bg-amber-500 text-white'
-                                    : 'bg-slate-800 hover:bg-slate-700 text-slate-400'
+                                className={`p-2 rounded-lg transition-colors border ${seedLocked
+                                    ? 'bg-amber-500/10 border-amber-500/50 text-amber-500 hover:bg-amber-500/20'
+                                    : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-600'
                                     }`}
                                 title={seedLocked ? 'Seed locked' : 'Seed unlocked'}
                             >
                                 {seedLocked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
                             </button>
-                            <div className="flex items-center gap-2">
-                                <span className="text-xs text-slate-400">Seed:</span>
+                            <div className="flex flex-col">
+                                <span className="text-[10px] uppercase text-slate-500 font-semibold mb-0.5">RNG Seed</span>
                                 {seedLocked ? (
-                                    <input
-                                        type="number"
+                                    <NumberInput
                                         value={seedValue}
-                                        onChange={(e) => setSeedValue(parseInt(e.target.value) || 0)}
-                                        className="w-24 px-2 py-1 text-sm bg-slate-800 border border-slate-700 rounded text-slate-200 focus:outline-none focus:border-blue-500"
+                                        onChange={(val) => setSeedValue(parseInt(val) || 0)}
+                                        size="xs"
+                                        className="!w-24 !bg-slate-900 !border-slate-700"
                                     />
                                 ) : (
-                                    <span className="w-24 px-2 py-1 text-sm bg-slate-900 border border-slate-800 rounded text-slate-500 italic">
-                                        Dynamique
-                                    </span>
+                                    <div className="h-6 w-24 flex items-center justify-center text-xs bg-slate-900 border border-slate-800 rounded text-slate-600 italic select-none">
+                                        Dynamic
+                                    </div>
                                 )}
                             </div>
                         </div>
@@ -248,38 +266,47 @@ export default function SimulationControls({ onExpandChange }) {
 
                 {/* Custom slider styling */}
                 <style jsx>{`
-                    .slider-thumb::-webkit-slider-thumb {
-                        appearance: none;
-                        width: 16px;
-                        height: 16px;
+                    /* Webkit */
+                    input[type=range]::-webkit-slider-thumb {
+                        -webkit-appearance: none;
+                        height: 14px;
+                        width: 14px;
                         border-radius: 50%;
-                        background: #3b82f6;
+                        background: #ffffff;
                         cursor: pointer;
-                        transition: background 0.2s;
+                        box-shadow: 0 0 0 1px rgba(0,0,0,0.1), 0 2px 4px rgba(0,0,0,0.2);
+                        margin-top: -5px; /* Adjust for track height difference */
+                        transition: transform 0.1s, box-shadow 0.1s;
                     }
-                    .slider-thumb::-webkit-slider-thumb:hover {
-                        background: #2563eb;
+                    input[type=range]::-webkit-slider-thumb:hover {
+                        transform: scale(1.2);
+                        box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.3);
                     }
-                    .slider-thumb::-moz-range-thumb {
-                        width: 16px;
-                        height: 16px;
-                        border-radius: 50%;
-                        background: #3b82f6;
+                    input[type=range]::-webkit-slider-runnable-track {
+                        width: 100%;
+                        height: 4px;
                         cursor: pointer;
+                        border-radius: 2px;
+                        /* Background handled inline */
+                    }
+
+                    /* Firefox */
+                    input[type=range]::-moz-range-thumb {
+                        height: 14px;
+                        width: 14px;
                         border: none;
-                        transition: background 0.2s;
+                        border-radius: 50%;
+                        background: #ffffff;
+                        cursor: pointer;
+                        box-shadow: 0 0 0 1px rgba(0,0,0,0.1), 0 2px 4px rgba(0,0,0,0.2);
+                        transition: transform 0.1s, box-shadow 0.1s;
                     }
-                    .slider-thumb::-moz-range-thumb:hover {
-                        background: #2563eb;
+                    input[type=range]::-moz-range-thumb:hover {
+                        transform: scale(1.2);
+                        box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.3);
                     }
-                    .slider-thumb:disabled::-webkit-slider-thumb {
-                        background: #475569;
-                        cursor: not-allowed;
-                    }
-                    .slider-thumb:disabled::-moz-range-thumb {
-                        background: #475569;
-                        cursor: not-allowed;
-                    }
+                    /* Track background in Firefox is trickier with gradient, relying on inline style works for many cases but -moz-range-progress is better native solution */
+                    /* But keeping inline style for consistency across browsers mostly works */
                 `}</style>
             </div>
         </>
