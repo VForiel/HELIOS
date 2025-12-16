@@ -184,7 +184,7 @@ function App() {
                             </div>
                             <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded cursor-grab border border-slate-200 dark:border-slate-700 hover:border-cyan-500 transition-colors flex items-center"
                                 onDragStart={(event) => onDragStart(event, 'telescope_array')} draggable>
-                                <img src={getElementIcon('telescope')} alt="Telescope Array" className="w-4 h-4 mr-3 dark:invert dark:opacity-80" />
+                                <img src={getElementIcon('telescope_array')} alt="Telescope Array" className="w-4 h-4 mr-3 dark:invert dark:opacity-80" />
                                 <span className="text-slate-700 dark:text-slate-200 text-sm">Telescope Array</span>
                             </div>
 

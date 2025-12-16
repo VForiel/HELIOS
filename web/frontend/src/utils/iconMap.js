@@ -10,6 +10,7 @@ const ICON_MAP = {
 
     // Optical elements
     telescope: 'telescope.svg',
+    telescope_array: 'telescope_array.svg',
     atmosphere: 'atmosphere.svg',
     adaptive_optics: 'adaptive_optics.svg',
     coronagraph: 'coronagraph.svg',
