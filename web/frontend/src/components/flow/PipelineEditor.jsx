@@ -1076,7 +1076,7 @@ export default function PipelineEditor({
                             onDragOver={onDragOver}
                             nodeTypes={nodeTypes}
                             edgeTypes={edgeTypes}
-                            connectionLineType="smoothstep"
+                            connectionLineType="default"
                             selectionOnDrag={interactionMode === 'select'}
                             panOnDrag={interactionMode === 'nav' || [1, 2]}
                             selectionMode="partial"
