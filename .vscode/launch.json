@@ -8,6 +8,7 @@
             "program": "${workspaceFolder}/web/backend/app.py",
             "console": "integratedTerminal",
             "justMyCode": true,
+            "python": "${workspaceFolder}/.venv/Scripts/python.exe",
             "env": {
                 "PYTHONPATH": "${workspaceFolder}/src"
             },
