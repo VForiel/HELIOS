@@ -16,29 +16,52 @@ function App() {
     // Language state
     const { t, language, setLanguage, languages } = useTranslation();
 
+    // Persistence Key
+    const STORAGE_KEY = 'helios_app_state_v1';
+
+    // Load saved state
+    const savedState = React.useMemo(() => {
+        try {
+            const item = localStorage.getItem(STORAGE_KEY);
+            if (item) {
+                console.log('Successfully loaded state from localStorage');
+                return JSON.parse(item);
+            }
+            console.log('No saved state found, using defaults');
+            return null;
+        } catch (error) {
+            console.error("Failed to load state", error);
+            return null;
+        }
+    }, []);
+
     // State
-    const [sceneConfig, setSceneConfig] = React.useState({
+    const defaultSceneConfig = {
         stars: [{ temperature: 5778, magnitude: 4.83, x_arcsec: 0, y_arcsec: 0 }],
         planets: [{ mass: 1.0, separation: 1.0, angle: 0.0, radius: 1.0 }],
         zodiacal: { enabled: false, brightness: 1.0, radius: null }
-    });
-    const [atmosphereConfig, setAtmosphereConfig] = React.useState({
+    };
+    const [sceneConfig, setSceneConfig] = React.useState(savedState?.sceneConfig || defaultSceneConfig);
+    const defaultAtmosphereConfig = {
         enabled: false,
         rms_nm: 100,
         wind_speed: 5.0
-    });
-    const [telescopeConfig, setTelescopeConfig] = React.useState({
+    };
+    const [atmosphereConfig, setAtmosphereConfig] = React.useState(savedState?.atmosphereConfig || defaultAtmosphereConfig);
+    const defaultTelescopeConfig = {
         preset: 'Single',
         diameter: 8.0,
         pupil_type: 'Circular',
         central_obstruction: 0,
         spiders: 0,
-        positions: [{ id: 'single', x: 0, y: 0 }] // Single telescope always at origin for now?
-    });
-    const [cameraConfig, setCameraConfig] = useState({
+        positions: [{ id: 'single', x: 0, y: 0 }]
+    };
+    const [telescopeConfig, setTelescopeConfig] = React.useState(savedState?.telescopeConfig || defaultTelescopeConfig);
+    const defaultCameraConfig = {
         wavelength: 1.0,
         exposure: 0.1
-    });
+    };
+    const [cameraConfig, setCameraConfig] = useState(savedState?.cameraConfig || defaultCameraConfig);
 
     const [loading, setLoading] = useState(false);
     const [image, setImage] = useState(null);
@@ -46,8 +69,8 @@ function App() {
 
     // UI State
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-    const [theme, setTheme] = useState('dark');
-    const [viewMode, setViewMode] = useState('graph'); // 'graph' | 'layered'
+    const [theme, setTheme] = useState(savedState?.theme || 'dark');
+    const [viewMode, setViewMode] = useState(savedState?.viewMode || 'graph'); // 'graph' | 'layered'
 
     // Hoisted Graph State
     // Initial Nodes (Layers)
@@ -89,8 +112,28 @@ function App() {
         { id: 'e2-3', source: 'layer-2', target: 'layer-3', animated: true },
     ];
 
-    const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-    const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+    const [nodes, setNodes, onNodesChange] = useNodesState(savedState?.nodes || initialNodes);
+    const [edges, setEdges, onEdgesChange] = useEdgesState(savedState?.edges || initialEdges);
+
+    // Persistence Effect
+    React.useEffect(() => {
+        const stateToSave = {
+            nodes,
+            edges,
+            sceneConfig,
+            atmosphereConfig,
+            telescopeConfig,
+            cameraConfig,
+            theme,
+            viewMode
+        };
+        // Debounce saving slightly if needed, or just save on change
+        const timeoutId = setTimeout(() => {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(stateToSave));
+            console.log('State saved to localStorage', { nodeCount: nodes.length, edgeCount: edges.length });
+        }, 500);
+        return () => clearTimeout(timeoutId);
+    }, [JSON.stringify(nodes), JSON.stringify(edges), sceneConfig, atmosphereConfig, telescopeConfig, cameraConfig, theme, viewMode]);
 
     // Theme Effect
     React.useEffect(() => {

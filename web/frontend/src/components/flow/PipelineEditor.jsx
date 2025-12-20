@@ -43,8 +43,7 @@ const edgeTypes = {
     parallel: ParallelEdge
 };
 
-let id = 1;
-const getId = () => `node_${id++}`;
+const getId = () => `node_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
 // History Helper
 const useUndoRedo = (nodes, edges, setNodes, setEdges) => {
