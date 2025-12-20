@@ -135,12 +135,23 @@ export default memo(({ data, selected, id }) => {
     // SEMANTIC ZOOM: Icon View
     if (showIconOnly) {
         return (
-            <div 
+            <div
                 className={`
                     w-64 h-64 rounded-3xl flex flex-col items-center justify-center gap-4
-                    bg-white dark:bg-slate-900 border-4 transition-all shadow-xl
+                    bg-white dark:bg-slate-900 border-4 transition-all shadow-xl cursor-pointer
                     ${selected ? 'border-blue-500 shadow-blue-500/30 ring-4 ring-blue-500/20' : 'border-slate-300 dark:border-slate-700'}
+                    hover:scale-105 active:scale-95
                 `}
+                onClick={(e) => {
+                    // Only trigger if semantic zoom is active (icon mode)
+                    if (data.onOpenConfig) {
+                        e.stopPropagation(); // Prevent selecting the node if we just want to open config? 
+                        // Actually, maybe we accept selection too. But let's stop propagation to avoid side effects if desired.
+                        // However, selecting it is good visual feedback.
+                        // Let's call the handler.
+                        data.onOpenConfig({ id, data, position: { x: 0, y: 0 } }); // Pass pseudo-node or minimal needed
+                    }
+                }}
             >
                 {/* Inputs */}
                 {Array.from({ length: inputCount }).map((_, i) => (

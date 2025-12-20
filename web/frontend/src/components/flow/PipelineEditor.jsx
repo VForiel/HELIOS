@@ -22,6 +22,7 @@ import ParallelEdge from './edges/ParallelEdge';
 import CodeViewer from '../CodeViewer';
 import SimulationControls from '../SimulationControls';
 import LayeredView from '../LayeredView';
+import ComponentConfigModal from '../ComponentConfigModal';
 import { PipelineContext } from '../../contexts/PipelineContext';
 
 const nodeTypes = {
@@ -133,6 +134,13 @@ export default function PipelineEditor({
 
     // Bottom Bar State
     const [isBottomBarExpanded, setIsBottomBarExpanded] = useState(false);
+
+    // Component Config Modal State
+    const [configModalNode, setConfigModalNode] = useState(null);
+
+    const handleOpenConfig = useCallback((node) => {
+        setConfigModalNode(node);
+    }, []);
 
     const showToast = useCallback((message, type = 'error') => {
         const id = Date.now();
@@ -477,8 +485,15 @@ export default function PipelineEditor({
     // Hydrate nodes with handlers on load
     useEffect(() => {
         setNodes((nds) => nds.map(n => {
-            if (!n.data.onChange) {
-                return { ...n, data: { ...n.data, onChange: onNodeConfigChange } };
+            if (!n.data.onChange || !n.data.onOpenConfig) {
+                return {
+                    ...n,
+                    data: {
+                        ...n.data,
+                        onChange: onNodeConfigChange,
+                        onOpenConfig: handleOpenConfig
+                    }
+                };
             }
             return n;
         }));
@@ -599,14 +614,15 @@ export default function PipelineEditor({
                 position,
                 data: {
                     ...data,
-                    onChange: onNodeConfigChange // Enable inline editing
+                    onChange: onNodeConfigChange, // Enable inline editing
+                    onOpenConfig: handleOpenConfig // Enable modal editing
                 }
             };
 
             setNodes((nds) => nds.concat(newNode));
             // Trigger change or just rely on state? registerChange might be needed for undo/redo if implemented.
         },
-        [reactFlowInstance, setNodes, onNodeConfigChange, atmosphere, telescope, camera]
+        [reactFlowInstance, setNodes, onNodeConfigChange, handleOpenConfig, atmosphere, telescope, camera]
     );
 
 
@@ -1066,6 +1082,7 @@ export default function PipelineEditor({
                             onConnect={onConnect}
                             onConnectStart={onConnectStart}
                             onConnectEnd={onConnectEnd}
+                            onNodeDoubleClick={(event, node) => handleOpenConfig(node)}
                             onEdgeUpdate={onEdgeUpdate}
                             onEdgeUpdateStart={onEdgeUpdateStart}
                             onEdgeUpdateEnd={onEdgeUpdateEnd}
@@ -1334,6 +1351,15 @@ export default function PipelineEditor({
 
                 {/* Simulation Controls Bottom Bar */}
                 < SimulationControls onExpandChange={setIsBottomBarExpanded} />
+
+                {/* Modal */}
+                <ComponentConfigModal
+                    node={configModalNode}
+                    isOpen={!!configModalNode}
+                    onClose={() => setConfigModalNode(null)}
+                    onChange={onNodeConfigChange}
+                    onInspect={handleInspect}
+                />
             </PipelineContext.Provider >
         </div >
     );
