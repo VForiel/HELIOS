@@ -891,11 +891,171 @@ export default function PipelineEditor({
             setEdges(newEdges);
             e.target.value = null; // Reset input
 
+
         } catch (err) {
             console.error(err);
             alert("Import Failed: " + err.message);
         }
     };
+
+    // Auto-arrange handler - organizes nodes in grid layout
+    const handleAutoArrange = useCallback(() => {
+        if (nodes.length === 0) return;
+
+        // Use same grouping logic as LayeredView
+        const visited = new Set();
+        const pipelines = [];
+
+        // Helper to find connected components
+        const findComponent = (startNode) => {
+            const componentNodes = [];
+            const queue = [startNode];
+            const localVisited = new Set();
+            localVisited.add(startNode.id);
+            visited.add(startNode.id);
+
+            while (queue.length > 0) {
+                const node = queue.shift();
+                componentNodes.push(node);
+
+                // Outgoing edges
+                edges.filter(e => e.source === node.id).forEach(e => {
+                    const target = nodes.find(n => n.id === e.target);
+                    if (target && !localVisited.has(target.id)) {
+                        localVisited.add(target.id);
+                        visited.add(target.id);
+                        queue.push(target);
+                    }
+                });
+
+                // Incoming edges
+                edges.filter(e => e.target === node.id).forEach(e => {
+                    const source = nodes.find(n => n.id === e.source);
+                    if (source && !localVisited.has(source.id)) {
+                        localVisited.add(source.id);
+                        visited.add(source.id);
+                        queue.push(source);
+                    }
+                });
+            }
+            return componentNodes;
+        };
+
+        // Helper to organize pipeline into layers (steps)
+        const organizePipeline = (componentNodes) => {
+            if (componentNodes.length === 0) return [];
+
+            // Calculate in-degree
+            const inDegree = new Map();
+            componentNodes.forEach(n => inDegree.set(n.id, 0));
+
+            const componentNodeIds = new Set(componentNodes.map(n => n.id));
+            const internalEdges = edges.filter(e => componentNodeIds.has(e.source) && componentNodeIds.has(e.target));
+
+            internalEdges.forEach(e => {
+                inDegree.set(e.target, (inDegree.get(e.target) || 0) + 1);
+            });
+
+            // Identify roots
+            let roots = componentNodes.filter(n => (inDegree.get(n.id) === 0) || n.data.type === 'scene');
+
+            if (roots.length === 0 && componentNodes.length > 0) {
+                roots = [componentNodes.sort((a, b) => a.position.x - b.position.x)[0]];
+            }
+
+            // Assign depth using relaxed updates
+            const depth = new Map();
+            roots.forEach(r => depth.set(r.id, 0));
+
+            let changed = true;
+            let iterations = 0;
+            while (changed && iterations < componentNodes.length) {
+                changed = false;
+                internalEdges.forEach(e => {
+                    const dSource = depth.get(e.source);
+                    if (dSource !== undefined) {
+                        const dTarget = depth.get(e.target);
+                        if (dTarget === undefined || dTarget < dSource + 1) {
+                            depth.set(e.target, dSource + 1);
+                            changed = true;
+                        }
+                    }
+                });
+                iterations++;
+            }
+
+            // Fill undefined depths
+            componentNodes.forEach(n => {
+                if (!depth.has(n.id)) depth.set(n.id, 0);
+            });
+
+            // Group by depth
+            const maxDepth = Math.max(...Array.from(depth.values()));
+            const layers = Array.from({ length: maxDepth + 1 }, () => []);
+
+            componentNodes.forEach(n => {
+                const d = depth.get(n.id);
+                layers[d].push(n);
+            });
+
+            // Sort within layers by Y position
+            layers.forEach(layer => layer.sort((a, b) => a.position.y - b.position.y));
+
+            return layers;
+        };
+
+        // Find components starting with scene nodes
+        const sceneNodes = nodes.filter(n => n.data.type === 'scene').sort((a, b) => a.position.y - b.position.y);
+
+        sceneNodes.forEach(startNode => {
+            if (!visited.has(startNode.id)) {
+                const component = findComponent(startNode);
+                pipelines.push(organizePipeline(component));
+            }
+        });
+
+        // Catch leftover nodes
+        nodes.forEach(node => {
+            if (!visited.has(node.id)) {
+                const component = findComponent(node);
+                pipelines.push(organizePipeline(component));
+            }
+        });
+
+        // Position nodes in grid layout
+        // Base unit = 256px (icon mode node size: w-64 h-64)
+        // Spacing ensures nodes in detail mode (max 2 units wide, 3 units tall) don't overlap
+        const NODE_UNIT = 256;
+        const COLUMN_SPACING = NODE_UNIT * 2 + 100;  // 2 units + padding = 612px
+        const PIPELINE_SPACING = NODE_UNIT * 3 + 100; // 3 units + padding = 868px
+        const NODE_SPACING = NODE_UNIT * 3 + 50;      // 3 units + small padding = 818px
+        const START_X = 100;
+        const START_Y = 100;
+
+        const newNodes = [...nodes];
+        const nodePositions = new Map();
+
+        pipelines.forEach((pipeline, pipelineIndex) => {
+            pipeline.forEach((stepNodes, stepIndex) => {
+                stepNodes.forEach((node, nodeIndex) => {
+                    const x = START_X + stepIndex * COLUMN_SPACING;
+                    const y = START_Y + pipelineIndex * PIPELINE_SPACING + nodeIndex * NODE_SPACING;
+                    nodePositions.set(node.id, { x, y });
+                });
+            });
+        });
+
+        // Update node positions
+        const updatedNodes = newNodes.map(node => {
+            const newPosition = nodePositions.get(node.id);
+            if (newPosition) {
+                return { ...node, position: newPosition };
+            }
+            return node;
+        });
+
+        setNodes(updatedNodes);
+    }, [nodes, edges, setNodes]);
 
     return (
         <div className="flex h-full flex-col">
@@ -1113,6 +1273,12 @@ export default function PipelineEditor({
                                     className={interactionMode === 'select' ? 'text-blue-600 bg-blue-100 font-bold' : ''}
                                 >
                                     <MousePointer2 className="w-4 h-4 p-0.5" />
+                                </ControlButton>
+                                <ControlButton
+                                    onClick={handleAutoArrange}
+                                    title={t('toolbar.autoArrange')}
+                                >
+                                    <Grid className="w-4 h-4 p-0.5" />
                                 </ControlButton>
                             </Controls>
                             <Background color={isDark ? "#1e293b" : "#e2e8f0"} gap={16} />

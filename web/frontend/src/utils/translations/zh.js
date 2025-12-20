@@ -13,7 +13,10 @@ export default {
         getCode: "获取Python代码",
         toggleTheme: "切换主题",
         runPipeline: "运行管道",
-        language: "语言"
+        language: "语言",
+        graphView: "图形视图",
+        layeredView: "分层视图",
+        autoArrange: "自动排列"
     },
     sidebar: {
         generation: "生成",

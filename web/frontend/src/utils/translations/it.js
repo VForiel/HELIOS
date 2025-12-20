@@ -13,7 +13,10 @@ export default {
         getCode: "Ottieni codice Python",
         toggleTheme: "Cambia tema",
         runPipeline: "Esegui pipeline",
-        language: "Lingua"
+        language: "Lingua",
+        graphView: "Vista grafico",
+        layeredView: "Vista a livelli",
+        autoArrange: "Organizza automaticamente"
     },
     sidebar: {
         generation: "Generazione",

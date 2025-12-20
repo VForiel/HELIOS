@@ -13,7 +13,10 @@ export default {
         getCode: "Pythonコードを取得",
         toggleTheme: "テーマを切り替え",
         runPipeline: "パイプラインを実行",
-        language: "言語"
+        language: "言語",
+        graphView: "グラフビュー",
+        layeredView: "レイヤービュー",
+        autoArrange: "自動配置"
     },
     sidebar: {
         generation: "生成",
