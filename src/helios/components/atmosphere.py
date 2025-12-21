@@ -854,7 +854,7 @@ class Atmosphere(GenerationLayer):
         # Normalize collectors input to a list
         if isinstance(collectors, TelescopeArray):
             # Extract aperture configuration from telescope array
-            collector_list = collectors.collectors
+            collector_list = collectors.elements
             array_name = collectors.name
         elif isinstance(collectors, list):
             # List of Collectors objects

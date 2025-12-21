@@ -21,7 +21,7 @@ def run_demo():
     vlti = helios.TelescopeArray.vlti(uts=True)
 
     print(f"Interferometer created: {vlti.name}")
-    print(f"Number of collectors: {len(vlti.collectors)}")
+    print(f"Number of collectors: {vlti.num_telescopes}")
     print(f"Baselines (m):\n{vlti.get_baseline_array()}")
 
     vlti.plot_array(show_pupils=True, pupil_scale=0.5)

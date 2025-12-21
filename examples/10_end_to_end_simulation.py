@@ -25,10 +25,11 @@ def run_demo():
     scene.add(planet)
 
     # 2. Collectors (simple single-aperture or array)
-    collectors = helios.TelescopeArray(name="Simple Array")
+    # 2. Collectors (simple single-aperture or array)
     pupil_obs = helios.Pupil(diameter=2*u.m)
     pupil_obs.add_disk(center=(0*u.m, 0*u.m), radius=1*u.m)
-    collectors.add_collector(pupil=pupil_obs, position=(0*u.m, 0*u.m), size=2*u.m)
+    collectors = helios.TelescopeArray(pupil=pupil_obs, size=2*u.m, name="Simple Array")
+    collectors.add_position(x=0*u.m, y=0*u.m)
 
     # 3. Camera
     camera = helios.Camera(pixels=(256, 256))

@@ -29,8 +29,8 @@ def run_demo():
     exo_scene.add(helios.Planet(temperature=300*u.K, magnitude=22, position=(100*u.mas, 0*u.mas)))
 
     atmosphere = helios.Atmosphere(rms=200*u.nm, wind_speed=8*u.m/u.s, seed=42)
-    elt = helios.TelescopeArray(name="ELT")
-    elt.add_collector(pupil=helios.Pupil.elt(), position=(0, 0), size=39*u.m)
+    elt = helios.TelescopeArray(pupil=helios.Pupil.elt(), size=39*u.m, name="ELT")
+    elt.add_position(0, 0)
     ao = helios.AdaptiveOptics(coeffs={(1, 1): 0.15, (2, 0): 0.08})
     coronagraph = helios.Coronagraph(phase_mask='4quadrants')
     bs = helios.BeamSplitter(cutoff=0.5)
@@ -78,12 +78,13 @@ def run_demo():
     atmosphere = helios.Atmosphere(name="Atmosphere")
     
     # Telescopes (4 collectors)
-    telescopes = helios.TelescopeArray(name="Interferometer Array")
+    # Telescopes (4 collectors)
     pupil = helios.Pupil(8*u.m)
-    telescopes.add_collector(pupil=pupil, position=(-10, -10), size=8*u.m)
-    telescopes.add_collector(pupil=pupil, position=(10, -10), size=8*u.m)
-    telescopes.add_collector(pupil=pupil, position=(10, 10), size=8*u.m)
-    telescopes.add_collector(pupil=pupil, position=(-10, 10), size=8*u.m)
+    telescopes = helios.TelescopeArray(pupil=pupil, size=8*u.m, name="Interferometer Array")
+    telescopes.add_position(-10, -10)
+    telescopes.add_position(10, -10)
+    telescopes.add_position(10, 10)
+    telescopes.add_position(-10, 10)
 
     # Adaptive Optics
     ao_system = helios.AdaptiveOptics(name="AO System")
