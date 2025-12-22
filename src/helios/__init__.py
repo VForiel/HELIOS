@@ -22,6 +22,7 @@ from .core.simulation import Simulation, Wavefront, WavefrontArray, PlaneType
 # Expose submodules
 from . import components
 from . import core
+from . import sim
 
 # Expose all component classes directly at package level for convenience
 from .components import (
@@ -53,5 +54,7 @@ __all__ = [
     'Camera',
     # Photonic components
     'PhotonicChip', 'TOPS', 'MMI',
+    # Simulations
+    'sim',
 ]
 
