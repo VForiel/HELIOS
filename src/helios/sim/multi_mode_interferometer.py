@@ -2,10 +2,16 @@
 import sys
 import time
 import numpy as np
+import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib.colors import LinearSegmentedColormap
 from tqdm import tqdm
+import os
+import tempfile
+import shutil
+import subprocess
+from joblib import Parallel, delayed
 
 def _compute_mmi_field(N, M, L, W, n_eff, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, verbose=False):
     """
@@ -106,8 +112,158 @@ def _compute_mmi_field(N, M, L, W, n_eff, wavelength, input_amplitudes, num_mode
     
     return z_grid, x_grid, field_evolution, output_positions, input_positions, beam_waist, dx
 
+# --- Parallel Rendering Helpers ---
 
-def simulate_mmi(N=2, M=2, L=None, W=None, n_eff=2.0458, wavelength=1.55e-6, input_amplitudes=None, num_modes=50, num_z_steps=None, z_resolution=None, output_file=None, verbose=False):
+def _render_frame_static(frame_idx, z_grid, x_grid, intensity_evolution, L, W, input_positions, output_positions, output_dir):
+    """Render a single frame for simulate_mmi."""
+    # Ensure Agg backend for thread safety / headless
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+
+    filename = os.path.join(output_dir, f"frame_{frame_idx:05d}.png")
+    
+    z_val = z_grid[frame_idx]
+    
+    fig, (ax_static, ax_anim) = plt.subplots(2, 1, figsize=(10, 10))
+    
+    # 1. Static Plot
+    extent = [0, L*1e6, 0, W*1e6] # microns
+    ax_static.set_title(f"MMI Propagation Field Intensity (L={L*1e6:.1f}um, W={W*1e6:.1f}um)")
+    ax_static.imshow(intensity_evolution.T, origin='lower', aspect='auto', 
+                          extent=extent, cmap='inferno')
+    ax_static.set_xlabel("z [um]")
+    ax_static.set_ylabel("x [um]")
+    
+    # Inputs/Outputs markers
+    for y_pos in input_positions:
+        ax_static.text(0, y_pos*1e6, 'In', color='white', ha='right', va='center', fontsize=8)
+    for y_pos in output_positions:
+        ax_static.text(L*1e6, y_pos*1e6, 'Out', color='white', ha='left', va='center', fontsize=8)
+
+    # Moving vertical line
+    ax_static.plot([z_val*1e6, z_val*1e6], [0, W*1e6], 'w--', lw=1.5)
+    
+    # 2. Dynamic Plot
+    ax_anim.set_title(f"Cross-section at z = {z_val*1e6:.1f} um")
+    ax_anim.set_xlim(0, W*1e6)
+    max_intensity = np.max(intensity_evolution)
+    ax_anim.set_ylim(0, max_intensity * 1.1)
+    ax_anim.set_xlabel("x [um]")
+    ax_anim.set_ylabel("Intensity")
+    
+    ax_anim.plot(x_grid*1e6, intensity_evolution[frame_idx, :], 'b-', lw=2)
+    
+    plt.tight_layout()
+    plt.savefig(filename, dpi=100)
+    plt.close(fig)
+
+def _render_contrib_frame_static(frame_idx, z_grid, x_grid, intensity_total_evol, phasors, L, W, input_positions, output_positions, N, M, output_dir):
+    """Render a single frame for simulate_mmi_contributions."""
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+
+    filename = os.path.join(output_dir, f"frame_{frame_idx:05d}.png")
+    z_val = z_grid[frame_idx]
+
+    fig = plt.figure(figsize=(10, 12))
+    gs = fig.add_gridspec(3, M, height_ratios=[1, 1, 1])
+    
+    # MMI Plots (Top rows)
+    ax_static = fig.add_subplot(gs[0, :])
+    ax_anim = fig.add_subplot(gs[1, :])
+    
+    # Polar Plots (Bottom Row)
+    polar_axes = []
+    for j in range(M):
+        ax_p = fig.add_subplot(gs[2, j], projection='polar')
+        ax_p.set_title(f"Output {j+1}", fontsize=10)
+        polar_axes.append(ax_p)
+        
+    # -- Static Plot --
+    extent = [0, L*1e6, 0, W*1e6]
+    ax_static.set_title(f"Field Intensity (L={L*1e6:.1f}um)")
+    ax_static.imshow(intensity_total_evol.T, origin='lower', aspect='auto', extent=extent, cmap='inferno')
+    ax_static.set_xlabel("z [um]")
+    ax_static.set_ylabel("x [um]")
+    ax_static.plot([z_val*1e6, z_val*1e6], [0, W*1e6], 'w--', lw=1.5)
+    
+    # Markers
+    ax_static.scatter([0]*N, [p*1e6 for p in input_positions], color='white', marker='o', s=20, zorder=10)
+    ax_static.scatter([L*1e6]*M, [p*1e6 for p in output_positions], color='white', marker='o', s=20, zorder=10)
+
+    # -- Profile Plot --
+    ax_anim.set_title(f"Cross-section at z={z_val*1e6:.1f} um")
+    ax_anim.set_xlim(0, W*1e6)
+    ax_anim.set_ylim(0, np.max(intensity_total_evol)*1.1)
+    ax_anim.set_xlabel("x [um]")
+    ax_anim.plot(x_grid*1e6, intensity_total_evol[frame_idx, :], 'b-', lw=2)
+    
+    for pos in output_positions:
+        ax_anim.axvline(x=pos*1e6, color='k', linestyle=':', linewidth=0.8, alpha=0.7)
+    
+    # -- Polar Plots --
+    colors = plt.cm.get_cmap('hsv', N+1)
+    max_coupling = np.max(np.abs(phasors)) 
+    
+    for j in range(M):
+        ax_p = polar_axes[j]
+        # Fixed scale for stability
+        ax_p.set_ylim(0, 1.1 * max_coupling if max_coupling > 1e-9 else 1.0)
+        
+        # Individual phasors
+        for i in range(N):
+            val = phasors[frame_idx, j, i]
+            ax_p.plot([0, np.angle(val)], [0, np.abs(val)], color=colors(i), lw=2, label=f"In {i+1}" if frame_idx==0 else "")
+        
+        # Total phasor
+        tot = np.sum(phasors[frame_idx, j, :])
+        ax_p.plot([0, np.angle(tot)], [0, np.abs(tot)], 'k--', lw=2, label="Total" if frame_idx==0 else "")
+        
+        if j == M-1:
+            # Legend (simplified)
+            # ax_p.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1), fontsize=8)
+            pass
+
+    plt.tight_layout()
+    plt.savefig(filename, dpi=100)
+    plt.close(fig)
+
+def _make_video_from_frames(output_file, frame_dir, fps=30):
+    """Stitch frames into video using ffmpeg."""
+    # Check for ffmpeg
+    if shutil.which('ffmpeg') is None:
+        print("Error: ffmpeg not found. Cannot generate video.")
+        return
+
+    # ffmpeg command
+    # -y to overwrite
+    # -i frame_%05d.png
+    # -c:v libx264 -pix_fmt yuv420p
+    cmd = [
+        'ffmpeg', '-y',
+        '-framerate', str(fps),
+        '-i', os.path.join(frame_dir, 'frame_%05d.png'),
+        '-c:v', 'libx264',
+        '-pix_fmt', 'yuv420p',
+        output_file
+    ]
+    
+    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+def _compute_single_field_wrapper(i, N, M, L, W, n_eff, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution):
+    """Wrapper to compute field for a single input (parallel helper)."""
+    single_input = np.zeros(N, dtype=complex)
+    single_input[i] = input_amplitudes[i]
+    
+    # We only need the field_evolution (3rd return, index 2)
+    ret = _compute_mmi_field(
+        N, M, L, W, n_eff, wavelength, single_input, num_modes, num_z_steps, z_resolution, verbose=False
+    )
+    return ret[2]
+
+def simulate_mmi(N=2, M=2, L=None, W=10.0e-6, n_eff=2.0458, wavelength=1.55e-6, input_amplitudes=None, num_modes=50, num_z_steps=None, z_resolution=None, output_file=None, verbose=False):
+
+
     """
     Simulates light propagation in an NxM MMI (Multi-Mode Interferometer) using Eigenmode Expansion (Hard Wall).
     
@@ -115,7 +271,7 @@ def simulate_mmi(N=2, M=2, L=None, W=None, n_eff=2.0458, wavelength=1.55e-6, inp
         N (int): Number of input ports.
         M (int): Number of output ports.
         L (float, optional): Length of the MMI region [m]. If None, calculated for 2x2 Paired Interference.
-        W (float, optional): Width of the MMI region [m]. If None, defaults to 10um.
+        W (float, optional): Width of the MMI region [m]. Defaults to 10um.
         n_eff (float): Effective refractive index of the MMI slab.
         wavelength (float): Operating wavelength [m].
         input_amplitudes (list/array, optional): Complex amplitudes for the N inputs. 
@@ -130,10 +286,7 @@ def simulate_mmi(N=2, M=2, L=None, W=None, n_eff=2.0458, wavelength=1.55e-6, inp
         np.array: Complex amplitudes at the M outputs.
     """
     
-    # Defaults logic
-    if W is None:
-        W = 10.0e-6 # 10 um default width
-        
+    # Defaults logic        
     if L is None:
         L_pi = 4 * n_eff * W**2 / (3 * wavelength)
         L = L_pi / 2
@@ -185,86 +338,37 @@ def simulate_mmi(N=2, M=2, L=None, W=None, n_eff=2.0458, wavelength=1.55e-6, inp
         print(f"Output amplitudes: {output_amplitudes}")
 
     # 6. Visualization & Animation (Optional)
+    # 6. Visualization & Animation (Optional)
     if output_file is not None:
-        fig, (ax_static, ax_anim) = plt.subplots(2, 1, figsize=(10, 10))
-        
-        # Static Plot: "Top view" intensity map
-        extent = [0, L*1e6, 0, W*1e6] # microns
-        ax_static.set_title(f"MMI Propagation Field Intensity (L={L*1e6:.1f}um, W={W*1e6:.1f}um)")
-        im = ax_static.imshow(intensity_evolution.T, origin='lower', aspect='auto', 
-                              extent=extent, cmap='inferno')
-        ax_static.set_xlabel("z [um]")
-        ax_static.set_ylabel("x [um]")
-        
-        # Mark input/output positions
-        for y_pos in input_positions:
-            ax_static.text(0, y_pos*1e6, 'In', color='white', ha='right', va='center', fontsize=8)
-            
-        for y_pos in output_positions:
-            ax_static.text(L*1e6, y_pos*1e6, 'Out', color='white', ha='left', va='center', fontsize=8)
-
-        # Vertical line moving with animation
-        line, = ax_static.plot([0, 0], [0, W*1e6], 'w--', lw=1.5)
-        
-        # Dynamic Plot: Cross-section intensity I(x)
-        ax_anim.set_title("Cross-section Intensity Profile")
-        ax_anim.set_xlim(0, W*1e6)
-        max_intensity = np.max(intensity_evolution)
-        ax_anim.set_ylim(0, max_intensity * 1.1)
-        ax_anim.set_xlabel("x [um]")
-        ax_anim.set_ylabel("Intensity")
-        
-        profile_line, = ax_anim.plot(x_grid*1e6, intensity_evolution[0, :], 'b-', lw=2)
-        
-        def update(frame):
-            z_val = z_grid[frame]
-            
-            # Update vertical line on map
-            line.set_data([z_val*1e6, z_val*1e6], [0, W*1e6])
-            
-            # Update profile
-            profile_line.set_ydata(intensity_evolution[frame, :])
-            ax_anim.set_title(f"Cross-section at z = {z_val*1e6:.1f} um")
-            
-            return line, profile_line
-        
-        ani = animation.FuncAnimation(fig, update, frames=num_z_steps, interval=50, blit=True)
-        
         if verbose:
-            print(f"Saving animation to {output_file}...")
+            print(f"Generating animation frames in parallel for {output_file}...")
         
-        # Animation Progress Bar
-        if verbose:
-            pbar = tqdm(total=num_z_steps, desc="Saving Frames", unit="frame")
+        # Temporary directory for frames
+        with tempfile.TemporaryDirectory() as temp_dir:
             
-        def progress_callback(current, total):
-            if verbose and pbar:
-                pbar.update(current - pbar.n)
-                if current == total:
-                    pbar.close()
-        
-        # Check if we can save as mp4 (requires ffmpeg)
-        if animation.writers.is_available('ffmpeg'):
-            ani.save(output_file, writer='ffmpeg', fps=30, progress_callback=progress_callback)
-        else:
-            # Fallback to gif using Pillow
-            new_output = output_file.replace('.mp4', '.gif')
-            print(f"Warning: ffmpeg not found. Saving as GIF to {new_output} instead.")
-            ani.save(new_output, writer='pillow', fps=30, progress_callback=progress_callback)
+            # Parallel Rendering
+            num_cores = -1 # Use all cores
+            Parallel(n_jobs=num_cores)(
+                delayed(_render_frame_static)(
+                    idx, z_grid, x_grid, intensity_evolution, L, W, input_positions, output_positions, temp_dir
+                ) for idx in tqdm(range(num_z_steps), desc="Rendering Frames", disable=not verbose)
+            )
+            
+            if verbose:
+                print("Stitching frames with ffmpeg...")
+            
+            _make_video_from_frames(output_file, temp_dir, fps=30)
             
         if verbose:
             print("Done!")
-        plt.close(fig)
 
     return output_amplitudes
 
-def simulate_mmi_contributions(N=2, M=2, L=None, W=None, n_eff=2.0458, wavelength=1.55e-6, input_amplitudes=None, num_modes=50, num_z_steps=None, z_resolution=None, output_file=None, verbose=False):
+def calculate_mmi_contrib_data(N, M, L, W, n_eff, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, verbose=False):
     """
-    Simulates light propagation with phasor contributions from each input.
+    Calculates MMI fields and contributions, returning raw data for analysis/plotting.
     """
     # Defaults logic
-    if W is None:
-        W = 10.0e-6 
     if L is None:
         L_pi = 4 * n_eff * W**2 / (3 * wavelength)
         L = L_pi / 2
@@ -292,28 +396,17 @@ def simulate_mmi_contributions(N=2, M=2, L=None, W=None, n_eff=2.0458, wavelengt
 
     # Now compute individual contributions
     # For each input i, simulate with only input_amplitudes[i] active
-    for i in range(N):
-        single_input = np.zeros(N, dtype=complex)
-        single_input[i] = input_amplitudes[i]
-        
-        # Reuse same grid steps
-        _, _, field_evol_i, _, _, _, _ = _compute_mmi_field(
-            N, M, L, W, n_eff, wavelength, single_input, num_modes, num_z_steps, z_resolution, verbose=False
-        )
-        contributions_fields.append(field_evol_i)
+    if verbose:
+        print("Computing separate field contributions (Parallel)...")
+    
+    contributions_fields = Parallel(n_jobs=-1)(
+        delayed(_compute_single_field_wrapper)(
+            i, N, M, L, W, n_eff, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution
+        ) for i in range(N)
+    )
         
     # Pre-compute Overlaps (Phasors) for all z steps
-    # phasors[z_idx][output_j][input_i] -> complex number
     phasors = np.zeros((num_z_steps, M, N), dtype=complex)
-    
-    # Pre-compute output mode shapes centered at output_positions
-    # We assume output guides are straight?? Or simply we project onto the mode at THAT z?
-    # Usually we project onto the mode *at the output plane*.
-    # Valid question: "contribution... à l'instant (ou position z) donné".
-    # This implies projecting onto a local mode. 
-    # But mode overlap is only meaningful if a waveguide exists there.
-    # We will project onto the *Output Mode Shape* shifted to the output position, 
-    # effectively asking "How much of Input I is in the mode that leads to Output J *at* Z?"
     
     output_modes = [] # shape (M, num_x)
     for j in range(M):
@@ -331,129 +424,53 @@ def simulate_mmi_contributions(N=2, M=2, L=None, W=None, n_eff=2.0458, wavelengt
                 coupling = np.sum(E_i_z * np.conj(psi_out)) * dx
                 phasors[iz, j, i] = coupling
 
+    return {
+        "z_grid": z_grid,
+        "x_grid": x_grid,
+        "intensity_total_evol": intensity_total_evol,
+        "phasors": phasors,
+        "input_positions": input_positions,
+        "output_positions": output_positions,
+        "L": L,
+        "W": W,
+        "N": N,
+        "M": M,
+        "num_z_steps": num_z_steps
+    }
+
+def simulate_mmi_contributions(N=2, M=2, L=None, W=10.0e-6 , n_eff=2.0458, wavelength=1.55e-6, input_amplitudes=None, num_modes=50, num_z_steps=None, z_resolution=None, output_file=None, verbose=False):
+    """
+    Simulates light propagation with phasor contributions from each input.
+    """
+    # 1. Calculate Data
+    data = calculate_mmi_contrib_data(N, M, L, W, n_eff, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, verbose)
+    
+    z_grid = data["z_grid"]
+    x_grid = data["x_grid"]
+    intensity_total_evol = data["intensity_total_evol"]
+    phasors = data["phasors"]
+    input_positions = data["input_positions"]
+    output_positions = data["output_positions"]
+    L = data["L"]
+    W = data["W"] # Ensure W is retrieved if defaulted inside
+    num_z_steps = data["num_z_steps"]
+    
     # 2. Visualization
     if output_file is not None:
-        # Layout: Top = MMI (static), Middle = Profile, Bottom = M Polar Plots
-        fig = plt.figure(figsize=(10, 12))
-        gs = fig.add_gridspec(3, M, height_ratios=[1, 1, 1])
-        
-        # MMI Plots (Top rows)
-        ax_static = fig.add_subplot(gs[0, :])
-        ax_anim = fig.add_subplot(gs[1, :])
-        
-        # Polar Plots (Bottom Row)
-        polar_axes = []
-        for j in range(M):
-            ax_p = fig.add_subplot(gs[2, j], projection='polar')
-            ax_p.set_title(f"Output {j+1}", fontsize=10)
-            polar_axes.append(ax_p)
-            
-        # -- Setup Static Plot --
-        extent = [0, L*1e6, 0, W*1e6]
-        ax_static.set_title(f"Field Intensity (L={L*1e6:.1f}um)")
-        ax_static.imshow(intensity_total_evol.T, origin='lower', aspect='auto', extent=extent, cmap='inferno')
-        ax_static.set_xlabel("z [um]")
-        ax_static.set_ylabel("x [um]")
-        line, = ax_static.plot([0, 0], [0, W*1e6], 'w--', lw=1.5)
-        
-        # Add points at input and output positions
-        # Input positions at z=0
-        ax_static.scatter([0]*N, [p*1e6 for p in input_positions], color='white', marker='o', s=20, zorder=10)
-        # Output positions at z=L
-        ax_static.scatter([L*1e6]*M, [p*1e6 for p in output_positions], color='white', marker='o', s=20, zorder=10)
-
-        # -- Setup Profile Plot --
-        ax_anim.set_title("Cross-section Intensity")
-        ax_anim.set_xlim(0, W*1e6)
-        ax_anim.set_ylim(0, np.max(intensity_total_evol)*1.1)
-        ax_anim.set_xlabel("x [um]")
-        profile_line, = ax_anim.plot(x_grid*1e6, intensity_total_evol[0, :], 'b-', lw=2)
-        
-        # Add fine dotted lines at output positions
-        for pos in output_positions:
-            ax_anim.axvline(x=pos*1e6, color='k', linestyle=':', linewidth=0.8, alpha=0.7)
-        
-        # -- Setup Polar Plots --
-        # For each output j, we have N arrows + 1 Sum arrow
-        # We store the quiver/plot objects
-        arrows_lists = [] # list of M lists of (N) arrows
-        sum_arrows = []   # list of M sum arrows
-        
-        colors = plt.cm.get_cmap('hsv', N+1) # Input colors
-        
-        for j in range(M):
-            ax_p = polar_axes[j]
-            ax_p.set_ylim(0, 1.1 * np.max(np.abs(phasors))) # Scale to max coupling
-            
-            p_arrows = []
-            for i in range(N):
-                # Initial arrow (z=0)
-                val = phasors[0, j, i]
-                arr = ax_p.plot([0, np.angle(val)], [0, np.abs(val)], color=colors(i), lw=2, label=f"In {i+1}")[0]
-                p_arrows.append(arr)
-            
-            # Sum arrow (Total)
-            tot = np.sum(phasors[0, j, :])
-            sum_arr = ax_p.plot([0, np.angle(tot)], [0, np.abs(tot)], 'k--', lw=2, label="Total")[0]
-            
-            arrows_lists.append(p_arrows)
-            sum_arrows.append(sum_arr)
-            
-            # Legend only on first polar plot to save space
-            if j == M-1:
-                # Legend placement might need adjustment for the new layout
-                ax_p.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1), fontsize=8)
-
-        plt.tight_layout()
-
-        def update(frame):
-            z_val = z_grid[frame]
-            
-            # 1. Update Line
-            line.set_data([z_val*1e6, z_val*1e6], [0, W*1e6])
-            
-            # 2. Update Profile
-            profile_line.set_ydata(intensity_total_evol[frame, :])
-            ax_anim.set_title(f"Cross-section at z={z_val*1e6:.1f} um")
-            
-            # 3. Update Polar Plots
-            for j in range(M):
-                # Update individual input phasors
-                for i in range(N):
-                    val = phasors[frame, j, i]
-                    # Update plot data (theta, r) pair
-                    # Matplotlib polar plot requires [theta_start, theta_end], [r_start, r_end]
-                    arrows_lists[j][i].set_data([0, np.angle(val)], [0, np.abs(val)])
-                
-                # Update total phasor
-                tot = np.sum(phasors[frame, j, :])
-                sum_arrows[j].set_data([0, np.angle(tot)], [0, np.abs(tot)])
-                
-            return [line, profile_line] + [a for al in arrows_lists for a in al] + sum_arrows
-
-        ani = animation.FuncAnimation(fig, update, frames=num_z_steps, interval=50, blit=False) # blit=False for polar often safer
-        
         if verbose:
-            print(f"Saving contributions animation to {output_file}...")
-
-        # Animation Progress Bar for contributions
-        if verbose:
-            pbar_contrib = tqdm(total=num_z_steps, desc="Saving Frames", unit="frame")
-
-        def progress_callback_contrib(current, total):
-            if verbose and pbar_contrib:
-                pbar_contrib.update(current - pbar_contrib.n)
-                if current == total:
-                    pbar_contrib.close()
+            print(f"Generating contributions animation frames in parallel for {output_file}...")
+        
+        with tempfile.TemporaryDirectory() as temp_dir:
+            Parallel(n_jobs=-1)(
+                delayed(_render_contrib_frame_static)(
+                    idx, z_grid, x_grid, intensity_total_evol, phasors, L, W, input_positions, output_positions, N, M, temp_dir
+                ) for idx in tqdm(range(num_z_steps), desc="Rendering Frames", disable=not verbose)
+            )
             
-        if animation.writers.is_available('ffmpeg'):
-            ani.save(output_file, writer='ffmpeg', fps=30, progress_callback=progress_callback_contrib)
-        else:
-            new_output = output_file.replace('.mp4', '.gif')
-            print(f"Warning: ffmpeg not found. Saving as GIF to {new_output} instead.")
-            ani.save(new_output, writer='pillow', fps=30, progress_callback=progress_callback_contrib)
-            
-        plt.close(fig)
+            if verbose:
+                 print("Stitching frames with ffmpeg...")
+                 
+            _make_video_from_frames(output_file, temp_dir, fps=30)
         
     # Return total output
     output_amplitudes = simulate_mmi(N, M, L, W, n_eff, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, output_file=None, verbose=verbose)

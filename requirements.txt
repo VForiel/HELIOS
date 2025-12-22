@@ -3,3 +3,5 @@ astropy
 scipy
 matplotlib
 tqdm>=4.66.0
+joblib
+ipywidgets
