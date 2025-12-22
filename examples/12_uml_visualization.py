@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../s
 
 import helios
 import helios.components.photonics as photonics
-import helios.components.fibers as fibers
+import helios.components.photonics.fibers as fibers
 
 def run_demo():
     # --- Example 1: Exoplanet Detection System ---

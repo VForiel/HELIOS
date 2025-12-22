@@ -296,12 +296,12 @@ class TelescopeArray(Telescope):
             pupil = Pupil.like('VLT')
             diameter = 8.2 * u.m
             
-            # Baseline positions (GPS → tangent plane projection)
+            # Baseline positions
             positions = [
-                (-16.14, 62.74),   # UT1
-                (0.00, 0.00),      # UT2 (reference)
-                (63.03, 53.37),    # UT3
-                (101.99, 34.54)    # UT4
+                (0, 0),             # UT1 (reference)
+                (24.812, 50.837),   # UT2
+                (54.840, 86.518),   # UT3
+                (113.231, 64.334)   # UT4
             ]
             
             vlti = cls(pupil=pupil, size=diameter, positions=positions,

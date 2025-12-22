@@ -689,7 +689,7 @@ class Atmosphere(GenerationLayer):
         # Create temporary pipeline for time management if needed
         temp_pipeline = None
         if self.pipeline is None:
-            from ..core.pipeline import Pipeline
+            from ...core.pipeline import Pipeline
             temp_pipeline = Pipeline()
             self.pipeline = temp_pipeline
         
@@ -705,6 +705,8 @@ class Atmosphere(GenerationLayer):
                 self.pipeline.time = old_time
             
         phase_init = np.angle(wf_atm_init)
+        if phase_init.ndim == 3 and phase_init.shape[0] == 1:
+            phase_init = phase_init[0]
         
         # Display initial phase screen
         im = ax.imshow(phase_init, origin='lower', cmap='twilight',
@@ -735,7 +737,7 @@ class Atmosphere(GenerationLayer):
                  diam = 1.0
             
             extent_pupil = [pos[0] - diam/2, pos[0] + diam/2,
-                           pos[1] - diam/2, pos[1] + diam/2]
+                            pos[1] - diam/2, pos[1] + diam/2]
             
             ax.imshow(overlay, origin='lower', extent=extent_pupil,
                       zorder=10, interpolation='bilinear')
@@ -764,7 +766,7 @@ class Atmosphere(GenerationLayer):
             # Create temporary pipeline for time management if needed
             temp_pipeline = None
             if self.pipeline is None:
-                from ..core.pipeline import Pipeline
+                from ...core.pipeline import Pipeline
                 temp_pipeline = Pipeline()
                 self.pipeline = temp_pipeline
             
@@ -780,6 +782,8 @@ class Atmosphere(GenerationLayer):
                     self.pipeline.time = old_time
             
             phase = np.angle(wf_atm)
+            if phase.ndim == 3 and phase.shape[0] == 1:
+                phase = phase[0]
             
             # Update phase screen
             im.set_data(phase)
