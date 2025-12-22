@@ -4,8 +4,8 @@ This module provides FiberIn and FiberOut classes for modeling single-mode
 and multi-mode fiber coupling in photonic integrated circuits.
 """
 from typing import Optional
-from ..core.pipeline import Component, OpticalComponent, Pipeline, OpticalLayer
-from ..core.simulation import Wavefront
+from ...core.pipeline import Component, OpticalComponent, Pipeline, OpticalLayer
+from ...core.simulation import Wavefront
 
 
 class FiberIn(OpticalLayer):

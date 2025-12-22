@@ -3,9 +3,9 @@ import numpy as np
 import os
 import json
 from astropy import units as u
-from helios.components.scene import Scene, Star, Planet
-from helios.components.atmosphere import Atmosphere
-from helios.components.collector import TelescopeArray, Pupil
+from helios.components import Scene, Star, Planet
+from helios.components import Atmosphere
+from helios.components import TelescopeArray, Pupil
 from helios.core.pipeline import Pipeline
 
 def test_serialization():

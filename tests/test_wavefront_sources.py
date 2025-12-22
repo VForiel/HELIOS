@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../s
 
 from helios.core.simulation import Wavefront, WavefrontArray
 from helios.core.pipeline import Pipeline
-from helios.components.scene import Scene, Star
+from helios.components import Scene, Star
 
 def test_wavefront_sources():
     print("Testing Wavefront sources...")

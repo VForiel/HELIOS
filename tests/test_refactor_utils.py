@@ -38,10 +38,10 @@ def test_plotting_utils():
 
 def test_imports_integrity():
     # Verify that components can be imported (meaning they found the moved functions)
-    from helios.components.scene import Scene
+    from helios.components import Scene
     s = Scene(distance=10*u.pc)
     assert s.distance == 10*u.pc
     
-    from helios.components.pupil import Pupil
+    from helios.components import Pupil
     p = Pupil(diameter=8*u.m)
     assert p.diameter == 8*u.m

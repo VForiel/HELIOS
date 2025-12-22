@@ -1,18 +1,15 @@
-"""Atmospheric turbulence and adaptive optics correction.
-
-This module provides atmospheric turbulence modeling with frozen-flow temporal evolution
-and Zernike-based adaptive optics correction.
-"""
+"""Atmospheric turbulence modeling."""
 import numpy as np
 import math
 from astropy import units as u
 from typing import Tuple, List, Union, Optional
 import matplotlib.pyplot as _plt
 
-from ..core.pipeline import Component, OpticalComponent, Layer, GenerationLayer, Pipeline
-from ..utils.serialization import serialize_value, deserialize_value
-from ..core.simulation import Wavefront, WavefrontArray
-from .collector import TelescopeArray
+from ...core.pipeline import Component, OpticalComponent, Layer, GenerationLayer, Pipeline
+from ...utils.serialization import serialize_value, deserialize_value
+from ...core.simulation import Wavefront, WavefrontArray
+from ..sampling.telescope_array import TelescopeArray
+from ..sampling.telescope import Telescope
 
 
 class Atmosphere(GenerationLayer):
@@ -372,7 +369,7 @@ class Atmosphere(GenerationLayer):
         wavefront[:] = wavefront * np.exp(1j * phase).astype(wavefront.dtype)
         return wavefront
 
-    def _process_optimized(self, wavefront: Wavefront, collectors: List['Collector']) -> WavefrontArray:
+    def _process_optimized(self, wavefront: Wavefront, collectors: List['Telescope']) -> WavefrontArray:
         """Optimized processing for telescope arrays."""
         if wavefront.ndim == 3:
             N_in = wavefront.shape[-1]
@@ -539,7 +536,7 @@ class Atmosphere(GenerationLayer):
         return WavefrontArray(output_wfs)
 
     def plot_screen_animation(self,
-                             collectors: Optional[Union['Collectors', 'TelescopeArray', List['Collectors']]] = None,
+                             collectors: Optional[Union['Telescope', 'TelescopeArray', List['Telescope']]] = None,
                              times: Optional[np.ndarray] = None,
                              wavelength: u.Quantity = 550e-9*u.m,
                              npix: int = 512,
@@ -556,11 +553,11 @@ class Atmosphere(GenerationLayer):
         
         Parameters
         ----------
-        collectors : Collectors, TelescopeArray, list of Collectors, or None
+        collectors : Telescope, TelescopeArray, list of Telescopes, or None
             Collector configuration(s) to overlay. If None, shows phase screen only.
-            - Single Collectors: one telescope aperture
+            - Single Telescope: one telescope aperture
             - TelescopeArray: all baseline-separated apertures
-            - List of Collectors: multiple independent telescopes
+            - List of Telescope: multiple independent telescopes
         times : ndarray, optional
             Observation times in seconds. Auto-generated if None.
         wavelength : astropy.Quantity
@@ -622,11 +619,17 @@ class Atmosphere(GenerationLayer):
                 for c_obj in collectors:
                     if hasattr(c_obj, 'collectors'):
                         collector_list.extend(c_obj.collectors)
+                    elif hasattr(c_obj, 'position'): # It is a single Telescope/Collector
+                         collector_list.append(c_obj)
                 array_name = f"{len(collector_list)} collectors"
             elif hasattr(collectors, 'collectors'):
-                # Single Collectors object
+                # Single Collectors object or TelescopeArray-like
                 collector_list = collectors.collectors
                 array_name = "Collectors"
+            elif hasattr(collectors, 'position'):
+                 # Single Telescope
+                 collector_list = [collectors]
+                 array_name = collectors.name
         
         # Determine screen extent based on collectors (with 20% margin)
         if len(collector_list) > 0:
@@ -675,16 +678,32 @@ class Atmosphere(GenerationLayer):
                 self.time = t * u.s
         
         # Generate initial phase screen
-        wf_init = Wavefront(wavelength=wavelength, size=npix)
+        wf_init = Wavefront(wavelength=wavelength, npix=npix)
         wf_init[:] = np.ones((npix, npix), dtype=np.complex128)
         ctx_init = TimeContext(times[0])
         # Swapping context
-        old = self.context
-        self.context = ctx_init
+        old = self.context if hasattr(self, 'context') else None
+        # self.context = ctx_init # Removed as context is now in pipeline
+        # Instead, set pipeline time
+        
+        # Create temporary pipeline for time management if needed
+        temp_pipeline = None
+        if self.pipeline is None:
+            from ..core.pipeline import Pipeline
+            temp_pipeline = Pipeline()
+            self.pipeline = temp_pipeline
+        
+        old_time = getattr(self.pipeline, 'time', None)
+        self.pipeline.time = times[0] * u.s
+
         try:
             wf_atm_init = self.process(wf_init)
         finally:
-            self.context = old
+             if temp_pipeline is not None:
+                self.pipeline = None
+             elif old_time is not None:
+                self.pipeline.time = old_time
+            
         phase_init = np.angle(wf_atm_init)
         
         # Display initial phase screen
@@ -710,19 +729,23 @@ class Atmosphere(GenerationLayer):
             overlay[..., 3] = pupil_arr * 0.8  # alpha
             
             # Physical extent of this pupil
-            diam = pupil.diameter
+            if hasattr(pupil, 'diameter'):
+                 diam = pupil.diameter.to(u.m).value if hasattr(pupil.diameter, 'to') else float(pupil.diameter)
+            else:
+                 diam = 1.0
+            
             extent_pupil = [pos[0] - diam/2, pos[0] + diam/2,
                            pos[1] - diam/2, pos[1] + diam/2]
             
             ax.imshow(overlay, origin='lower', extent=extent_pupil,
-                     zorder=10, interpolation='bilinear')
+                      zorder=10, interpolation='bilinear')
         
         ax.set_xlabel('x (m)')
         ax.set_ylabel('y (m)')
         ax.set_aspect('equal')
         
         title = ax.set_title(
-            f'{array_name}\\n'
+            f'{array_name}\n'
             f't={times[0]:.2f}s, λ={wavelength_m*1e9:.0f}nm, '
             f'OPD RMS={self.rms*1e9:.0f}nm, wind={np.linalg.norm(self.wind_velocity):.1f}m/s'
         )
@@ -735,16 +758,27 @@ class Atmosphere(GenerationLayer):
             t = times[frame_idx]
             
             # Generate phase screen at time t
-            wf = Wavefront(wavelength=wavelength, size=npix)
+            wf = Wavefront(wavelength=wavelength, npix=npix)
             wf[:] = np.ones((npix, npix), dtype=np.complex128)
-            ctx = TimeContext(t)
-            # Swapping context
-            old = self.context
-            self.context = ctx
+            
+            # Create temporary pipeline for time management if needed
+            temp_pipeline = None
+            if self.pipeline is None:
+                from ..core.pipeline import Pipeline
+                temp_pipeline = Pipeline()
+                self.pipeline = temp_pipeline
+            
+            old_time = getattr(self.pipeline, 'time', None)
+            self.pipeline.time = t * u.s
+
             try:
                 wf_atm = self.process(wf)
             finally:
-                self.context = old
+                if temp_pipeline is not None:
+                    self.pipeline = None
+                elif old_time is not None:
+                    self.pipeline.time = old_time
+            
             phase = np.angle(wf_atm)
             
             # Update phase screen
@@ -752,7 +786,7 @@ class Atmosphere(GenerationLayer):
             
             # Update title
             title.set_text(
-                f'{array_name}\\n'
+                f'{array_name}\n'
                 f't={t:.2f}s, λ={wavelength_m*1e9:.0f}nm, '
                 f'OPD RMS={self.rms*1e9:.0f}nm, wind={np.linalg.norm(self.wind_velocity):.1f}m/s'
             )
@@ -775,7 +809,7 @@ class Atmosphere(GenerationLayer):
         return anim
 
     def plot_animation(self, 
-                      collectors: Union['Collectors', 'TelescopeArray', List['Collectors']], 
+                      collectors: Union['TelescopeArray', List['Telescope']], 
                       times: Optional[np.ndarray] = None,
                       wavelength: u.Quantity = 550e-9*u.m,
                       npix: int = 512,
@@ -792,11 +826,10 @@ class Atmosphere(GenerationLayer):
         
         Parameters
         ----------
-        collectors : Collectors, Interferometer, or list of Collectors
+        collectors : TelescopeArray or list of Telescope
             Collector configuration(s) to overlay on the phase screen.
-            - Single Collectors instance: shows one telescope aperture
-            - Interferometer: shows all baseline-separated apertures
-            - List of Collectors: shows multiple independent telescopes
+            - TelescopeArray: shows all baseline-separated apertures
+            - List of Telescope: shows multiple independent telescopes
         times : ndarray, optional
             Array of observation times in seconds. If None, generates evenly
             spaced times from 0 to duration.
@@ -820,334 +853,10 @@ class Atmosphere(GenerationLayer):
         -------
         anim : matplotlib.animation.FuncAnimation
             The animation object. Call plt.show() to display.
-        
-        Examples
-        --------
-        >>> # Single telescope
-        >>> atm = Atmosphere(rms=100*u.nm, wind_speed=10*u.m/u.s)
-        >>> collectors = Collectors()
-        >>> collectors.add(pupil=Pupil.like('VLT'), position=(0, 0), size=8*u.m)
-        >>> anim = atm.plot_animation(collectors, duration=3*u.s)
-        >>> plt.show()
-        >>> 
-        >>> # Interferometer array
-        >>> interferometer = TelescopeArray.vlti()
-        >>> anim = atm.plot_animation(interferometer, duration=5*u.s)
         """
-        from matplotlib.animation import FuncAnimation
-        
-        # Parse duration
-        if duration is None:
-            duration = 5.0 * u.s
-        duration_s = duration.to(u.s).value if hasattr(duration, 'to') else float(duration)
-        
-        # Generate time array if not provided
-        if times is None:
-            n_frames = int(fps * duration_s)
-            times = np.linspace(0, duration_s, n_frames)
-        else:
-            times = np.asarray(times)
-        
-        # Parse wavelength
-        wavelength_m = wavelength.to(u.m).value if hasattr(wavelength, 'to') else float(wavelength)
-        
-        # Normalize collectors input to a list
-        if isinstance(collectors, TelescopeArray):
-            # Extract aperture configuration from telescope array
-            collector_list = collectors.elements
-            array_name = collectors.name
-        elif isinstance(collectors, list):
-            # List of Collectors objects
-            collector_list = []
-            for c_obj in collectors:
-                if hasattr(c_obj, 'collectors'):
-                    collector_list.extend(c_obj.collectors)
-            array_name = f"{len(collector_list)} collectors"
-        else:
-            # Single Collectors object
-            if hasattr(collectors, 'collectors'):
-                collector_list = collectors.collectors
-                array_name = "Collectors"
-            else:
-                raise TypeError("collectors must be Collectors, TelescopeArray, or list of Collectors")
-        
-        # Determine screen extent based on collectors (with 20% margin)
-        if len(collector_list) > 0:
-            # Find bounding box of all collectors
-            min_x, max_x = 0, 0
-            min_y, max_y = 0, 0
-            
-            for col in collector_list:
-                pos = col.position
-                size = col.size
-                size_m = size.to(u.m).value if hasattr(size, 'to') else float(size)
-                radius = size_m / 2.0
-                
-                min_x = min(min_x, pos[0] - radius)
-                max_x = max(max_x, pos[0] + radius)
-                min_y = min(min_y, pos[1] - radius)
-                max_y = max(max_y, pos[1] + radius)
-            
-            # Add 20% margin
-            width = max_x - min_x
-            height = max_y - min_y
-            margin_x = width * 0.2
-            margin_y = height * 0.2
-            
-            extent_x = [min_x - margin_x, max_x + margin_x]
-            extent_y = [min_y - margin_y, max_y + margin_y]
-            
-            # Make square extent (use max dimension)
-            max_dim = max(extent_x[1] - extent_x[0], extent_y[1] - extent_y[0])
-            center_x = (extent_x[0] + extent_x[1]) / 2.0
-            center_y = (extent_y[0] + extent_y[1]) / 2.0
-            
-            extent = [center_x - max_dim/2, center_x + max_dim/2,
-                     center_y - max_dim/2, center_y + max_dim/2]
-        else:
-            # No collectors: use default extent
-            default_extent = 10.0  # meters
-            extent = [-default_extent, default_extent, -default_extent, default_extent]
-        
-        # Create figure
-        fig, ax = _plt.subplots(figsize=figsize)
-        
-        # Mock context for time evolution
-        class TimeContext:
-            def __init__(self, t):
-                self.time = t * u.s
-        
-        # Initialize with first frame
-        wf_init = Wavefront(wavelength=wavelength, npix=npix)
-        wf_init[:] = np.ones((npix, npix), dtype=np.complex128)
-        
-        # Create temporary pipeline for time management if needed
-        temp_pipeline = None
-        if self.pipeline is None:
-            from ..core.pipeline import Pipeline
-            temp_pipeline = Pipeline()
-            self.pipeline = temp_pipeline
-        
-        # Set time
-        old_time = getattr(self.pipeline, 'time', None)
-        self.pipeline.time = times[0] * u.s
-        
-        wf_atm_init = self.process(wf_init)
-        
-        # Restore state
-        if temp_pipeline is not None:
-            self.pipeline = None
-        elif old_time is not None:
-            self.pipeline.time = old_time
-        
-        phase_init = np.angle(wf_atm_init)
-        # Squeeze to 2D if needed (wavefront has shape (samples, h, w))
-        if phase_init.ndim == 3:
-            phase_init = phase_init[0]
-        
-        # Plot initial phase screen
-        im = ax.imshow(phase_init, origin='lower', cmap='twilight', 
-                      extent=extent, vmin=-np.pi, vmax=np.pi, interpolation='bilinear')
-        
-        # Overlay collector apertures
-        pupil_overlays = []
-        for col in collector_list:
-            pupil = col.pupil
-            if pupil is None:
-                continue
-            
-            pos = col.position
-            
-            # Render pupil at higher resolution for better visibility
-            npix_pupil = 256
-            pupil_arr = pupil.get_array(npix=npix_pupil, soft=True)
-            
-            # Create RGBA overlay (white aperture with transparency)
-            overlay = np.zeros((npix_pupil, npix_pupil, 4), dtype=float)
-            overlay[..., :3] = 1.0  # white
-            overlay[..., 3] = pupil_arr * 0.7  # alpha channel (increased for better visibility)
-            
-            # Physical extent of pupil (convert diameter to float if Quantity)
-            diam_m = pupil.diameter.to(u.m).value if isinstance(pupil.diameter, u.Quantity) else float(pupil.diameter)
-            extent_pupil = [pos[0] - diam_m/2, pos[0] + diam_m/2, 
-                           pos[1] - diam_m/2, pos[1] + diam_m/2]
-            
-            overlay_im = ax.imshow(overlay, origin='lower', extent=extent_pupil, 
-                                  zorder=10, interpolation='bilinear')
-            pupil_overlays.append(overlay_im)
-        
-        # Force the axis limits to the calculated extent (matplotlib auto-adjusts otherwise)
-        ax.set_xlim(extent[0], extent[1])
-        ax.set_ylim(extent[2], extent[3])
-        
-        ax.set_xlabel('x (m)')
-        ax.set_ylabel('y (m)')
-        ax.set_aspect('equal')
-        
-        title = ax.set_title(f'Atmospheric Phase Screen - {array_name}\\n' + 
-                            f't={times[0]:.2f}s, λ={wavelength_m*1e9:.0f}nm, ' + 
-                            f'OPD RMS={self.rms*1e9:.0f}nm, wind={np.linalg.norm(self.wind_velocity):.1f}m/s')
-        
-        if show_colorbar:
-            cbar = _plt.colorbar(im, ax=ax, label='Phase (radians)', fraction=0.046, pad=0.04)
-        
-        # Animation update function
-        def update(frame_idx):
-            t = times[frame_idx]
-            
-            # Generate phase screen at time t
-            wf = Wavefront(wavelength=wavelength, npix=npix)
-            wf[:] = np.ones((npix, npix), dtype=np.complex128)
-            
-            # Create temporary pipeline for time management if needed
-            temp_pipeline = None
-            if self.pipeline is None:
-                from ..core.pipeline import Pipeline
-                temp_pipeline = Pipeline()
-                self.pipeline = temp_pipeline
-            
-            # Set time
-            old_time = getattr(self.pipeline, 'time', None)
-            self.pipeline.time = t * u.s
-            
-            wf_atm = self.process(wf)
-            
-            # Restore state
-            if temp_pipeline is not None:
-                self.pipeline = None
-            elif old_time is not None:
-                self.pipeline.time = old_time
-            
-            phase = np.angle(wf_atm)
-            # Squeeze to 2D if needed
-            if phase.ndim == 3:
-                phase = phase[0]
-            
-            # Update image data
-            im.set_data(phase)
-            
-            # Update title
-            title.set_text(f'Atmospheric Phase Screen - {array_name}\\n' + 
-                          f't={t:.2f}s, λ={wavelength_m*1e9:.0f}nm, ' + 
-                          f'OPD RMS={self.rms*1e9:.0f}nm, wind={np.linalg.norm(self.wind_velocity):.1f}m/s')
-            
-            return [im, title]
-        
-        # Create animation
-        anim = FuncAnimation(fig, update, frames=len(times), 
-                           interval=1000.0/fps, blit=False, repeat=True)
-        
-        # Save if filename provided
-        if filename is not None:
-            try:
-                anim.save(filename, fps=fps, dpi=100)
-                print(f"Animation saved to {filename}")
-            except Exception as e:
-                print(f"Warning: Could not save animation: {e}")
-        
-        _plt.tight_layout()
-        return anim
-
-
-
-
-
-class AdaptiveOptics(OpticalComponent):
-    """Adaptive optics layer applying Zernike-based correction.
-
-    Parameters
-    ----------
-    coeffs : dict, optional
-        Mapping from (n,m) -> coefficient in radians. n >= 0, m integer with abs(m)<=n 
-        and (n-abs(m)) even. Example: {(1,1): 0.1} for Zernike n=1,m=1.
-    normalize : bool, optional
-        Whether to evaluate Zernikes on unit pupil mapped to array size. Default: True
-    name : str, optional
-        Name of the AO system for identification in diagrams
-    """
-    def __init__(self, coeffs: Optional[dict] = None, normalize: bool = True, 
-                 name: Optional[str] = None):
-        super().__init__(name=name or "AdaptiveOptics")
-        self.coeffs = coeffs or {}
-        self.normalize = normalize
-
-    @staticmethod
-    def noll_to_nm(j: int) -> Tuple[int, int]:
-        """Convert Noll index (1-based) to Zernike (n,m).
-
-        This uses the standard Noll ordering. Returns (n,m).
-        """
-        if j < 1:
-            raise ValueError("Noll index must be >= 1")
-        # Noll indexing: j=1 -> (0,0); j=2 -> (1,-1); j=3 -> (1,1); j=4 -> (2,-2) ...
-        # We'll compute by enumerating until reach index j.
-        count = 0
-        n = 0
-        while True:
-            for m in range(-n, n + 1, 2):
-                count += 1
-                if count == j:
-                    return (n, m)
-            n += 1
-
-    def _radial_polynomial(self, n: int, m: int, r: np.ndarray) -> np.ndarray:
-        m = abs(m)
-        if (n - m) % 2 != 0:
-            return np.zeros_like(r)
-        R = np.zeros_like(r)
-        kmax = (n - m) // 2
-        for k in range(kmax + 1):
-            num = (-1) ** k * math.factorial(n - k)
-            den = math.factorial(k) * math.factorial((n + m) // 2 - k) * math.factorial((n - m) // 2 - k)
-            R += num / den * r ** (n - 2 * k)
-        return R
-
-    def _zernike_nm(self, n: int, m: int, rho: np.ndarray, theta: np.ndarray) -> np.ndarray:
-        # m may be negative: negative -> sin component
-        if m == 0:
-            R = self._radial_polynomial(n, 0, rho)
-            return R
-        elif m > 0:
-            R = self._radial_polynomial(n, m, rho)
-            return R * np.cos(m * theta)
-        else:
-            R = self._radial_polynomial(n, -m, rho)
-            return R * np.sin((-m) * theta)
-
-    def process(self, wavefront: Wavefront) -> Wavefront:
-        try:
-            N = wavefront.npix
-        except Exception:
-            # Fallback if npix not available
-            N = wavefront.shape[-1]
-
-        # coordinates normalized to unit disk
-        ys = np.linspace(-1.0, 1.0, N)
-        xs = ys.copy()
-        xg, yg = np.meshgrid(xs, ys)
-        rho = np.hypot(xg, yg)
-        theta = np.arctan2(yg, xg)
-        mask = rho <= 1.0
-
-        # build AO correction phase
-        phase = np.zeros((N, N), dtype=float)
-        # allow coeff keys to be either (n,m) tuples or Noll integer indices
-        items = []
-        for k, coeff in self.coeffs.items():
-            if isinstance(k, int):
-                nm = self.noll_to_nm(k)
-            else:
-                nm = tuple(k)
-            items.append((nm, coeff))
-
-        for (n, m), coeff in items:
-            c = float(u.Quantity(coeff, u.rad).to(u.rad).value)
-            Z = self._zernike_nm(n, m, rho, theta)
-            phase += c * Z
-
-        # apply only inside pupil (unit disk)
-        phase = phase * mask
-        # AO subtracts estimated phase (apply negative phase)
-        wavefront[:] = wavefront * np.exp(-1j * phase).astype(wavefront.dtype)
-        return wavefront
-
+        # Alias to plot_screen_animation for consistency
+        return self.plot_screen_animation(collectors=collectors, times=times,
+                                        wavelength=wavelength, npix=npix,
+                                        fps=fps, duration=duration,
+                                        filename=filename, show_colorbar=show_colorbar,
+                                        figsize=figsize)

@@ -3,8 +3,8 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
 import helios
-from helios.components.photonics import YSplitter, TOPS, MMI
-from helios.components.fibers import FiberIn
+from helios.components import YSplitter, TOPS, MMI
+from helios.components import FiberIn
 from astropy import units as u
 import numpy as np
 import copy

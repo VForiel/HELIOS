@@ -1,5 +1,5 @@
 import numpy as np
-from helios.components.pupil import Pupil
+from helios.components import Pupil
 
 def test_elt_symmetry():
     p = Pupil.like('ELT')

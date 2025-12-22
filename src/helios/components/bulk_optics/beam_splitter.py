@@ -3,8 +3,8 @@
 This module provides the BeamSplitter class for splitting wavefronts into multiple paths.
 """
 from typing import List, Optional
-from ..core.pipeline import Component, OpticalComponent, Layer, OpticalLayer, Pipeline
-from ..core.simulation import Wavefront
+from ...core.pipeline import Component, OpticalComponent, Layer, OpticalLayer, Pipeline
+from ...core.simulation import Wavefront
 
 
 class BeamSplitter(OpticalLayer):

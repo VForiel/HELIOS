@@ -11,7 +11,7 @@ import matplotlib.pyplot as _plt
 from copy import deepcopy as copy
 
 
-from ..utils.serialization import serialize_value, deserialize_value
+from ...utils.serialization import serialize_value, deserialize_value
 
 
 class Pupil:

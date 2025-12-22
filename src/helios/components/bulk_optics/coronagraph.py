@@ -8,8 +8,8 @@ from astropy import units as u
 from typing import Optional
 import matplotlib.pyplot as _plt
 
-from ..core.pipeline import Component, OpticalComponent, Layer, OpticalLayer, Pipeline
-from ..core.simulation import Wavefront
+from ...core.pipeline import Component, OpticalComponent, Layer, OpticalLayer, Pipeline
+from ...core.simulation import Wavefront
 
 
 class Coronagraph(OpticalLayer):

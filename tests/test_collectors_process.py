@@ -5,8 +5,8 @@ from astropy import units as u
 
 # ensure local `src` is first on path so tests import the workspace code
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
-from helios.components.pupil import Pupil
-from helios.components.collector import TelescopeArray
+from helios.components import Pupil
+from helios.components import TelescopeArray
 from helios.core.simulation import Wavefront
 
 

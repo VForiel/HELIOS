@@ -7,7 +7,7 @@ from astropy import units as u
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 
 from helios.core.simulation import Wavefront
-from helios.components.atmosphere import Atmosphere, AdaptiveOptics
+from helios.components import Atmosphere, AdaptiveOptics
 
 
 def test_atmosphere_changes_phase_only():

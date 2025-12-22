@@ -2,10 +2,10 @@ import numpy as np
 import astropy.units as u
 import matplotlib.pyplot as plt
 from helios.core.pipeline import Pipeline, Element
-from helios.components.collector import TelescopeArray, Collector
-from helios.components.scene import Scene, Star
+from helios.components import TelescopeArray, Collector
+from helios.components import Scene, Star
 
-from helios.components.pupil import Pupil
+from helios.components import Pupil
 
 def test_interferometer_phase_generation():
     print("Testing Interferometer Phase Generation (Piston + Tilt)...")

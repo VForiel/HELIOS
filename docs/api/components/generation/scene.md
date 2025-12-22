@@ -20,7 +20,7 @@ Scene components define the astrophysical sources that generate light in the sim
 ### Base Class
 
 ```{eval-rst}
-.. autoclass:: helios.components.scene.CelestialBody
+.. autoclass:: helios.components.generation.scene.CelestialBody
    :members:
    :undoc-members:
    :show-inheritance:
@@ -65,7 +65,7 @@ Scene components define the astrophysical sources that generate light in the sim
 ## Utility Functions
 
 ```{eval-rst}
-.. autofunction:: helios.components.scene.modified_blackbody
+.. autofunction:: helios.components.generation.scene.modified_blackbody
 ```
 
 ## Physical Models

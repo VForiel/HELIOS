@@ -8,8 +8,8 @@ import matplotlib.pyplot as plt
 import helios
 from helios.core.simulation import Wavefront
 from helios.core.pipeline import Pipeline
-from helios.components.scene import Scene, Star, Planet
-from helios.components.atmosphere import Atmosphere
+from helios.components import Scene, Star, Planet
+from helios.components import Atmosphere
 
 def test_wavefront_structure():
     print("Testing Wavefront structure...")

@@ -5,7 +5,7 @@ from astropy import units as u
 
 # ensure local `src` is first on path so tests import the workspace code
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
-from helios.components.pupil import Pupil
+from helios.components import Pupil
 
 
 def _count_components(binarr):

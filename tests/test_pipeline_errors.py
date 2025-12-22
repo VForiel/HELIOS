@@ -3,9 +3,9 @@ import pytest
 import astropy.units as u
 import numpy as np
 from helios.core.pipeline import Pipeline, Layer
-from helios.components.scene import Scene
-from helios.components.collector import TelescopeArray, Collector
-from helios.components.pupil import Pupil
+from helios.components import Scene
+from helios.components import TelescopeArray, Collector
+from helios.components import Pupil
 from helios.core.simulation import Wavefront, WavefrontArray
 
 def test_pipeline_empty_error():

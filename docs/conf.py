@@ -108,6 +108,7 @@ html_context = {
 
 html_theme_options = {
     "emojis_header_nav": True,
+    "announcement": "⚠️ This library is currently under development and is considered unstable.",
 }
 
 # Custom CSS files

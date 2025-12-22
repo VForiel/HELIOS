@@ -10,8 +10,8 @@ from unittest.mock import MagicMock, patch
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
 from helios.core.simulation import Wavefront, WavefrontArray
-from helios.components.collector import TelescopeArray
-from helios.components.pupil import Pupil
+from helios.components import TelescopeArray
+from helios.components import Pupil
 from helios.core.pipeline import Pipeline
 
 def test_wavefront_array_plot_layout():

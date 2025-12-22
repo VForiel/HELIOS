@@ -3,10 +3,10 @@ import pytest
 import numpy as np
 from astropy import units as u
 from helios.core.pipeline import Pipeline, Layer, GenerationLayer, SamplingLayer, OpticalLayer, DetectionLayer
-from helios.components.scene import Scene, Star
-from helios.components.collector import TelescopeArray, Collector
-from helios.components.lens import Lens
-from helios.components.detectors import Camera
+from helios.components import Scene, Star
+from helios.components import TelescopeArray, Collector
+from helios.components import Lens
+from helios.components import Camera
 from helios.core.simulation import Wavefront
 
 def test_layer_inheritance():

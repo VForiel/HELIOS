@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 # Add src to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
-from helios.components.scene import Scene, Star, Planet
+from helios.components import Scene, Star, Planet
 
 def test_plot_logic():
     print("Testing Scene.plot logic...")

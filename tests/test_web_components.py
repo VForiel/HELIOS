@@ -16,7 +16,7 @@ try:
         LensPayload, BeamSplitterPayload, CoronagraphPayload, FiberPayload, PhotonicPayload,
         create_lens, create_beam_splitter, create_coronagraph, create_fiber, create_photonic
     )
-    import helios.components.photonics as photonics
+    import helios.components as components
 except ImportError as e:
     print(f"Import failed: {e}")
     sys.exit(1)
@@ -52,13 +52,13 @@ def test_create_fiber():
 def test_create_photonic_tops():
     payload = PhotonicPayload(type='tops', phase=1.57, name="P1")
     tops = create_photonic(payload)
-    assert isinstance(tops, photonics.TOPS)
+    assert isinstance(tops, components.TOPS)
     assert tops.name == "P1"
 
 def test_create_photonic_mmi():
     payload = PhotonicPayload(type='mmi', matrix_preset='hadamard', name="M1")
     mmi = create_photonic(payload)
-    assert isinstance(mmi, photonics.MMI)
+    assert isinstance(mmi, components.MMI)
 
 if __name__ == "__main__":
     # Manually run if pytest not available
