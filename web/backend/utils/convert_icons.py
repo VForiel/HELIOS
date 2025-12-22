@@ -28,7 +28,7 @@ def convert_svg_to_bw(svg_content):
     return svg_content
 
 def main():
-    icons_dir = Path(__file__).parent.parent / 'web' / 'frontend' / 'public' / 'icons'
+    icons_dir = Path(__file__).resolve().parent.parent.parent / 'frontend' / 'public' / 'icons'
     
     if not icons_dir.exists():
         print(f"Icons directory not found: {icons_dir}")
