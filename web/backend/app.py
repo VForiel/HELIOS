@@ -15,11 +15,6 @@ import contextlib # Added for plotting context
 
 import helios
 from helios.components import Zodiacal, Atmosphere, Pupil
-import helios.components.photonics as photonics
-import helios.components.fibers as fibers
-import helios.components.lens as lens_comp
-import helios.components.beam_splitter as bs_comp
-import helios.components.coronagraph as corona_comp
 
 app = FastAPI(title="Helios Web API")
 
@@ -270,15 +265,15 @@ def create_coronagraph(config: CoronagraphPayload):
 
 def create_fiber(config: FiberPayload, is_input: bool):
     if is_input:
-        return fibers.FiberIn(modes=config.modes, name=config.name)
+        return helios.FiberIn(modes=config.modes, name=config.name)
     else:
-        return fibers.FiberOut(name=config.name)
+        return helios.FiberOut(name=config.name)
 
 def create_photonic(config: PhotonicPayload):
     if config.type == 'y_splitter':
-        return photonics.YSplitter(name=config.name)
+        return helios.YSplitter(name=config.name)
     elif config.type == 'tops':
-        return photonics.TOPS(phase=config.phase if config.phase is not None else 0.0, name=config.name)
+        return helios.TOPS(phase=config.phase if config.phase is not None else 0.0, name=config.name)
     elif config.type == 'mmi':
         # Simple preset handling
         if config.matrix_preset == 'hadamard':
@@ -290,10 +285,10 @@ def create_photonic(config: PhotonicPayload):
             ]) / np.sqrt(2)
         else:
              mat = np.eye(2) # Fallback identity
-        return photonics.MMI(matrix=mat, name=config.name)
+        return helios.MMI(matrix=mat, name=config.name)
     elif config.type == 'swap':
         mapping = config.mapping if config.mapping else [0, 1]
-        return photonics.Swap(mapping=mapping, name=config.name)
+        return helios.Swap(mapping=mapping, name=config.name)
     return None
 
 def create_camera(config: CameraPayload, pipeline):
@@ -747,10 +742,10 @@ def export_pipeline_file(request: PipelineRequest):
                 
                 if layer_obj:
                     layer_obj.metadata = layer_conf.metadata
-                    context.add_layer(layer_obj)
+                    pipeline.add_layer(layer_obj)
         
         # 2. Serialize
-        data_dict = context.to_dict()
+        data_dict = pipeline.to_dict()
         
         # 3. Return as file
         import json
@@ -787,35 +782,22 @@ def inspect_node(
         # We also need to keep track of ALL layers created to search for the ID.
         all_created_layers = []
 
-        for layer_conf in request.layers:
-            layer_obj = None
-            if layer_conf.type == 'scene':
-                 layer_obj = create_scene(ScenePayload(**get_config_dict(layer_conf.config)))
-            elif layer_conf.type == 'atmosphere':
-                 layer_obj = create_atmosphere(AtmospherePayload(**get_config_dict(layer_conf.config)))
-            elif layer_conf.type == 'telescope':
-                 layer_obj = create_telescope(TelescopePayload(**get_config_dict(layer_conf.config)))
-            elif layer_conf.type == 'camera':
-                 layer_obj = create_camera(CameraPayload(**get_config_dict(layer_conf.config)), context)
-            elif layer_conf.type == 'lens':
-                 layer_obj = create_lens(LensPayload(**get_config_dict(layer_conf.config)))
-            elif layer_conf.type == 'beam_splitter':
-                 layer_obj = create_beam_splitter(BeamSplitterPayload(**get_config_dict(layer_conf.config)))
-            elif layer_conf.type == 'coronagraph':
-                 layer_obj = create_coronagraph(CoronagraphPayload(**get_config_dict(layer_conf.config)))
-            elif layer_conf.type == 'fiber_in':
-                 layer_obj = create_fiber(FiberPayload(**get_config_dict(layer_conf.config)), is_input=True)
-            elif layer_conf.type == 'fiber_out':
-                 layer_obj = create_fiber(FiberPayload(**get_config_dict(layer_conf.config)), is_input=False)
-            elif layer_conf.type == 'photonic':
-                 layer_obj = create_photonic(PhotonicPayload(**get_config_dict(layer_conf.config)))
-            
-            if layer_obj:
-                # Add metadata if present
-                if layer_conf.metadata:
-                    layer_obj.metadata = layer_conf.metadata
-                context.add_layer(layer_obj)
-                all_created_layers.append(layer_obj)
+        for layer_item in request.layers:
+            if isinstance(layer_item, list):
+                # Parallel branch
+                parallel_layers = []
+                for sub in layer_item:
+                    l = create_layer_from_config(sub, context)
+                    if l:
+                        all_created_layers.append(l)
+                        parallel_layers.append(l)
+                if parallel_layers:
+                    context.add_layer(parallel_layers)
+            else:
+                l = create_layer_from_config(layer_item, context)
+                if l:
+                    all_created_layers.append(l)
+                    context.add_layer(l)
 
         # 2. Find target layer by ID
         target_layer = None
@@ -1092,79 +1074,98 @@ def import_pipeline_file(file_data: Dict[str, Any]):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
+def create_layer_from_config(layer_conf, pipeline_context=None):
+    layer_obj = None
+    if layer_conf.type == 'scene':
+        if isinstance(layer_conf.config, ScenePayload):
+            data = layer_conf.config
+        elif isinstance(layer_conf.config, dict):
+            data = ScenePayload(**layer_conf.config)
+        else:
+            data = layer_conf.config
+        layer_obj = create_scene(data)
+        
+    elif layer_conf.type == 'atmosphere':
+        if isinstance(layer_conf.config, AtmospherePayload):
+            data = layer_conf.config
+        elif isinstance(layer_conf.config, dict):
+            data = AtmospherePayload(**layer_conf.config)
+        else:
+            data = layer_conf.config
+        layer_obj = create_atmosphere(data)
+        
+    elif layer_conf.type == 'telescope':
+        if isinstance(layer_conf.config, TelescopePayload):
+            data = layer_conf.config
+        elif isinstance(layer_conf.config, dict):
+            data = TelescopePayload(**layer_conf.config)
+        else:
+            data = layer_conf.config
+        layer_obj = create_telescope(data)
+        
+    elif layer_conf.type == 'camera':
+        if isinstance(layer_conf.config, CameraPayload):
+            data = layer_conf.config
+        elif isinstance(layer_conf.config, dict):
+            data = CameraPayload(**layer_conf.config)
+        else:
+            data = layer_conf.config
+        layer_obj = create_camera(data, pipeline_context)
+    
+    elif layer_conf.type == 'lens':
+        data = LensPayload(**get_config_dict(layer_conf.config))
+        layer_obj = create_lens(data)
+    elif layer_conf.type == 'beam_splitter':
+        data = BeamSplitterPayload(**get_config_dict(layer_conf.config))
+        layer_obj = create_beam_splitter(data)
+    elif layer_conf.type == 'coronagraph':
+        data = CoronagraphPayload(**get_config_dict(layer_conf.config))
+        layer_obj = create_coronagraph(data)
+    elif layer_conf.type == 'fiber_in':
+        data = FiberPayload(**get_config_dict(layer_conf.config))
+        layer_obj = create_fiber(data, is_input=True)
+    elif layer_conf.type == 'fiber_out':
+        data = FiberPayload(**get_config_dict(layer_conf.config))
+        layer_obj = create_fiber(data, is_input=False)
+    elif layer_conf.type == 'photonic':
+        data = PhotonicPayload(**get_config_dict(layer_conf.config))
+        layer_obj = create_photonic(data)
+        
+    if layer_obj:
+        layer_obj.metadata = layer_conf.metadata
+    
+    return layer_obj
+
 @app.post("/api/simulate")
 def run_pipeline(request: PipelineRequest):
     try:
         pipeline = helios.Pipeline()
         
-        for layer_conf in request.layers:
-            layer_obj = None
+        for layer_item in request.layers:
+            if isinstance(layer_item, list):
+                # Parallel branch
+                parallel_layers = []
+                for sub_conf in layer_item:
+                    l = create_layer_from_config(sub_conf, pipeline)
+                    if l: 
+                        parallel_layers.append(l)
+                if parallel_layers:
+                    pipeline.add_layer(parallel_layers)
+            else:
+                l = create_layer_from_config(layer_item, pipeline)
+                if l:
+                    pipeline.add_layer(l)
             
-            if layer_conf.type == 'scene':
-                if isinstance(layer_conf.config, ScenePayload):
-                    data = layer_conf.config
-                elif isinstance(layer_conf.config, dict):
-                    data = ScenePayload(**layer_conf.config)
-                else:
-                    data = layer_conf.config
-                layer_obj = create_scene(data)
-                
-            elif layer_conf.type == 'atmosphere':
-                if isinstance(layer_conf.config, AtmospherePayload):
-                    data = layer_conf.config
-                elif isinstance(layer_conf.config, dict):
-                    data = AtmospherePayload(**layer_conf.config)
-                else:
-                    data = layer_conf.config
-                layer_obj = create_atmosphere(data)
-                
-            elif layer_conf.type == 'telescope':
-                if isinstance(layer_conf.config, TelescopePayload):
-                    data = layer_conf.config
-                elif isinstance(layer_conf.config, dict):
-                    data = TelescopePayload(**layer_conf.config)
-                else:
-                    data = layer_conf.config
-                layer_obj = create_telescope(data)
-                
-            elif layer_conf.type == 'camera':
-                if isinstance(layer_conf.config, CameraPayload):
-                    data = layer_conf.config
-                elif isinstance(layer_conf.config, dict):
-                    data = CameraPayload(**layer_conf.config)
-                else:
-                    data = layer_conf.config
-                layer_obj = create_camera(data, pipeline)
-            
-            elif layer_conf.type == 'lens':
-                data = LensPayload(**get_config_dict(layer_conf.config))
-                layer_obj = create_lens(data)
-            elif layer_conf.type == 'beam_splitter':
-                data = BeamSplitterPayload(**get_config_dict(layer_conf.config))
-                layer_obj = create_beam_splitter(data)
-            elif layer_conf.type == 'coronagraph':
-                data = CoronagraphPayload(**get_config_dict(layer_conf.config))
-                layer_obj = create_coronagraph(data)
-            elif layer_conf.type == 'fiber_in':
-                data = FiberPayload(**get_config_dict(layer_conf.config))
-                layer_obj = create_fiber(data, is_input=True)
-            elif layer_conf.type == 'fiber_out':
-                data = FiberPayload(**get_config_dict(layer_conf.config))
-                layer_obj = create_fiber(data, is_input=False)
-            elif layer_conf.type == 'photonic':
-                data = PhotonicPayload(**get_config_dict(layer_conf.config))
-                layer_obj = create_photonic(data)
-            
-            if layer_obj:
-                pipeline.add_layer(layer_obj)
-            
-
 
         # Run Observation
-        # Wavelength? Handled by camera or observe parameters.
-        # previous code: pipeline.observe()
-        
         result = pipeline.observe()
+        
+        # Handle parallel output (list)
+        if isinstance(result, list):
+            if len(result) > 0:
+                result = result[0]
+            else:
+                raise ValueError("Pipeline returned empty result from parallel block")
         
         image_data = result
         if hasattr(result, 'value'): 
@@ -1200,8 +1201,8 @@ def generate_code(request: PipelineRequest):
     code.append("from astropy import units as u")
     code.append("import helios")
     code.append("from helios.components import *")
-    code.append("import helios.components.photonics as photonics")
-    code.append("import helios.components.fibers as fibers")
+    code.append("import helios")
+    code.append("from helios.components import *")
     code.append("")
     code.append("# Initialize Pipeline")
     code.append("pipeline = helios.Pipeline()")

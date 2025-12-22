@@ -77,32 +77,41 @@ function App() {
     const initialNodes = [
         {
             id: 'layer-1',
-            type: 'layer',
+            type: 'component',
             position: { x: 50, y: 100 },
             data: {
-                elements: [
-                    { type: 'scene', label: 'Scene', config: sceneConfig, iconPath: getElementIcon('scene') }
-                ]
+                type: 'scene',
+                label: 'Scene',
+                config: sceneConfig,
+                iconPath: getElementIcon('scene'),
+                inputs: 0,
+                outputs: 1
             }
         },
         {
             id: 'layer-2',
-            type: 'layer',
+            type: 'component',
             position: { x: 500, y: 100 },
             data: {
-                elements: [
-                    { type: 'telescope', label: 'Telescope', config: telescopeConfig, iconPath: getElementIcon('telescope') }
-                ]
+                type: 'telescope',
+                label: 'Telescope',
+                config: telescopeConfig,
+                iconPath: getElementIcon('telescope'),
+                inputs: 1,
+                outputs: 1
             }
         },
         {
             id: 'layer-3',
-            type: 'layer',
+            type: 'component',
             position: { x: 950, y: 100 },
             data: {
-                elements: [
-                    { type: 'camera', label: 'Camera', config: cameraConfig, iconPath: getElementIcon('camera') }
-                ]
+                type: 'camera',
+                label: 'Camera',
+                config: cameraConfig,
+                iconPath: getElementIcon('camera'),
+                inputs: 1,
+                outputs: 0
             }
         }
     ];

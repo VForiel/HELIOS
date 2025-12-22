@@ -1,18 +1,16 @@
 import numpy as np
 from astropy import units as u
-from typing import List, Union, Optional, Any, Tuple, TYPE_CHECKING
+from typing import List, Union, Optional, Any, Tuple
 import copy
 import matplotlib.pyplot as plt
 from pathlib import Path
 import json
 import warnings
 
-if TYPE_CHECKING:
-    from .layer import Layer, GenerationLayer, SamplingLayer, OpticalLayer, DetectionLayer, DataLayer
-    from .component import Component
-
-from .wavefront import Wavefront, WavefrontArray
-from ..utils.serialization import serialize_value, deserialize_value
+from helios.core.wavefront import Wavefront, WavefrontArray
+from helios.core.layer import Layer, GenerationLayer, SamplingLayer, OpticalLayer, DetectionLayer, DataLayer
+from helios.core.component import Component
+from helios.utils.serialization import serialize_value, deserialize_value
 
 class Pipeline:
     """
@@ -22,19 +20,18 @@ class Pipeline:
     layers. It maintains global simulation parameters and executes the observation
     workflow from scene generation through optical propagation to detector output.
     """
-    def __init__(self, date: Any = None, declination: Any = None, layers: Optional[List[Union['Layer', List['Layer']]]] = None, **kwargs):
-        from .layer import Layer
+    def __init__(self, date: Any = None, declination: Any = None, layers: Optional[List[Union[Layer, List[Layer]]]] = None, **kwargs):
         self.date = date
         self.declination = declination
         self.kwargs = kwargs
-        self.layers: List[Union['Layer', List['Layer']]] = []
+        self.layers: List[Union[Layer, List[Layer]]] = []
         self.results = {}
         
         if layers:
             for layer in layers:
                 self.add_layer(layer)
 
-    def invalidate_downstream_cache(self, start_layer: 'Layer'):
+    def invalidate_downstream_cache(self, start_layer: Layer):
         """Invalidate cache for all layers downstream of the given layer."""
         start_idx = -1
         for i, l_item in enumerate(self.layers):
@@ -61,7 +58,7 @@ class Pipeline:
                 l_item._cached_input = None
                 l_item._cached_output = None
 
-    def get_previous_layer_output(self, current_layer: 'Layer') -> Any:
+    def get_previous_layer_output(self, current_layer: Layer) -> Any:
         """Get the output from the layer immediately preceding the current_layer."""
         curr_idx = -1
         for i, l_item in enumerate(self.layers):
@@ -88,7 +85,7 @@ class Pipeline:
                 outputs.append(sub.get_output_wavefront())
         return outputs
 
-    def add_layer(self, layer: Union['Layer', List['Layer']]):
+    def add_layer(self, layer: Union[Layer, List[Layer]]):
         """Add a layer or a list of parallel layers to the simulation."""
         self.layers.append(layer)
         
@@ -236,10 +233,17 @@ class Pipeline:
             
         scene = None
         for layer in self.layers:
-            if type(layer).__name__ == 'Scene':
-                scene = layer
-            elif type(layer).__name__ == 'TelescopeArray' and collectors is None:
-                collectors = layer.elements
+            if isinstance(layer, list):
+                for sub in layer:
+                    if type(sub).__name__ == 'Scene':
+                        scene = sub
+                    elif type(sub).__name__ == 'TelescopeArray' and collectors is None:
+                        collectors = sub.elements
+            else:
+                if type(layer).__name__ == 'Scene':
+                    scene = layer
+                elif type(layer).__name__ == 'TelescopeArray' and collectors is None:
+                    collectors = layer.elements
         
         if scene is None and collectors is None:
              raise ValueError("Context must contain at least a Scene or a TelescopeArray to generate input wavefront.")
@@ -461,7 +465,8 @@ class Pipeline:
                         num_inputs = 1
                     
                     if input_idx + num_inputs > len(current_signal):
-                        inputs = current_signal[input_idx:]
+                        available = current_signal[input_idx:]
+                        inputs = available + [None] * (num_inputs - len(available))
                     else:
                         inputs = current_signal[input_idx : input_idx + num_inputs]
                     
@@ -509,7 +514,8 @@ class Pipeline:
                         num_inputs = 1
                     
                     if input_idx + num_inputs > len(current_signal):
-                        inputs = current_signal[input_idx:]
+                        available = current_signal[input_idx:]
+                        inputs = available + [None] * (num_inputs - len(available))
                     else:
                         inputs = current_signal[input_idx : input_idx + num_inputs]
                     
@@ -542,8 +548,6 @@ class Pipeline:
 
     def validate_architecture(self):
         """Validate the simulation architecture."""
-        from .layer import Layer, GenerationLayer, SamplingLayer, OpticalLayer, DetectionLayer, DataLayer
-        
         current_ports = 1
         
         for i, layer in enumerate(self.layers):

@@ -91,19 +91,28 @@ export default function SimulationControls({ onExpandChange }) {
     return (
         <>
             {/* Bottom Bar - Collapsible */}
-            <div className={`fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-md border-t border-slate-700 shadow-2xl z-40 transition-transform duration-300 ${isExpanded ? 'translate-y-0' : 'translate-y-full'
+            <div className={`fixed bottom-0 left-0 right-0 bg-slate-900/20 backdrop-blur-sm border-t border-slate-700/30 shadow-2xl z-40 transition-transform duration-300 ${isExpanded ? 'translate-y-0' : 'translate-y-full'
                 }`}>
                 {/* Toggle Button - Inside the bar at top-right */}
                 <button
                     onClick={() => setIsExpanded(!isExpanded)}
-                    className="absolute -top-10 right-4 p-2 bg-slate-900 border border-slate-700 border-b-0 rounded-t-lg hover:bg-slate-800 transition-colors shadow-lg group"
+                    className="absolute -top-10 right-4 p-2 bg-slate-900/20 backdrop-blur-sm border border-slate-700/30 border-b-0 rounded-t-lg hover:bg-slate-800/40 transition-colors shadow-lg group"
                     title={isExpanded ? 'Hide simulation controls' : 'Show simulation controls'}
                 >
                     {isExpanded ? <ChevronDown className="w-5 h-5 text-slate-400 group-hover:text-white" /> : <ChevronUp className="w-5 h-5 text-slate-400 group-hover:text-white" />}
                 </button>
 
-                <div className="px-6 py-4">
-                    <div className="flex items-center justify-between gap-8 max-w-screen-2xl mx-auto">
+                <div className="relative px-6 py-4">
+                    {/* Coming Soon Overlay */}
+                    <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-[2px] rounded-lg cursor-not-allowed">
+                        <div className="bg-slate-900/90 border border-slate-700 px-6 py-3 rounded-xl shadow-2xl">
+                            <span className="text-xl font-bold bg-gradient-to-r from-blue-400 to-indigo-400 bg-clip-text text-transparent tracking-widest">
+                                COMING SOON
+                            </span>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-8 max-w-screen-2xl mx-auto opacity-50 pointer-events-none filter blur-[1px]">
                         {/* Left section - Temporal Controls */}
                         <div className="flex items-center gap-6 flex-1">
 

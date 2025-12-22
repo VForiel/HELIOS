@@ -253,81 +253,11 @@ export default function PipelineEditor({
 
             // Re-implement getPipeline logic locally using refs to avoid dependency on the function
             // Traversal Logic
-            const getPipelineSnapshot = () => {
-                const startNodes = currentNodes.filter(n =>
-                    n.data.elements && n.data.elements.some(el => el.type === 'scene')
-                );
-                const root = startNodes.length > 0 ? startNodes[0] : currentNodes[0];
-
-                if (!root) return [];
-
-                let visited = new Set();
-                const buildChain = (node) => {
-                    const layerElements = node.data.elements.map(el => ({
-                        type: el.type,
-                        config: el.config,
-                        metadata: { position: node.position, id: node.id }
-                    }));
-
-                    const outEdges = currentEdges.filter(e => e.source === node.id);
-                    const targets = outEdges
-                        .map(e => currentNodes.find(n => n.id === e.target))
-                        .filter(n => n && !visited.has(n.id));
-
-                    targets.forEach(t => visited.add(t.id));
-
-                    if (targets.length === 0) return [layerElements];
-                    else if (targets.length === 1) return [layerElements, ...buildChain(targets[0])];
-                    else {
-                        const branches = targets.map(t => buildChain(t));
-                        return [layerElements, branches];
-                    }
-                };
-
-                visited.add(root.id);
-                return buildChain(root);
-            };
-
-            // Traversal for Index Finding
-            const startNodes = currentNodes.filter(n =>
-                n.data.elements && n.data.elements.some(el => el.type === 'scene')
-            );
-            const root = startNodes.length > 0 ? startNodes[0] : currentNodes[0];
-
-            if (!root) throw new Error("No Scene Found");
-
-            let elementIndex = 0;
-            let targetElementIndex = -1;
-            let visited = new Set();
-
-            const traverseElements = (node) => {
-                if (!node) return;
-                visited.add(node.id);
-
-                const nodeElements = node.data.elements || [];
-                console.log(`Traversing Node ${node.id}: elements=${nodeElements.length}, currentIndex=${elementIndex}`);
-
-                if (node.id === nodeId) {
-                    // Points to the last element of this node
-                    targetElementIndex = elementIndex + nodeElements.length - 1;
-                    console.log(`FOUND TARGET ${nodeId}: Set targetElementIndex to ${targetElementIndex}`);
-                }
-
-                elementIndex += nodeElements.length;
-
-                const outEdges = currentEdges.filter(e => e.source === node.id);
-                if (outEdges.length > 0) {
-                    const nextNodes = outEdges
-                        .map(e => currentNodes.find(n => n.id === e.target))
-                        .filter(n => n && !visited.has(n.id));
-                    nextNodes.forEach(traverseElements);
-                }
-            };
-
             // Send request with target_id
-            const finalPipeline = getPipelineSnapshot();
+            const finalPipeline = getPipeline();
             const flatPipelineConfig = finalPipeline.flat(Infinity);
             console.log(`Inspect Payload: Layers=${flatPipelineConfig.length}, TargetNodeId=${nodeId}`);
+
 
             const payload = { mode: 'pipeline', layers: flatPipelineConfig };
             // Use target_id matching the ReactFlow node ID
@@ -628,47 +558,82 @@ export default function PipelineEditor({
 
     const getPipeline = () => {
         // Reconstruct Layers via Topological Sort / BFS grouping
-        // 1. Identify Roots (Scene)
-        const roots = nodes.filter(n => n.data.type === 'scene');
+        // Calculate in-degrees
+        const inDegree = new Map();
+        nodes.forEach(n => inDegree.set(n.id, 0));
+        edges.forEach(e => {
+            const current = inDegree.get(e.target) || 0;
+            inDegree.set(e.target, current + 1);
+        });
+
+        // 1. Identify Roots (In-degree 0)
+        let roots = nodes.filter(n => inDegree.get(n.id) === 0);
+
+        // If no explicit roots found (cycles?), fallback to all nodes? 
+        // Or if empty graph, return empty.
+        if (nodes.length > 0 && roots.length === 0) {
+            // Cycle detected or weird state. Pick one?
+            roots = [nodes[0]];
+        }
+
         if (roots.length === 0) return [];
+
+        // Sort roots to prioritize Scene
+        roots.sort((a, b) => {
+            if (a.data.type === 'scene' && b.data.type !== 'scene') return -1;
+            if (b.data.type === 'scene' && a.data.type !== 'scene') return 1;
+            return 0;
+        });
 
         let layers = [];
         let visited = new Set();
         let queue = [...roots];
-
-        // Grouping by "Depth" might be insufficient if branches interact. 
-        // But for backend compatibility which expects "List of Layers", where each layer contains ONE OR MORE elements...
-        // We will assume that all nodes at the same "step" are one layer.
 
         while (queue.length > 0) {
             // Collect all nodes at current level
             const currentLevelNodes = [...queue];
             queue = []; // Reset for next level
 
+            // Filter duplicates in current level if any
+            const uniqueLevelNodes = currentLevelNodes.filter((node, index, self) =>
+                index === self.findIndex((t) => (t.id === node.id)) && !visited.has(node.id)
+            );
+
+            if (uniqueLevelNodes.length === 0) break;
+
             // Add to layers
-            const layerElements = currentLevelNodes.map(node => ({
-                type: node.data.type,
-                config: node.data.config,
-                metadata: { position: node.position, id: node.id }
-            }));
+            const layerElements = uniqueLevelNodes.map(node => {
+                visited.add(node.id);
+                return {
+                    type: node.data.type,
+                    config: node.data.config,
+                    metadata: { position: node.position, id: node.id }
+                };
+            });
 
             if (layerElements.length > 0) layers.push(layerElements);
 
             // Find next level
-            currentLevelNodes.forEach(node => {
-                visited.add(node.id);
+            uniqueLevelNodes.forEach(node => {
                 const outEdges = edges.filter(e => e.source === node.id);
-
                 outEdges.forEach(e => {
                     const target = nodes.find(n => n.id === e.target);
-                    if (target && !visited.has(target.id) && !queue.find(q => q.id === target.id)) {
-                        // Check if ALL parents of this target have been visited? 
-                        // To ensure strict topological order.
-                        // For now, simple BFS. 
-                        queue.push(target);
+                    if (target && !visited.has(target.id)) {
+                        // Check if all parents visited? 
+                        const inEdges = edges.filter(ie => ie.target === target.id);
+                        const allParentsVisited = inEdges.every(ie => visited.has(ie.source));
+
+                        // Only add to queue if all parents processed (topological)
+                        if (allParentsVisited && !queue.find(q => q.id === target.id)) {
+                            queue.push(target);
+                        }
                     }
                 });
             });
+
+            // Safety: if queue is empty but we haven't visited all nodes (disconnected islands that were NOT roots? Impossible if we started with all roots),
+            // catch leftovers?
+            // Roots logic caught all disconnected components starts.
         }
 
         return layers;
@@ -830,34 +795,37 @@ export default function PipelineEditor({
                             currentX += 450;
                         }
 
-                        let data = { elements: [] };
                         const type = layer.type;
                         const conf = layer.config || {};
+                        let data = {
+                            type,
+                            label: type,
+                            config: conf,
+                            iconPath: getElementIcon(type),
+                            inputs: 1,
+                            outputs: 1
+                        };
 
-                        // Map to Elements
+                        // Specific Configs
                         if (type === 'scene') {
                             if (conf.stars) setStars(conf.stars);
                             if (conf.planets) setPlanets(conf.planets);
                             if (conf.zodiacal) setZodiacal(conf.zodiacal);
-                            data.elements.push({ type, label: 'Scene', config: { stars: conf.stars, planets: conf.planets, zodiacal: conf.zodiacal }, iconPath: getElementIcon('scene') });
+                            data = { ...data, label: 'Scene', inputs: 0, outputs: 1 };
                         } else if (type === 'atmosphere') {
                             setAtmosphere(conf);
-                            data.elements.push({ type, label: 'Atmosphere', config: conf, iconPath: getElementIcon('atmosphere') });
+                            data = { ...data, label: 'Atmosphere' };
                         } else if (type === 'telescope') {
                             setTelescope(conf);
-                            data.elements.push({ type, label: 'Telescope', config: conf, iconPath: getElementIcon('telescope') });
+                            data = { ...data, label: 'Telescope' };
                         } else if (type === 'camera') {
                             setCamera(conf);
-                            data.elements.push({ type, label: 'Camera', config: conf, iconPath: getElementIcon('camera') });
-                        } else {
-                            // Generics
-                            let element = { type, config: conf, label: type, iconPath: getElementIcon(type) };
-                            if (type === 'lens') element = { ...element, label: 'Lens', iconPath: getElementIcon('lens'), fields: [{ name: 'focal_length', type: 'number', label: 'Focal Length', step: 0.1 }] };
-                            // Add more specific types as needed
-                            data.elements.push(element);
+                            data = { ...data, label: 'Camera', inputs: 1, outputs: 0 };
+                        } else if (type === 'lens') {
+                            data = { ...data, label: 'Lens' };
                         }
 
-                        newNodes.push({ id, type: 'layer', position, data });
+                        newNodes.push({ id, type: 'component', position, data });
 
                         if (parentId) {
                             const edge = {
@@ -869,13 +837,13 @@ export default function PipelineEditor({
                                 data: { pathCount: 1 }
                             };
 
-                            // Check for parallel edge based on parent being Telescope
+                            // Check previous node (parent) type for parallel edge
                             const pNode = newNodes.find(n => n.id === parentId);
-                            if (pNode && pNode.data.elements) {
-                                const tel = pNode.data.elements.find(el => el.type === 'telescope');
-                                if (tel) {
+                            if (pNode && pNode.data.type === 'telescope') { // Check flat data
+                                const telConfig = pNode.data.config;
+                                if (telConfig && telConfig.collectors) {
                                     edge.type = 'parallel';
-                                    edge.data.pathCount = tel.config.collectors ? tel.config.collectors.length : 1;
+                                    edge.data.pathCount = telConfig.collectors.length;
                                 }
                             }
                             newEdges.push(edge);
@@ -1222,12 +1190,7 @@ export default function PipelineEditor({
                             )}
                         </div>
 
-                        <button
-                            onClick={handleRun}
-                            className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2 rounded-lg text-sm font-semibold shadow-md transition-transform active:scale-95 flex items-center"
-                        >
-                            {t('toolbar.runPipeline')}
-                        </button>
+                        {/* Run Pipeline Button Removed - Temporarily Disabled */}
                     </div>
                 </div>
 
