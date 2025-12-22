@@ -8,7 +8,7 @@ import os
 sys.path.insert(0, os.path.abspath('src'))
 
 import helios
-from helios.core.simulation import PlaneType
+from helios.core.wavefront import PlaneType
 
 def test_fresnel_propagation():
     print("Testing Fresnel Propagation (ASM)...")

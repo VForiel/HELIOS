@@ -1,8 +1,9 @@
 """Multi-Mode Interferometer (MMI) component."""
 import numpy as np
 from typing import List, Union, Optional
-from ...core.pipeline import OpticalComponent, Pipeline
-from ...core.simulation import Wavefront
+from ...core.component import OpticalComponent
+from ...core.pipeline import Pipeline
+from ...core.wavefront import Wavefront
 import copy
 
 

@@ -2,8 +2,10 @@
 import numpy as np
 from astropy import units as u
 from typing import List, Union, Tuple, Optional
-from ...core.pipeline import Layer, Component, OpticalComponent, Pipeline, OpticalLayer
-from ...core.simulation import Wavefront
+from ...core.component import Component, OpticalComponent
+from ...core.layer import Layer, OpticalLayer
+from ...core.pipeline import Pipeline
+from ...core.wavefront import Wavefront
 import copy
 
 

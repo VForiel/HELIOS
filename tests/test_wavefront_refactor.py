@@ -6,7 +6,7 @@ import numpy as np
 from astropy import units as u
 import matplotlib.pyplot as plt
 import helios
-from helios.core.simulation import Wavefront
+from helios.core.wavefront import Wavefront
 from helios.core.pipeline import Pipeline
 from helios.components import Scene, Star, Planet
 from helios.components import Atmosphere

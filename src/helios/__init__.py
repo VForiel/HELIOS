@@ -13,11 +13,10 @@ except PackageNotFoundError:
     __version__ = "unknown"
 
 # Expose core components
-from .core.pipeline import (
-    Pipeline, Layer, Component, Context,
-    GenerationComponent, SamplingComponent, OpticalComponent, DetectionComponent, DataComponent
-)
-from .core.simulation import Simulation, Wavefront, WavefrontArray, PlaneType
+from .core.pipeline import Pipeline, Context
+from .core.layer import Layer, GenerationLayer, SamplingLayer, OpticalLayer, DetectionLayer, DataLayer
+from .core.component import Component, GenerationComponent, SamplingComponent, OpticalComponent, DetectionComponent, DataComponent
+from .core.wavefront import Wavefront, WavefrontArray, PlaneType
 
 # Expose submodules
 from . import components

@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 # Add src to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
-from helios.core.simulation import Wavefront, WavefrontArray
+from helios.core.wavefront import Wavefront, WavefrontArray
 from helios.core.pipeline import Pipeline
 from helios.components import Scene, Star
 

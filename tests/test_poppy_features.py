@@ -8,7 +8,7 @@ from astropy import units as u
 sys.path.insert(0, os.path.abspath('src'))
 
 import helios
-from helios.core.simulation import PlaneType
+from helios.core.wavefront import PlaneType
 
 def test_poppy_features():
     print("Testing POPPY-inspired features...")

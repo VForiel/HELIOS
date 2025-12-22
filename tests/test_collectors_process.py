@@ -7,7 +7,7 @@ from astropy import units as u
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 from helios.components import Pupil
 from helios.components import TelescopeArray
-from helios.core.simulation import Wavefront
+from helios.core.wavefront import Wavefront
 
 
 def test_telescope_array_applies_pupil_mask():

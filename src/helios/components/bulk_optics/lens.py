@@ -2,8 +2,10 @@ import numpy as np
 from typing import Optional, Tuple, Any
 from astropy import units as u
 
-from ...core.pipeline import Component, OpticalComponent, Layer, OpticalLayer, Pipeline
-from ...core.simulation import Wavefront, WavefrontArray
+from ...core.component import Component, OpticalComponent
+from ...core.layer import Layer, OpticalLayer
+from ...core.pipeline import Pipeline
+from ...core.wavefront import Wavefront, WavefrontArray
 
 
 class Lens(OpticalLayer):

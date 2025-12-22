@@ -6,4 +6,5 @@ Input/Output utilities for loading and saving data.
 :maxdepth: 2
 
 uml_diagrams
+json
 ```

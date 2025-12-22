@@ -4,9 +4,10 @@ from astropy import units as u
 from typing import Tuple, Optional, Any
 import matplotlib.pyplot as _plt
 
-from ...core.pipeline import SamplingComponent, Pipeline
+from ...core.component import SamplingComponent
+from ...core.pipeline import Pipeline
 from ...utils.serialization import serialize_value, deserialize_value
-from ...core.simulation import Wavefront
+from ...core.wavefront import Wavefront
 from .pupil import Pupil
 
 

@@ -6,7 +6,7 @@ from helios.core.pipeline import Pipeline, Layer
 from helios.components import Scene
 from helios.components import TelescopeArray, Collector
 from helios.components import Pupil
-from helios.core.simulation import Wavefront, WavefrontArray
+from helios.core.wavefront import Wavefront, WavefrontArray
 
 def test_pipeline_empty_error():
     """Test that get_input_wavefront raises ValueError when Pipeline is empty."""

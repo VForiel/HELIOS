@@ -71,7 +71,7 @@ def test_celestial_body_element_interface():
     assert hasattr(star, 'name'), "Star should have name attribute"
     
     # Test process() method (should be pass-through for CelestialBody)
-    from helios.core.simulation import Wavefront
+    from helios.core.wavefront import Wavefront
     wf = Wavefront(wavelength=550e-9*u.m, size=256)
     wf_processed = star.process(wf)
     assert wf_processed is wf, "CelestialBody.process() should return the same wavefront"

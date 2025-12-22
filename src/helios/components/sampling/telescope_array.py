@@ -6,7 +6,7 @@ import matplotlib.pyplot as _plt
 
 from ...core.pipeline import Pipeline
 from ...utils.serialization import serialize_value, deserialize_value
-from ...core.simulation import Wavefront, WavefrontArray
+from ...core.wavefront import Wavefront, WavefrontArray
 from .pupil import Pupil
 from .telescope import Telescope
 

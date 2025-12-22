@@ -5,9 +5,11 @@ from astropy import units as u
 from typing import Tuple, List, Union, Optional
 import matplotlib.pyplot as _plt
 
-from ...core.pipeline import Component, OpticalComponent, Layer, GenerationLayer, Pipeline
+from ...core.component import Component, OpticalComponent
+from ...core.layer import GenerationLayer, Layer
+from ...core.pipeline import Pipeline
 from ...utils.serialization import serialize_value, deserialize_value
-from ...core.simulation import Wavefront, WavefrontArray
+from ...core.wavefront import Wavefront, WavefrontArray
 from ..sampling.telescope_array import TelescopeArray
 from ..sampling.telescope import Telescope
 

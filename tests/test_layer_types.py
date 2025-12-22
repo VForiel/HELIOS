@@ -7,7 +7,7 @@ from helios.components import Scene, Star
 from helios.components import TelescopeArray, Collector
 from helios.components import Lens
 from helios.components import Camera
-from helios.core.simulation import Wavefront
+from helios.core.wavefront import Wavefront
 
 def test_layer_inheritance():
     """Verify that components inherit from correct Layer types."""

@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../s
 import helios
 import helios.components.photonics as photonics
 import helios.components.photonics.fibers as fibers
-from helios.core.simulation import Wavefront
+from helios.core.wavefront import Wavefront
 
 def run_demo():
     # Components

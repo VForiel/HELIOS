@@ -784,24 +784,6 @@ class Wavefront(u.Quantity):
             
         return new_wf
 
-class Simulation:
-    """
-    Helper class for running specific simulation types if needed.
-    
-    This class provides utilities for common simulation workflows and may
-    be extended in the future for specialized observation modes.
-    
-    Notes
-    -----
-    Most simulations should use Context directly. This class is reserved
-    for future specialized simulation types or batch processing workflows.
-    
-    See Also
-    --------
-    Context : Main simulation orchestrator
-    """
-    pass
-
 class WavefrontArray:
     """
     Collection of wavefronts for parallel optical paths.

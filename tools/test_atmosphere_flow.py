@@ -34,7 +34,7 @@ def test_atmosphere_flow():
     
     result = ctx.observe()
     
-    assert isinstance(result, helios.core.simulation.WavefrontArray)
+    assert isinstance(result, helios.core.wavefront.WavefrontArray)
     assert len(result) == 1
     wf = result[0]
     

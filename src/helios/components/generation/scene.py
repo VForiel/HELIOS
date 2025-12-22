@@ -3,9 +3,11 @@ from astropy import units as u
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 from typing import Optional, Tuple, Any
-from ...core.pipeline import Layer, GenerationLayer, Component, GenerationComponent, Pipeline
+from ...core.component import Component, GenerationComponent
+from ...core.layer import GenerationLayer, Layer
+from ...core.pipeline import Pipeline
 from ...utils.serialization import serialize_value, deserialize_value
-from ...core.simulation import Wavefront
+from ...core.wavefront import Wavefront
 from astropy import constants as const
 
 class CelestialBody(GenerationComponent):

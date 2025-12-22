@@ -3,8 +3,8 @@ import numpy as np
 import math
 from astropy import units as u
 from typing import Tuple, Optional, Dict
-from ...core.pipeline import OpticalComponent
-from ...core.simulation import Wavefront
+from ...core.component import OpticalComponent
+from ...core.wavefront import Wavefront
 
 
 class AdaptiveOptics(OpticalComponent):

@@ -229,30 +229,9 @@ fig.savefig('system.pdf', bbox_inches='tight')
 
 ### `Pipeline.plot_uml_diagram()`
 
-```python
-def plot_uml_diagram(
-    self,
-    figsize: Tuple[float, float] = (16, 10),
-    layer_spacing: float = 2.0,
-    save_path: Optional[str] = None
-) -> plt.Figure
+```{eval-rst}
+.. autofunction:: helios.io.uml_export.plot_uml_diagram
 ```
-
-**Parameters:**
-
-- `figsize` : tuple of float, optional  
-  Figure size as (width, height) in inches. Default: (16, 10)
-
-- `layer_spacing` : float, optional  
-  Horizontal distance between layers. Default: 2.0
-
-- `save_path` : str, optional  
-  If provided, save the figure to this path
-
-**Returns:**
-
-- `fig` : matplotlib.figure.Figure  
-  The generated figure
 
 **Examples:**
 

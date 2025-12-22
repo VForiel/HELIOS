@@ -80,7 +80,7 @@ def demo_fresnel():
         ax = axes[i]
         
         # On utilise les coordonnées physiques pour l'affichage
-        extent, xlabel, ylabel = helios.core.simulation.get_smart_extent(wf_prop.shape, wf_prop.pixel_scale)
+        extent, xlabel, ylabel = helios.core.wavefront.get_smart_extent(wf_prop.shape, wf_prop.pixel_scale)
         
         im = ax.imshow(intensity, extent=extent, cmap='inferno', origin='lower')
         
@@ -130,7 +130,7 @@ def demo_fresnel():
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
     
     # Plot Fraunhofer
-    ext_fft, xl_fft, yl_fft = helios.core.simulation.get_smart_extent(wf_fft.shape, wf_fft.pixel_scale)
+    ext_fft, xl_fft, yl_fft = helios.core.wavefront.get_smart_extent(wf_fft.shape, wf_fft.pixel_scale)
     im1 = axes[0].imshow(wf_fft.intensity.value[0] if wf_fft.ndim==3 else wf_fft.intensity.value, 
                    extent=ext_fft, cmap='inferno', origin='lower')
     axes[0].set_title("Fraunhofer (FFT)\n(Grille redimensionnée)")
@@ -139,7 +139,7 @@ def demo_fresnel():
     plt.colorbar(im1, ax=axes[0], label='Intensité')
     
     # Plot Fresnel
-    ext_fres, xl_fres, yl_fres = helios.core.simulation.get_smart_extent(wf_fresnel.shape, wf_fresnel.pixel_scale)
+    ext_fres, xl_fres, yl_fres = helios.core.wavefront.get_smart_extent(wf_fresnel.shape, wf_fresnel.pixel_scale)
     im2 = axes[1].imshow(wf_fresnel.intensity.value[0] if wf_fresnel.ndim==3 else wf_fresnel.intensity.value, 
                    extent=ext_fres, cmap='inferno', origin='lower')
     axes[1].set_title("Fresnel (Lentille + ASM)\n(Grille fixe)")
