@@ -28,6 +28,7 @@ extensions = [
     'sphinx.ext.napoleon',
     'sphinx.ext.viewcode',
     'sphinxcontrib.mermaid',
+    "sphinxcontrib.video",
 ]
 
 source_suffix = {

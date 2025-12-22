@@ -115,7 +115,7 @@ def _compute_mmi_field(N, M, L, W, n_eff, wavelength, input_amplitudes, num_mode
 # --- Parallel Rendering Helpers ---
 
 def _render_frame_static(frame_idx, z_grid, x_grid, intensity_evolution, L, W, input_positions, output_positions, output_dir):
-    """Render a single frame for simulate_mmi."""
+    """Render a single frame for simulate."""
     # Ensure Agg backend for thread safety / headless
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
@@ -158,7 +158,7 @@ def _render_frame_static(frame_idx, z_grid, x_grid, intensity_evolution, L, W, i
     plt.close(fig)
 
 def _render_contrib_frame_static(frame_idx, z_grid, x_grid, intensity_total_evol, phasors, L, W, input_positions, output_positions, N, M, output_dir):
-    """Render a single frame for simulate_mmi_contributions."""
+    """Render a single frame for simulate_contributions."""
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
 
@@ -261,29 +261,51 @@ def _compute_single_field_wrapper(i, N, M, L, W, n_eff, wavelength, input_amplit
     )
     return ret[2]
 
-def simulate_mmi(N=2, M=2, L=None, W=10.0e-6, n_eff=2.0458, wavelength=1.55e-6, input_amplitudes=None, num_modes=50, num_z_steps=None, z_resolution=None, output_file=None, verbose=False):
+def simulate(N=2, M=2, L=None, W=10.0e-6, n_eff=2.0458, wavelength=1.55e-6, input_amplitudes=None, num_modes=50, num_z_steps=None, z_resolution=None, output_file=None, verbose=False):
 
 
     """
     Simulates light propagation in an NxM MMI (Multi-Mode Interferometer) using Eigenmode Expansion (Hard Wall).
     
-    Args:
-        N (int): Number of input ports.
-        M (int): Number of output ports.
-        L (float, optional): Length of the MMI region [m]. If None, calculated for 2x2 Paired Interference.
-        W (float, optional): Width of the MMI region [m]. Defaults to 10um.
-        n_eff (float): Effective refractive index of the MMI slab.
-        wavelength (float): Operating wavelength [m].
-        input_amplitudes (list/array, optional): Complex amplitudes for the N inputs. 
-                                                 Defaults to uniform [1/sqrt(N), ...].
-        num_modes (int): Number of modes to use for the decomposition.
-        num_z_steps (int, optional): Number of steps for z-propagation. If None, calculated from z_resolution.
-        z_resolution (float, optional): Step size in z [m]. Defaults to wavelength/10 if num_z_steps is also None.
-        output_file (str, optional): Filename for the output animation. If None, no animation is generated.
-        verbose (bool): If True, prints detailed simulation steps. Defaults to False.
+    This function models the propagation of light through a multimode waveguide section, calculating
+    the output amplitudes at specified output ports. It uses a hard-wall approximation for the
+    guided modes and assumes a step-index profile.
 
-    Returns:
-        np.array: Complex amplitudes at the M outputs.
+    Parameters
+    ----------
+    N : int, default=2
+        Number of input ports.
+    M : int, default=2
+        Number of output ports.
+    L : float, optional
+        Length of the MMI region [m]. If None, it is automatically calculated for 
+        paired interference at the specified width and wavelength.
+    W : float, default=10.0e-6
+        Width of the MMI region [m].
+    n_eff : float, default=2.0458
+        Effective refractive index of the MMI slab.
+    wavelength : float, default=1.55e-6
+        Operating wavelength [m].
+    input_amplitudes : list or array, optional
+        Complex amplitudes for the N inputs. If None, defaults to uniform illumination
+        normalized by 1/sqrt(N).
+    num_modes : int, default=50
+        Number of eigenmodes to use for the decomposition. Higher numbers increase accuracy
+        but also computation time.
+    num_z_steps : int, optional
+        Number of steps for z-propagation grid. If None, calculated from `z_resolution`.
+    z_resolution : float, optional
+        Step size in z [m]. Defaults to wavelength/30 if `num_z_steps` is also None.
+    output_file : str, optional
+        Path to save an animation of the propagation (e.g., 'mmi_prop.mp4'). 
+        If None, no animation is generated.
+    verbose : bool, default=False
+        If True, prints detailed simulation progress and parameters.
+
+    Returns
+    -------
+    np.ndarray
+        Complex amplitudes at the M output ports.
     """
     
     # Defaults logic        
@@ -364,9 +386,51 @@ def simulate_mmi(N=2, M=2, L=None, W=10.0e-6, n_eff=2.0458, wavelength=1.55e-6, 
 
     return output_amplitudes
 
-def calculate_mmi_contrib_data(N, M, L, W, n_eff, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, verbose=False):
+def compute_contributions(N, M, L, W, n_eff, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, verbose=False):
     """
-    Calculates MMI fields and contributions, returning raw data for analysis/plotting.
+    Calculates MMI fields and contributions, returning raw data for analysis or custom plotting.
+
+    This function performs the full EME simulation including individual simulations for each input
+    to determine the complex coupling coefficients (phasors) from each input to each output.
+
+    Parameters
+    ----------
+    N : int
+        Number of input ports.
+    M : int
+        Number of output ports.
+    L : float, optional
+        Length of the MMI region [m].
+    W : float
+        Width of the MMI region [m].
+    n_eff : float
+        Effective refractive index.
+    wavelength : float
+        Wavelength [m].
+    input_amplitudes : list
+        Input complex amplitudes.
+    num_modes : int
+        Number of modes for EME.
+    num_z_steps : int, optional
+        Number of Z steps.
+    z_resolution : float, optional
+        Z resolution [m].
+    verbose : bool, default=False
+        Print status.
+
+    Returns
+    -------
+    dict
+        A dictionary containing simulation data:
+        
+        - ``z_grid``: Array of z positions.
+        - ``x_grid``: Array of x positions.
+        - ``intensity_total_evol``: 2D array of total field intensity (z, x).
+        - ``phasors``: Complex array of shape (num_z, M, N) representing the coupling from each input i to output j at each z step.
+        - ``input_positions``: List of input port x-positions.
+        - ``output_positions``: List of output port x-positions.
+        - ``L``, ``W``, ``N``, ``M``: Geometry parameters.
+        - ``num_z_steps``: Actual number of z steps used.
     """
     # Defaults logic
     if L is None:
@@ -438,12 +502,48 @@ def calculate_mmi_contrib_data(N, M, L, W, n_eff, wavelength, input_amplitudes, 
         "num_z_steps": num_z_steps
     }
 
-def simulate_mmi_contributions(N=2, M=2, L=None, W=10.0e-6 , n_eff=2.0458, wavelength=1.55e-6, input_amplitudes=None, num_modes=50, num_z_steps=None, z_resolution=None, output_file=None, verbose=False):
+def simulate_contributions(N=2, M=2, L=None, W=10.0e-6 , n_eff=2.0458, wavelength=1.55e-6, input_amplitudes=None, num_modes=50, num_z_steps=None, z_resolution=None, output_file=None, verbose=False):
     """
-    Simulates light propagation with phasor contributions from each input.
+    Simulates light propagation with explicit visualization of phasor contributions from each input.
+    
+    This wrapper calls ``compute_contributions`` and then optionally generates a detailed video
+    showing the total field evolution alongside polar plots of the complex contributions from each 
+    input to the outputs.
+    
+    Parameters
+    ----------
+    N : int, default=2
+        Number of input ports.
+    M : int, default=2
+        Number of output ports.
+    L : float, optional
+        Length of the MMI [m].
+    W : float, default=10.0e-6
+        Width of the MMI [m].
+    n_eff : float, default=2.0458
+        Effective refractive index.
+    wavelength : float, default=1.55e-6
+        Wavelength [m].
+    input_amplitudes : list, optional
+        Input complex amplitudes.
+    num_modes : int, default=50
+        Number of modes.
+    num_z_steps : int, optional
+        Number of z steps.
+    z_resolution : float, optional
+        Z resolution.
+    output_file : str, optional
+        If provided, generates a detailed MP4 animation.
+    verbose : bool, default=False
+        Print status.
+
+    Returns
+    -------
+    np.ndarray
+        Complex amplitudes at the M outputs.
     """
     # 1. Calculate Data
-    data = calculate_mmi_contrib_data(N, M, L, W, n_eff, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, verbose)
+    data = compute_contributions(N, M, L, W, n_eff, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, verbose)
     
     z_grid = data["z_grid"]
     x_grid = data["x_grid"]
@@ -473,7 +573,7 @@ def simulate_mmi_contributions(N=2, M=2, L=None, W=10.0e-6 , n_eff=2.0458, wavel
             _make_video_from_frames(output_file, temp_dir, fps=30)
         
     # Return total output
-    output_amplitudes = simulate_mmi(N, M, L, W, n_eff, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, output_file=None, verbose=verbose)
+    output_amplitudes = simulate(N, M, L, W, n_eff, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, output_file=None, verbose=verbose)
 
     if verbose:
         print(f"Output amplitudes: {output_amplitudes}")

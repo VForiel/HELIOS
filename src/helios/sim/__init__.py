@@ -1,5 +1,6 @@
-from .multi_mode_interferometer import simulate_mmi as mmi
-from .multi_mode_interferometer import simulate_mmi_contributions as mmi_contributions
-from . import multi_mode_interferometer
+from .mmi import simulate
+from .mmi import simulate_contributions
+from .mmi import compute_contributions
+from . import mmi
 
-__all__ = ["mmi", "mmi_contributions"]
+__all__ = ["simulate", "simulate_contributions", "compute_contributions", "mmi"]

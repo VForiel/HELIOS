@@ -344,8 +344,3 @@ Planned improvements include:
 - Export to various vector formats
 - Custom icon support
 - Automatic layout optimization
-
-## See Also
-
-- [Pipeline API Documentation](core.md)
-- [Component Gallery](components/index.md)

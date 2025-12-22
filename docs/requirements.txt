@@ -5,3 +5,4 @@ sphinx-breeze-theme
 sphinx-copybutton
 sphinxcontrib-mermaid
 linkify-it-py
+sphinxcontrib-video

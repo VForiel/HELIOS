@@ -5,14 +5,15 @@ Complete API documentation for the HELIOS package.
 ## Core Modules
 
 ```{toctree}
-:maxdepth: 2
+:maxdepth: 3
 
-core
+core/index
 components/index
-uml_diagrams
+sim/index
+io/index
 ```
 
 ## Quick Links
 
-- {doc}`core` - Core simulation framework (Pipeline, Layer, Wavefront)
+- {doc}`core/index` - Core simulation framework (Pipeline, Layer, Wavefront)
 - {doc}`components/index` - All simulation components (Scene, Optics, Detectors, Photonics)

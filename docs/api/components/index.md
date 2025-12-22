@@ -4,11 +4,54 @@ Simulation components organized by category.
 
 ```{toctree}
 :maxdepth: 2
+:caption: Generation
 
-scene
-optics
-detectors
-photonics
+generation/scene
+generation/atmosphere
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: Sampling
+
+sampling/telescope
+sampling/telescope_array
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: Bulk optics
+
+bulk_optics/lens
+bulk_optics/beam_splitter
+bulk_optics/coronograph
+bulk_optics/adaptive_optics
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: Photonics
+
+photonics/fiber_in_out
+photonics/y_splitter
+photonics/chip
+photonics/tops
+photonics/mmi
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: Detectors
+
+detection/camera
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: Data
+
+data/filter
+data/sextractor
 ```
 
 ## Component Categories
