@@ -36,17 +36,9 @@ def _compute_mmi_field(N, M, L, W, n_eff, wavelength, input_amplitudes, num_mode
             print(f"Calculated num_z_steps = {num_z_steps} for L = {L*1e6:.1f} um")
     elif verbose and z_resolution is not None:
         print(f"Warning: num_z_steps ({num_z_steps}) provided, ignoring z_resolution ({z_resolution})")
-    
-    # ... (Geometry setup remains same, skipped in diff if unchanged nearby)
-    pass 
-    # Logic continues... but I need to inject progress bar in the propagation loop (step 5)
-    # I cannot skip lines in replace_file_content easily without matching.
-    # So I will just rewrite the surrounding lines and replace _compute_mmi_field partly? 
-    # Or just replace the imports and the loop.
-    
-    # Let's do imports first.
 
-    input_positions = [W/N * (i + 0.5) for i in range(N)]
+    # input_positions = [W/N * (i + 0.5) for i in range(N)]
+    input_positions = [(2*(i+1)-1)/(2*N)*W for i in range(N)]
     
     # 2. Define Waveguide Modes (Hard Wall Approximation)
     x_grid = np.linspace(0, W, 500)
@@ -108,7 +100,8 @@ def _compute_mmi_field(N, M, L, W, n_eff, wavelength, input_amplitudes, num_mode
         E_z = np.dot(weights, modes)
         field_evolution[iz, :] = E_z
 
-    output_positions = [W/M * (j + 0.5) for j in range(M)]
+    # output_positions = [W/M * (j + 0.5) for j in range(M)]
+    output_positions = [(2*(j+1)-1)/(2*M)*W for j in range(M)]
     
     return z_grid, x_grid, field_evolution, output_positions, input_positions, beam_waist, dx
 
