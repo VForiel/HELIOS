@@ -29,6 +29,7 @@ import time
 from helios.io.external_query.stars import query_simbad, query_vizier, query_stsci_calspec, query_vizier_spectra
 from helios.io.external_query.stars.vizier_spectra_extended import query_extended_spectra
 from helios.io.external_query.stars.eso_query import query_eso_spectra
+from helios.io.external_query.stars.irsa_query import query_irsa_iso
 from helios.io.external_query.stars.serialization import serialize_star_data, deserialize_star_data
 
 def get_star_properties(star_name, complete_data=False, plot=False, force=False):
@@ -132,7 +133,15 @@ def get_star_properties(star_name, complete_data=False, plot=False, force=False)
             star_data = query_extended_spectra(star_name, star_data)
             capture_segment(star_data, 'Vizier Extended')
             
-            # 4. Fallback Vizier Spectra (Burnashev)
+            # 4. IRSA / ISO Query
+            # -------------------
+            # Query for ISO SWS spectrum via SSA
+            irsa_segments = query_irsa_iso(star_name)
+            if irsa_segments:
+                sed_segments.extend(irsa_segments)
+                star_data['sed'] = {'wavelength': [], 'flux': []}
+
+            # 5. Fallback Vizier Spectra (Burnashev)
             star_data = query_vizier_spectra(star_name, star_data)
             capture_segment(star_data, 'Vizier General')
 
