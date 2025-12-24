@@ -1,0 +1,48 @@
+{
+    "identity": {
+        "name": "string",
+        "simbad_id": "string"
+    },
+    "coordinates": {
+        "ra": "float (deg)",
+        "ra_error": "float (mas)",
+        "dec": "float (deg)",
+        "dec_error": "float (mas)",
+        "frame": "string (e.g. 'icrs')"
+    },
+    "kinematics": {
+        "pm_ra": "float (mas/yr)",
+        "pm_ra_error": "float (mas/yr)",
+        "pm_dec": "float (mas/yr)",
+        "pm_dec_error": "float (mas/yr)",
+        "radial_velocity": "float (km/s)",
+        "radial_velocity_error": "float (km/s)"
+    },
+    "physics": {
+        "parallax": "float (mas)",
+        "parallax_error": "float (mas)",
+        "distance": "float (pc)",
+        "distance_error": "float (pc)",
+        "spectral_type": "string",
+        "temperature_eff": "float (K)"
+    },
+    "sed": {
+        "wavelength": "array (microns)",
+        "flux": "array (Jy)",
+        "flux_error": "array (Jy)",
+        "flux_10pc": "array (Jy) [Absolute Spectrum]",
+        "frequency": "array (Hz)",
+        "bands": "array (string)"
+    },
+    "photometry": {
+        "wavelength": "array (microns)",
+        "flux": "array (Jy)",
+        "flux_error": "array (Jy)",
+        "flux_10pc": "array (Jy) [Absolute Photometry]",
+        "bands": "array (string)"
+    },
+    "metadata": {
+        "source": "string",
+        "retrieved_at": "string (ISO date)"
+    }
+}
