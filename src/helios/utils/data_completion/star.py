@@ -226,23 +226,75 @@ def complete_star_data(star_data):
     return star_data
 
 def estimate_temperature_from_sp_type(sp_type):
-    """Simple mapping from spectral type to effective temperature."""
-    mapping = {
-        'O': 30000.0,
-        'B': 20000.0, 
-        'A': 8500.0, 
-        'F': 6500.0,
-        'G': 5700.0, 
-        'K': 4500.0,
-        'M': 3200.0
+    """
+    Estimates effective temperature from spectral type string.
+    Supports basic interpolation for sub-types (e.g. G2, M5).
+    Defaults to Main Sequence (V) scale.
+    """
+    if not sp_type or not isinstance(sp_type, str):
+        return 5778.0
+        
+    # Basic Main Sequence Scale (roughly)
+    # Type: (T_eff at 0, T_eff at 5, T_eff at 9) - approximate linear or steps
+    # We will just map specific integer subtypes
+    
+    # Tables from standard references (e.g. Gray, 'Photospheres')
+    type_map = {
+        'O': {0: 38000, 5: 35000, 9: 31000},
+        'B': {0: 30000, 5: 15400, 8: 11000, 9: 10500},
+        'A': {0: 9700, 2: 8800, 5: 8100, 9: 7200}, # A0-A9
+        'F': {0: 7200, 2: 6900, 5: 6500, 8: 6200, 9: 6050}, 
+        'G': {0: 6000, 2: 5800, 5: 5660, 8: 5450, 9: 5350},
+        'K': {0: 5250, 2: 4900, 5: 4350, 7: 4000, 9: 3800}, # KMain Seq
+        'M': {0: 3800, 1: 3700, 2: 3600, 3: 3500, 4: 3400, 5: 3200, 6: 3000, 7: 2800, 8: 2600, 9: 2500},
     }
     
-    if sp_type and len(sp_type) > 0:
-        first_char = sp_type[0].upper()
-        if first_char in mapping:
-            return mapping[first_char]
+    # Parse generic "M2" or "G2V"
+    import re
+    s = sp_type.strip().upper()
+    match = re.search(r"([OBAFGKM])([0-9]?\.?[0-9]?)", s)
+    
+    if match:
+        letter = match.group(1)
+        subtype_str = match.group(2)
+        
+        subtype = 0.0
+        if subtype_str:
+            try:
+                subtype = float(subtype_str)
+            except: pass
             
-    return 5778.0 
+        if letter in type_map:
+            mapping = type_map[letter]
+            # Simple nearest neighbor or interpolation
+            # Get available subtypes
+            keys = sorted(mapping.keys())
+            
+            # Linear Interpolation
+            t_eff = 5778.0
+            
+            if subtype <= keys[0]:
+                t_eff = mapping[keys[0]]
+            elif subtype >= keys[-1]:
+                t_eff = mapping[keys[-1]]
+            else:
+                # Interpolate
+                for i in range(len(keys)-1):
+                    k1, k2 = keys[i], keys[i+1]
+                    if k1 <= subtype <= k2:
+                        v1, v2 = mapping[k1], mapping[k2]
+                        frac = (subtype - k1) / (k2 - k1)
+                        t_eff = v1 + frac * (v2 - v1)
+                        break
+            
+            return float(t_eff)
+            
+    # Fallback to simple mapping if parse failed
+    simple_map = {'O': 30000, 'B': 20000, 'A': 8500, 'F': 6500, 'G': 5700, 'K': 4500, 'M': 3200}
+    if s and s[0] in simple_map:
+        return float(simple_map[s[0]])
+        
+    return 5778.0
 
 def overview(data, indent=0):
     """

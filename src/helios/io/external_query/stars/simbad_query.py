@@ -25,6 +25,7 @@ def query_simbad(star_name, star_data):
             'ra(d)', 'dec(d)', 
             'pmra', 'pmdec', 
             'plx', 'sptype', 
+            'ids',
             *flux_fields
         )
         
@@ -38,6 +39,32 @@ def query_simbad(star_name, star_data):
         
         # Populate Identity
         star_data['identity']['simbad_id'] = str(table['MAIN_ID']) if 'MAIN_ID' in table.colnames else star_name
+        
+        # Populate Aliases
+        if 'ids' in table.colnames:
+            ids_raw = table['ids']
+            if not np.ma.is_masked(ids_raw):
+                # Simbad IDs are usually pipe-separated in Astroquery result
+                # e.g. "NAME Betelgeuse|* alf Ori|HD 39801|..."
+                ids_str = str(ids_raw)
+                # Decode if bytes
+                if isinstance(ids_raw, bytes):
+                    ids_str = ids_raw.decode('utf-8')
+                    
+                aliases = [a.strip() for a in ids_str.split('|') if a.strip()]
+                # Add current name and Simbad ID just in case
+                aliases.append(star_name)
+                if star_data['identity']['simbad_id']: 
+                    aliases.append(star_data['identity']['simbad_id'])
+                
+                # Deduplicate and clean
+                # Remove prefixes like "NAME" often found
+                cleaned_aliases = []
+                for a in aliases:
+                    if a.startswith("NAME "): a = a[5:]
+                    cleaned_aliases.append(a)
+                
+                star_data['identity']['aliases'] = sorted(list(set(cleaned_aliases)))
 
         # Populate Coordinates
         if 'RA_d' in table.colnames and 'DEC_d' in table.colnames:

@@ -1,7 +1,8 @@
 {
     "identity": {
         "name": "string",
-        "simbad_id": "string"
+        "simbad_id": "string",
+        "aliases": "array (string)"
     },
     "coordinates": {
         "ra": "float (deg)",

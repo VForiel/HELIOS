@@ -26,6 +26,7 @@ import os
 import json
 import time
 from helios.io.external_query.stars import query_simbad, query_vizier, query_stsci_calspec, query_vizier_spectra
+from helios.io.external_query.stars.vizier_spectra_extended import query_extended_spectra
 from helios.io.external_query.stars.serialization import serialize_star_data, deserialize_star_data
 
 def get_star_properties(star_name, complete_data=False, plot=False, force=False):
@@ -85,7 +86,7 @@ def get_star_properties(star_name, complete_data=False, plot=False, force=False)
         
         # Structure to populate
         star_data = {
-            'identity': {'name': star_name, 'simbad_id': None},
+            'identity': {'name': star_name, 'simbad_id': None, 'aliases': []},
             'coordinates': {'ra': None, 'dec': None, 'frame': 'icrs'},
             'kinematics': {'pm_ra': None, 'pm_dec': None, 'radial_velocity': None},
             'physics': {'parallax': None, 'distance': None, 'spectral_type': None, 'temperature_eff': None},
@@ -108,6 +109,10 @@ def get_star_properties(star_name, complete_data=False, plot=False, force=False)
             # Fallback Vizier Spectra
             if len(star_data['sed']['wavelength']) == 0:
                 star_data = query_vizier_spectra(star_name, star_data)
+
+            # Extended Catalogs (Alekseeva, Glushneva, etc.)
+            if len(star_data['sed']['wavelength']) == 0:
+                star_data = query_extended_spectra(star_name, star_data)
         
         # Process retrieved photometry into Star Data Structure
         sed_temp = star_data.pop('_sed_temp')

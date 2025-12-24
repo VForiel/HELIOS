@@ -31,6 +31,8 @@ def query_stsci_calspec(star_name, star_data):
     Uses temporary files for FITS download to keep cache clean (only JSONs persist).
     """
     print(f"Querying MAST for CALSPEC reference of {star_name}...")
+    Observations.TIMEOUT = 5
+
     
     # Mapping common names to MAST target names if needed
     target = star_name
