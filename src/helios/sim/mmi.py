@@ -158,19 +158,27 @@ def _render_contrib_frame_static(frame_idx, z_grid, x_grid, intensity_total_evol
     filename = os.path.join(output_dir, f"frame_{frame_idx:05d}.png")
     z_val = z_grid[frame_idx]
 
-    fig = plt.figure(figsize=(10, 12))
-    gs = fig.add_gridspec(3, M, height_ratios=[1, 1, 1])
+    fig = plt.figure(figsize=(10, 16))
+    gs = fig.add_gridspec(4, M, height_ratios=[1.5, 1, 1, 1])
     
     # MMI Plots (Top rows)
     ax_static = fig.add_subplot(gs[0, :])
     ax_anim = fig.add_subplot(gs[1, :])
     
-    # Polar Plots (Bottom Row)
+    # Polar Plots (3rd Row)
     polar_axes = []
     for j in range(M):
         ax_p = fig.add_subplot(gs[2, j], projection='polar')
         ax_p.set_title(f"Output {j+1}", fontsize=10)
         polar_axes.append(ax_p)
+
+    # Z-Profile Plots (4th Row) - Grouped
+    z_axes = []
+    # Single subplot spanning all columns
+    ax_z = fig.add_subplot(gs[3, :])
+    ax_z.set_title(f"Z-Profile All Outputs", fontsize=9)
+    ax_z.set_xlabel("z [um]")
+    z_axes.append(ax_z)
         
     # -- Static Plot --
     extent = [0, L*1e6, 0, W*1e6]
@@ -212,10 +220,39 @@ def _render_contrib_frame_static(frame_idx, z_grid, x_grid, intensity_total_evol
         tot = np.sum(phasors[frame_idx, j, :])
         ax_p.plot([0, np.angle(tot)], [0, np.abs(tot)], 'k--', lw=2, label="Total" if frame_idx==0 else "")
         
+
         if j == M-1:
             # Legend (simplified)
             # ax_p.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1), fontsize=8)
             pass
+
+    # -- Z-Profile Plots (Grouped) --
+    ax_z = z_axes[0] # Single axis
+    
+    # Max intensity for scaling
+    max_int_z = np.max(intensity_total_evol)*1.1
+    z_colors = plt.cm.get_cmap('tab10', M)
+
+    for j in range(M):
+        # Find x index for this output
+        x_out = output_positions[j]
+        ix = np.argmin(np.abs(x_grid - x_out))
+        
+        # Extract I(z) at this x
+        I_z = intensity_total_evol[:, ix]
+        
+        ax_z.plot(z_grid*1e6, I_z, color=z_colors(j), lw=1.5, label=f'Out {j+1}' if frame_idx==0 else "")
+        
+        # Moving Point
+        ax_z.plot(z_val*1e6, I_z[frame_idx], 'o', color=z_colors(j), markersize=4)
+        
+    # Moving Vertical Line
+    ax_z.axvline(x=z_val*1e6, color='r', linestyle='--', lw=1.5)
+        
+    ax_z.set_xlim(0, L*1e6)
+    ax_z.set_ylim(0, max_int_z)
+    if frame_idx == 0:
+        ax_z.legend(loc='upper right', fontsize=8)
 
     plt.tight_layout()
     plt.savefig(filename, dpi=100)
