@@ -1,0 +1,13 @@
+--- Diagnosing MAST for alpha lyr ---
+Total Observations: 919
+Error in broad search: unhashable type: 'MaskedConstant'
+
+Criteria {'provenance_name': 'CALSPEC'}: Found 0 results.
+
+Criteria {'project': 'CALSPEC'}: Found 0 results.
+
+Criteria {'obs_collection': 'CALSPEC'}: Found 0 results.
+
+Criteria {'target_name': 'alpha_lyr'}: Error astroquery.utils.process_asyncs.async_to_sync.<locals>.create_method.<locals>.newmethod() got multiple values for keyword argument 'target_name'
+
+Criteria {'target_name': 'alpha lyr'}: Error astroquery.utils.process_asyncs.async_to_sync.<locals>.create_method.<locals>.newmethod() got multiple values for keyword argument 'target_name'

@@ -15,7 +15,7 @@ def main():
     for star in stars:
         print(f"\n--- Processing {star} ---")
         try:
-            data = get_star_properties(star, plot=False)
+            data = get_star_properties(star, complete_data=True, plot=False)
             if data:
                 # Pretty print the dictionary structure
                 print(f"Data retrieved for {star}:")

@@ -1,0 +1,11 @@
+--- Debugging MAST for alpha lyr ---
+Found 919 observations.
+Cols: ['intentType', 'obs_collection', 'provenance_name', 'instrument_name', 'project', 'filters', 'wavelength_region', 'target_name', 'target_classification', 'obs_id', 's_ra', 's_dec', 'dataproduct_type', 'proposal_pi', 'calib_level', 't_min', 't_max', 't_exptime', 'em_min', 'em_max', 'obs_title', 't_obs_release', 'proposal_id', 'proposal_type', 'sequence_number', 's_region', 'jpegURL', 'dataURL', 'dataRights', 'mtFlag', 'srcDen', 'obsid', 'distance']
+
+Unique provenance_name: ['STScI Office of Public Outreach', 'SPOC', 'HSLA', 'QLP', 'HAP-SVM', 'CALHRS', 'TASOC', 'HASP', 'TESS-SPOC', '3PI', 'CALWFPC2', 'CALWF3', 'HAP-MVM', 'HLA', 'CALSTIS', 'CALNIC', 'TEQUILA', 'CALJWST', 'CALACS', 'TICA']
+Unique obs_collection: ['PS1', 'IUE', 'HST', 'OPO', 'JWST', 'HLA', 'HLSP', 'TESS', 'BEFS']
+Unique project: ['PS1', 'HASP', 'HAP', 'HSLA', 'HST', 'JWST', 'HLA', 'TESS']
+Unique instrument_name: ['LWR', 'WFC3/IR', 'ACS/HRC', 'GPC1', 'HRS', 'STIS/FUV-MAMA', 'STIS/CCD', 'WFC3/UVIS', 'NIRCAM/CORON', 'WFPC2/WFC', 'STIS', 'LWP', 'MIRI/CORON', 'SWP', 'NICMOS/NIC2', 'BEFS', 'HRS/2', 'HRS/1', 'WFPC2/PC', 'STIS/NUV-MAMA']
+Unique target_name: ['ALP-LYR', 'HD172167-PSF', 'VEGA', '157587146', 'Vega', 'ALPHA LYRAE', 'HD172167-V6', 'SPYBAL', 'HD172167', 'DARK', 'HD172167-CALIB', 'HD 172167', 'ALF LYR', 'SKY BACKGROUND', 'BIAS', 'WAVE', 'V-ALF-LYR', 'ALPHA-LYRAE2', 'HD172167-CP', 'VEGA W/OFFSET']
+
+--- Searching for 'CALSPEC' ---
