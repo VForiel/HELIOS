@@ -42,7 +42,7 @@
         "bands": "array (string)"
     },
     "metadata": {
-        "source": "string",
+        "sources": "array (string)",
         "retrieved_at": "string (ISO date)"
     }
 }

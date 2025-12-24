@@ -74,8 +74,8 @@ def query_simbad(star_name, star_data):
             star_data['physics']['spectral_type'] = str(table['sp_type'])
             
         # Update metadata
-        if 'Simbad' not in star_data['metadata']['source']:
-             star_data['metadata']['source'].append('Simbad')
+        if 'Simbad' not in star_data['metadata']['sources']:
+             star_data['metadata']['sources'].append('Simbad')
 
         # --- Simbad Harvest Photometry ---
         simbad_bands = ['U', 'B', 'V', 'R', 'I', 'J', 'H', 'K', 'u', 'g', 'r', 'i', 'z']

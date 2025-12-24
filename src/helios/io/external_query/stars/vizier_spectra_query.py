@@ -35,8 +35,8 @@ def query_vizier_spectra(star_name, star_data):
                 star_data['sed']['wavelength'] = w_q.to(u.micron)
                 star_data['sed']['flux'] = f_nu
                 
-                if 'Vizier CALSPEC' not in star_data['metadata']['source']:
-                    star_data['metadata']['source'].append('Vizier CALSPEC')
+                if 'Vizier CALSPEC' not in star_data['metadata']['sources']:
+                    star_data['metadata']['sources'].append('Vizier CALSPEC')
                     print(f"Success: Retrieved spectrum from Vizier CALSPEC ({len(w_q)} points)")
                 return star_data
     except Exception:
@@ -80,8 +80,8 @@ def query_vizier_spectra(star_name, star_data):
                     star_data['sed']['wavelength'] = w_arr.to(u.micron)
                     star_data['sed']['flux'] = f_nu
                     
-                    if 'Vizier (Burnashev)' not in star_data['metadata']['source']:
-                        star_data['metadata']['source'].append('Vizier (Burnashev)')
+                    if 'Vizier (Burnashev)' not in star_data['metadata']['sources']:
+                        star_data['metadata']['sources'].append('Vizier (Burnashev)')
                         print(f"Success: Retrieved spectrum from Burnashev Catalog ({len(w_arr)} points)")
                         
     except Exception as e:

@@ -4,7 +4,7 @@ Demo script for retrieving comprehensive Star Properties using helios.
 """
 
 import matplotlib.pyplot as plt
-from helios.io.external_query.star_properties import get_star_properties
+from helios.io.external_query.stars.query_all import get_star_properties
 import pprint
 
 def main():
@@ -18,8 +18,8 @@ def main():
             data = get_star_properties(star, complete_data=True, plot=False)
             if data:
                 # Pretty print the dictionary structure
-                print(f"Data retrieved for {star}:")
-                pprint.pprint(data, depth=2)
+                print(f"Data retrieved for {star}")
+                # pprint.pprint(data, depth=2)
                 
                 sed = data['sed']
                 photo = data.get('photometry', {})

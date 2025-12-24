@@ -80,8 +80,8 @@ def query_vizier(star_name, star_data):
                                 sed_temp['flux_error'].append(err_flux)
                                 data_found = True
                     
-                    if data_found and cat_name not in star_data['metadata']['source']:
-                        star_data['metadata']['source'].append(cat_name)
+                    if data_found and cat_name not in star_data['metadata']['sources']:
+                        star_data['metadata']['sources'].append(cat_name)
                         
             except Exception:
                  pass

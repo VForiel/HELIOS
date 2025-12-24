@@ -1,5 +1,5 @@
 
-from helios.io.external_query.star_properties import get_star_properties
+from helios.io.external_query.stars.query_all import get_star_properties
 from helios.utils.data_completion.star import overview
 
 def main():

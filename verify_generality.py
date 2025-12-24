@@ -1,5 +1,5 @@
 
-from helios.io.external_query.star_properties_sources.stsci_query import query_stsci_calspec
+from helios.io.external_query.stars.query_all import get_star_properties
 import numpy as np
 
 # Test with Sirius (alpha CMa) - A well known CALSPEC standard
