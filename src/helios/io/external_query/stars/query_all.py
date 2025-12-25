@@ -29,7 +29,9 @@ import time
 from helios.io.external_query.stars import query_simbad, query_vizier, query_stsci_calspec, query_vizier_spectra
 from helios.io.external_query.stars.vizier_spectra_extended import query_extended_spectra
 from helios.io.external_query.stars.eso_query import query_eso_spectra
+from helios.io.external_query.stars.eso_query import query_eso_spectra
 from helios.io.external_query.stars.irsa_query import query_irsa_iso
+from helios.io.external_query.solar_system import get_solar_system_properties
 from helios.io.external_query.stars.serialization import serialize_star_data, deserialize_star_data
 
 def get_star_properties(star_name, complete_data=False, plot=False, force=False):
@@ -62,10 +64,45 @@ def get_star_properties(star_name, complete_data=False, plot=False, force=False)
     safe_name = "".join([c for c in star_name if c.isalnum() or c in (' ', '_', '-')]).strip()
     cache_file = os.path.join(cache_dir, f"{safe_name}.json")
     
+    # -------------------------------------------------------------
+    # 0. DISPATCH: Solar System
+    # -------------------------------------------------------------
+    solar_system_names = ['Sun', 'Mercury', 'Venus', 'Mars', 'Jupiter', 'Saturn', 'Uranus', 'Neptune', 'Earth']
+    if star_name.capitalize() in solar_system_names:
+        print(f"Detected Solar System Object: {star_name}...")
+        star_data = get_solar_system_properties(star_name, complete_data=complete_data, force=force)
+        return star_data
+
+    # -------------------------------------------------------------
+    # 1. DISPATCH: Exoplanets
+    # -------------------------------------------------------------
+    # Check if we should route to exoplanets module
+    # A. Check Exoplanet Cache First
+    from helios.io.external_query.exoplanets import get_exoplanet_properties
+    try:
+        exo_cache_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "exoplanets", "cache", f"{safe_name}.json")
+        if os.path.exists(exo_cache_path) and not force:
+             # It exists in Exo cache, so it IS an exoplanet
+             return get_exoplanet_properties(star_name, complete_data=complete_data, force=force)
+    except: pass
+    
+    # B. Heuristic: Common Exoplanet naming (ends in ' b', ' c', etc or known list)
+    is_likely_planet = star_name.split(' ')[-1] in ['b', 'c', 'd', 'e', 'f', 'g']
+    if is_likely_planet:
+        print(f"Probable Exoplanet '{star_name}' detected. Checking Archive...")
+        exo_data = get_exoplanet_properties(star_name, complete_data=complete_data, force=force)
+        if exo_data:
+            return exo_data
+        else:
+            print("Not found in Exoplanet Archive, falling back to Star Search.")
+
+    # -------------------------------------------------------------
+    # 2. DISPATCH: Stars (Standard Flow)
+    # -------------------------------------------------------------
     star_data = None
     cache_valid = False
     
-    # 1. Try Loading Cache
+    # Try Loading Star Cache
     if not force and os.path.exists(cache_file):
         # Check age (1 year = 365 * 24 * 3600 seconds)
         max_age = 365 * 24 * 3600

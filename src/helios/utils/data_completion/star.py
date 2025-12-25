@@ -28,15 +28,24 @@ def complete_star_data(star_data):
     physics = star_data.get('physics', {})
     
     # Distance <-> Parallax (Assume quantities)
+    # Relation: tan(p) = 1 AU / d  => p ~ 1 AU / d
     if physics.get('parallax') is not None and physics.get('distance') is None:
          plx = physics['parallax']
          if plx.value > 0:
-             physics['distance'] = (1000.0 * u.mas / plx).to(u.pc)
+             # d = 1 AU / tan(p) ~ 1 AU / p
+             # Use safe conversion
+             try:
+                 physics['distance'] = (1.0 * u.AU / np.tan(plx)).to(u.pc)
+             except:
+                 # Small angle approximation
+                 physics['distance'] = (1.0 * u.AU / plx.to(u.rad).value).to(u.pc)
              
     if physics.get('distance') is not None and physics.get('parallax') is None:
         dist = physics['distance']
         if dist.value > 0:
-            physics['parallax'] = (1000.0 * u.pc / dist).to(u.mas)
+            # p ~ 1 AU / d
+            # Result in radians, convert to mas
+            physics['parallax'] = (np.arctan(1.0 * u.AU / dist)).to(u.mas)
             
     # Temperature Estimation
     if physics.get('temperature_eff') is None:

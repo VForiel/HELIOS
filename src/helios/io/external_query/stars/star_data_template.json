@@ -1,49 +1,121 @@
 {
     "identity": {
-        "name": "string",
-        "simbad_id": "string",
-        "aliases": "array (string)"
+        "name": null,
+        "simbad_id": null,
+        "aliases": []
     },
     "coordinates": {
-        "ra": "float (deg)",
-        "ra_error": "float (mas)",
-        "dec": "float (deg)",
-        "dec_error": "float (mas)",
-        "frame": "string (e.g. 'icrs')"
+        "ra": {
+            "value": null,
+            "unit": "deg"
+        },
+        "ra_error": {
+            "value": null,
+            "unit": "mas"
+        },
+        "dec": {
+            "value": null,
+            "unit": "deg"
+        },
+        "dec_error": {
+            "value": null,
+            "unit": "mas"
+        },
+        "frame": "icrs"
     },
     "kinematics": {
-        "pm_ra": "float (mas/yr)",
-        "pm_ra_error": "float (mas/yr)",
-        "pm_dec": "float (mas/yr)",
-        "pm_dec_error": "float (mas/yr)",
-        "radial_velocity": "float (km/s)",
-        "radial_velocity_error": "float (km/s)"
+        "pm_ra": {
+            "value": null,
+            "unit": "mas/yr"
+        },
+        "pm_ra_error": {
+            "value": null,
+            "unit": "mas/yr"
+        },
+        "pm_dec": {
+            "value": null,
+            "unit": "mas/yr"
+        },
+        "pm_dec_error": {
+            "value": null,
+            "unit": "mas/yr"
+        },
+        "radial_velocity": {
+            "value": null,
+            "unit": "km/s"
+        },
+        "radial_velocity_error": {
+            "value": null,
+            "unit": "km/s"
+        }
     },
     "physics": {
-        "parallax": "float (mas)",
-        "parallax_error": "float (mas)",
-        "distance": "float (pc)",
-        "distance_error": "float (pc)",
-        "spectral_type": "string",
-        "temperature_eff": "float (K)"
+        "parallax": {
+            "value": null,
+            "unit": "mas"
+        },
+        "parallax_error": {
+            "value": null,
+            "unit": "mas"
+        },
+        "distance": {
+            "value": null,
+            "unit": "pc"
+        },
+        "distance_error": {
+            "value": null,
+            "unit": "pc"
+        },
+        "spectral_type": null,
+        "temperature_eff": {
+            "value": null,
+            "unit": "K"
+        }
     },
     "sed": {
-        "wavelength": "array (microns)",
-        "flux": "array (Jy)",
-        "flux_error": "array (Jy)",
-        "flux_10pc": "array (Jy) [Absolute Spectrum]",
-        "frequency": "array (Hz)",
-        "bands": "array (string)"
+        "wavelength": {
+            "value": [],
+            "unit": "um"
+        },
+        "flux": {
+            "value": [],
+            "unit": "Jy"
+        },
+        "flux_error": {
+            "value": [],
+            "unit": "Jy"
+        },
+        "flux_10pc": {
+            "value": [],
+            "unit": "Jy"
+        },
+        "frequency": {
+            "value": [],
+            "unit": "Hz"
+        },
+        "bands": []
     },
     "photometry": {
-        "wavelength": "array (microns)",
-        "flux": "array (Jy)",
-        "flux_error": "array (Jy)",
-        "flux_10pc": "array (Jy) [Absolute Photometry]",
-        "bands": "array (string)"
+        "wavelength": {
+            "value": [],
+            "unit": "um"
+        },
+        "flux": {
+            "value": [],
+            "unit": "Jy"
+        },
+        "flux_error": {
+            "value": [],
+            "unit": "Jy"
+        },
+        "flux_10pc": {
+            "value": [],
+            "unit": "Jy"
+        },
+        "bands": []
     },
     "metadata": {
-        "sources": "array (string)",
-        "retrieved_at": "string (ISO date)"
+        "sources": [],
+        "retrieved_at": null
     }
 }

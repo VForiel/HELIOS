@@ -1,0 +1,89 @@
+{
+    "identity": {
+        "name": null,
+        "type": "SolarSystem",
+        "jpl_id": null
+    },
+    "ephemeris": {
+        "epoch": null,
+        "coordinates": {
+            "ra": {
+                "value": null,
+                "unit": "deg"
+            },
+            "dec": {
+                "value": null,
+                "unit": "deg"
+            },
+            "delta": {
+                "value": null,
+                "unit": "AU"
+            },
+            "r": {
+                "value": null,
+                "unit": "AU"
+            },
+            "frame": "icrs"
+        },
+        "velocity": {
+            "d_ra_cosdec": {
+                "value": null,
+                "unit": "arcsec/h"
+            },
+            "d_dec": {
+                "value": null,
+                "unit": "arcsec/h"
+            }
+        }
+    },
+    "physics": {
+        "radius": {
+            "value": null,
+            "unit": "km"
+        },
+        "mass": {
+            "value": null,
+            "unit": "kg"
+        },
+        "albedo_bond": null,
+        "albedo_geom": null,
+        "temperature_eff": {
+            "value": null,
+            "unit": "K"
+        },
+        "rotation_period": {
+            "value": null,
+            "unit": "h"
+        }
+    },
+    "orbital_elements": {
+        "semi_major_axis": {
+            "value": null,
+            "unit": "AU"
+        },
+        "eccentricity": null,
+        "inclination": {
+            "value": null,
+            "unit": "deg"
+        },
+        "period": {
+            "value": null,
+            "unit": "yr"
+        }
+    },
+    "sed": {
+        "wavelength": {
+            "value": [],
+            "unit": "um"
+        },
+        "flux": {
+            "value": [],
+            "unit": "Jy"
+        },
+        "source": null
+    },
+    "metadata": {
+        "sources": [],
+        "retrieved_at": null
+    }
+}

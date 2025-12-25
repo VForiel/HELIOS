@@ -1,0 +1,99 @@
+{
+    "identity": {
+        "name": null,
+        "type": "Exoplanet",
+        "aliases": []
+    },
+    "host_star": {
+        "name": null,
+        "distance": {
+            "value": null,
+            "unit": "pc"
+        },
+        "temperature_eff": {
+            "value": null,
+            "unit": "K"
+        },
+        "radius": {
+            "value": null,
+            "unit": "R_sun"
+        },
+        "mass": {
+            "value": null,
+            "unit": "M_sun"
+        },
+        "coordinates": {
+            "ra": {
+                "value": null,
+                "unit": "deg"
+            },
+            "dec": {
+                "value": null,
+                "unit": "deg"
+            },
+            "frame": "icrs"
+        }
+    },
+    "physics": {
+        "radius": {
+            "value": null,
+            "unit": "R_earth"
+        },
+        "mass": {
+            "value": null,
+            "unit": "M_earth"
+        },
+        "temperature_eq": {
+            "value": null,
+            "unit": "K"
+        },
+        "density": {
+            "value": null,
+            "unit": "g/cm3"
+        }
+    },
+    "orbit": {
+        "semi_major_axis": {
+            "value": null,
+            "unit": "AU"
+        },
+        "period": {
+            "value": null,
+            "unit": "d"
+        },
+        "eccentricity": null,
+        "inclination": {
+            "value": null,
+            "unit": "deg"
+        },
+        "transit_midpoint": {
+            "value": null,
+            "unit": "jd"
+        },
+        "argument_periastron": {
+            "value": null,
+            "unit": "deg"
+        }
+    },
+    "photometry": {
+        "V": {
+            "value": null,
+            "unit": "mag"
+        }
+    },
+    "sed": {
+        "wavelength": {
+            "value": [],
+            "unit": "um"
+        },
+        "flux": {
+            "value": [],
+            "unit": "Jy"
+        },
+        "reference": null
+    },
+    "metadata": {
+        "source": null,
+        "retrieved_at": null
+    }
+}
