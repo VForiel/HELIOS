@@ -94,20 +94,104 @@ def main():
                 data = get_solar_system_properties(name, force=False)
                 if not data: continue
                 
-                # 1. Absolute SED (10pc) -> Continuous
-                # In our new structure, data['sed']['flux'] IS the Absolute Flux at 10pc.
+                # We need to perform Hybrid stitching (Real + Synthetic Thermal)
+                # 1. Get Real Data (if any)
                 sed_data = data.get('sed', {})
-                if sed_data and len(sed_data.get('flux', [])) > 0:
-                    fl = sed_data['flux']
+                wl_real = []
+                flux_real = []
+                if sed_data and len(sed_data.get('wavelength', [])) > 0:
+                     wl_real = sed_data['wavelength']
+                     flux_real = sed_data['flux']
+                
+                # Need params: parameters are in data['physics'] usually or CONSTANTS
+                from helios.io.external_query.solar_system.constants import SOLAR_SYSTEM_DATA
+                
+                physics = data.get('physics', {})
+                radius = physics.get('radius')
+                teff = physics.get('temperature_eff')
+                albedo = physics.get('albedo') 
+                
+                # Distance: Planet to Sun (semi-major axis) and Planet to Obs (distance)
+                # 'r' in ephemeris is distance to Sun? 'delta' is distance to Earth.
+                # data['ephemeris']['coordinates']['r'] -> Sun-Planet dist
+                # data['ephemeris']['coordinates']['delta'] -> Obs-Planet dist
+                
+                ephem = data.get('ephemeris', {}).get('coordinates', {})
+                dist_sun = ephem.get('r')
+                dist_obs = ephem.get('delta')
+                
+                # FALLBACK to Constants if missing (e.g., failed JPL query)
+                if name in SOLAR_SYSTEM_DATA:
+                    defaults = SOLAR_SYSTEM_DATA[name]
+                    if radius is None: radius = defaults.get('radius')
+                    if teff is None: teff = defaults.get('teff')
+                    if albedo is None: albedo = defaults.get('albedo')
                     
-                    current_max = np.max(fl)
-                    if hasattr(current_max, 'value'): current_max = current_max.value
-                    if current_max > global_max_flux: global_max_flux = current_max
-
-                    print(f"  > Plotting Abs SED. Max Flux: {current_max} (Nb: {len(fl)})")
-                    plt.loglog(sed_data['wavelength'], fl, '-', label=f"{name} (Abs @10pc)")
+                    # Approximations for distance if missing
+                    # Use Semi-Major Axis for dist_sun if r is missing?
+                    # Or just 1 AU if Earth, 5.2 AU if Jupiter etc.
+                    # We don't have 'a' in CONSTANTS? We can infer or add.
+                    # Let's assume r ~ a. S_p = S_sun * (1/r_au)^2.
+                    if dist_sun is None:
+                        # Rude approximation map
+                        avg_dists = {'Earth': 1.0*u.AU, 'Jupiter': 5.2*u.AU, 'Mercury': 0.4*u.AU, 'Venus': 0.7*u.AU, 'Mars': 1.5*u.AU}
+                        dist_sun = avg_dists.get(name, 1.0*u.AU)
+                
+                # If we want Absolute @ 10pc, we override dist_obs
+                dist_metric = 10.0 * u.pc
+                
+                # If we lack parameters, skip synth but plot Real if avail
+                if radius is not None and teff is not None and dist_sun is not None:
+                     from helios.sim.spectrum import simulate_lit_planet
+                     from helios.io.external_query.solar_system.spectrum import get_solar_spectrum
+                     
+                     # Common Grid for Hybrid
+                     wl_grid = np.logspace(np.log10(0.1), np.log10(500.0), 1000) * u.um
+                     
+                     # Get Sun
+                     sun_spec = get_solar_spectrum() # (wl, flux@1AU)
+                     
+                     if albedo is None: albedo = 0.3 # Default
+                     
+                     # Simulate
+                     # We use dist_metric (10pc) for the output flux level
+                     flux_total, flux_refl, flux_therm = simulate_lit_planet(
+                         wl_grid, sun_spec, dist_sun, radius, dist_metric, float(albedo), teff
+                     )
+                     
+                     # 3. Stitch
+                     
+                     if len(wl_real) > 0:
+                         # Interpolate Real to Grid
+                         flux_real_interp = np.interp(wl_grid.value, wl_real.to(u.um).value, flux_real.to(u.Jy).value, left=0, right=0) * u.Jy
+                         
+                         # Mask where Real Data is valid
+                         min_real, max_real = np.min(wl_real), np.max(wl_real)
+                         in_range = (wl_grid >= min_real) & (wl_grid <= max_real)
+                         
+                         # Construct Hybrid
+                         flux_hybrid = flux_therm.copy() # Start with Thermal
+                         
+                         flux_hybrid[in_range] += flux_real_interp[in_range]
+                         # Outside range: Synthetic Reflected tail + Thermal
+                         flux_hybrid[~in_range] += flux_refl[~in_range] 
+                         
+                         final_flux = flux_hybrid
+                         label_txt = f"{name} (Hybrid: Real+Synth)"
+                     else:
+                         # Fully Synthetic
+                         final_flux = flux_total
+                         label_txt = f"{name} (Synthetic)"
+                         
+                     current_max = np.max(final_flux)
+                     if hasattr(current_max, 'value'): current_max = current_max.value
+                     if current_max > global_max_flux: global_max_flux = current_max
+                     
+                     print(f"  > Plotting {label_txt}. Max: {current_max:.2e}")
+                     plt.loglog(wl_grid, final_flux, '-', label=label_txt)
+                     
                 else:
-                    print(f"  > No spectral data in cache for {name} (Strict Real Data Policy).")
+                    print(f"  > Missing physics for {name}, cannot simulate.")
 
 
             elif obj_type == "Exoplanet":
@@ -167,8 +251,8 @@ def main():
     else:
         plt.ylim(bottom=1e-10)
     
-    # Set X-limits (User Request: 0.1 to 30 um)
-    plt.xlim(0.1, 30.0)
+    # Set X-limits (Restored to 20um as requested)
+    plt.xlim(0.1, 20.0)
     
     plt.tight_layout()
     
