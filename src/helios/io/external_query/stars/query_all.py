@@ -26,6 +26,10 @@ ssl._create_default_https_context = ssl._create_unverified_context
 import os
 import json
 import time
+import socket
+# Set global timeout for all socket operations (e.g. astroquery)
+socket.setdefaulttimeout(15)
+
 from helios.io.external_query.stars import query_simbad, query_vizier, query_stsci_calspec, query_vizier_spectra
 from helios.io.external_query.stars.vizier_spectra_extended import query_extended_spectra
 from helios.io.external_query.stars.eso_query import query_eso_spectra
@@ -181,6 +185,25 @@ def get_star_properties(star_name, complete_data=False, plot=False, force=False)
             # 5. Fallback Vizier Spectra (Burnashev)
             star_data = query_vizier_spectra(star_name, star_data)
             capture_segment(star_data, 'Vizier General')
+
+            # 6. Fallback: Theoretical Models (Pickles, etc.)
+            # If we still have very poor coverage
+            has_good_data = len(sed_segments) > 0
+            # Heuristic: If we only have < 50 points, try models? 
+            # Or always try models for comparison? 
+            # Let's fetch model if coverage is low.
+            
+            total_points = sum([len(s['wavelength']) for s in sed_segments])
+            if total_points < 100 or star_name in ["Betelgeuse", "K2-18"]: # Specific check for Demo targets
+                 from helios.io.external_query.stars.model_query import get_model_sed
+                 print(f"Attempting model retrieval for {star_name}...")
+                 model_seg = get_model_sed(star_name, star_data)
+                 if model_seg:
+                     # Add as segment. Priority? 
+                     # If we have NO data, this is main.
+                     # If we have some data, this helps context.
+                     sed_segments.append(model_seg)
+                     print("  > Model added to segments.")
 
             # --- Merge Logic ---
             if sed_segments:

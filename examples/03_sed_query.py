@@ -183,13 +183,30 @@ def main():
                      # Get Sun
                      sun_spec = get_solar_spectrum() # (wl, flux@1AU)
                      
-                     if albedo is None: albedo = 0.3 # Default
-                     
-                     # Simulate (Returns Jy usually)
-                     # We use dist_metric (10pc) for the output flux level
-                     flux_total, flux_refl, flux_therm = simulate_lit_planet(
-                         wl_grid, sun_spec, dist_sun, radius, dist_metric, float(albedo), teff
-                     )
+                     if name == "Sun":
+                         # Special case: Sun has no reflected/thermal model as a planet.
+                         # Just use the reference spectrum directly (scaled to 10pc)
+                         final_flux = sun_spec[1].to(u.Jy, equivalencies=u.spectral_density(sun_spec[0]))
+                         
+                         # Scale from 1AU to 10pc
+                         dist_1au = 1.0 * u.AU
+                         factor = (dist_1au / dist_metric)**2
+                         final_flux = final_flux * factor
+                         
+                         wl_grid = sun_spec[0]
+                         label_txt = "Sun (Abs @10pc)"
+                         
+                         # Skip stitching
+                         flux_total = final_flux
+                         wl_real = [] # Don't stitch
+                     else:
+                         if albedo is None: albedo = 0.3 # Default
+                         
+                         # Simulate (Returns Jy usually)
+                         # We use dist_metric (10pc) for the output flux level
+                         flux_total, flux_refl, flux_therm = simulate_lit_planet(
+                             wl_grid, sun_spec, dist_sun, radius, dist_metric, float(albedo), teff
+                         )
                      
                      # 3. Stitch
                      

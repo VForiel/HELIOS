@@ -18,7 +18,9 @@ CALSPEC_DIRECT_MAP = {
     'sirius': 'http://ssb.stsci.edu/cdbs/calspec/sirius_stis_001.fits',
     'alpha cma': 'https://archive.stsci.edu/hlsps/reference_atlases/cdbs/calspec/sirius_stis_001.fits',
     '109 vir': 'https://archive.stsci.edu/hlsps/reference_atlases/cdbs/calspec/109vir_stis_001.fits',
-    'sun': 'https://archive.stsci.edu/hlsps/reference_atlases/cdbs/calspec/sun_reference_stis_002.fits'
+    'sun': 'https://archive.stsci.edu/hlsps/reference_atlases/cdbs/calspec/sun_reference_stis_002.fits',
+    'betelgeuse': 'https://archive.stsci.edu/hlsps/reference_atlases/cdbs/calspec/alp_ori_stis_001.fits',
+    'alpha ori': 'https://archive.stsci.edu/hlsps/reference_atlases/cdbs/calspec/alp_ori_stis_001.fits'
 }
 
 # Alternative base: archive.stsci.edu sometimes 404s, try hst.stsci.edu or standardized path
@@ -37,6 +39,7 @@ def query_stsci_calspec(star_name, star_data):
     # Mapping common names to MAST target names if needed
     target = star_name
     if star_name.lower() == 'vega': target = 'alpha lyr'
+    if star_name.lower() == 'betelgeuse': target = 'alpha ori'
     
     # We will use a temp file for the FITS
     temp_fd, temp_path = tempfile.mkstemp(suffix='.fits')
@@ -115,16 +118,24 @@ def query_stsci_calspec(star_name, star_data):
                             for row in products:
                                 uri = row['dataURI'].lower()
                                 if 'tica' in uri or 'tess' in uri: continue
-                                if uri.endswith('.fits') and 'calspec' in uri:
+                                
+                                # RELAXED FILTER: Look for FITS that are generic spectra or calspec
+                                # Common HST 1D outputs: x1d.fits, sx1.fits, c1d.fits
+                                is_fits = uri.endswith('.fits')
+                                is_spectrum = 'calspec' in uri or 'x1d' in uri or 'sx1' in uri or '_spc' in uri
+                                
+                                if is_fits and is_spectrum:
                                     candidate_rows.append(row)
                             
                             if candidate_rows:
-                                # Sort: prefer 'stis' -> 'mod'
+                                # Sort: prefer 'calspec' > 'x1d' > others
                                 def sort_key(row):
                                     fname = os.path.basename(row['dataURI']).lower()
                                     score = 0
-                                    if 'stis' in fname: score += 100
-                                    if 'mod' in fname: score += 50
+                                    if 'calspec' in fname: score += 1000
+                                    if 'x1d' in fname: score += 100
+                                    if 'sx1' in fname: score += 100
+                                    if 'stis' in fname: score += 50
                                     return score
                                 
                                 candidate_rows.sort(key=sort_key, reverse=True)
@@ -168,7 +179,7 @@ def query_stsci_calspec(star_name, star_data):
                         f_nu = f_q.to(u.Jy, equivalencies=u.spectral_density(w_q))
                         
                         star_data['sed']['wavelength'] = w_q.to(u.micron)
-                        star_data['sed']['flux'] = f_nu
+                        star_data['sed']['flux'] = np.nan_to_num(f_nu.value, nan=0.0) * u.Jy
                         
                         print(f"Success: Processed CALSPEC spectrum ({len(wave_angstrom)} points) for {star_name}")
                         if 'STScI CALSPEC' not in star_data['metadata']['sources']:

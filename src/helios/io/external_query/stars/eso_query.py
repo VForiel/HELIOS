@@ -52,13 +52,9 @@ def query_eso_spectra(star_name, star_data):
             print("  No spectra found in ESO Archive.")
             return star_data
             
-        print(f"  Found {len(table)} candidates. Checking for FITS...")
-        
-        # 3. Iterate candidates and try to download/parse
-        for row in table:
-            url = row['access_url']
-            inst = row['instrument_name']
-            print(f"  Checking {inst} spectrum: {url}")
+            print(f"  Found {len(table)} candidates. Checking for FITS...")
+            for row in table:
+                print(f"   [Candidate] {row['target_name']} | {row['instrument_name']} | {row['access_url']}")
             
             # Filter? XSHOOTER is best (high coverage from UV to NIR)
             # If we have XSHOOTER, prioritize it?
