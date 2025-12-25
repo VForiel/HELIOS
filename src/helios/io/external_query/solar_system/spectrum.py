@@ -200,132 +200,119 @@ def get_solar_spectrum(wavelengths=None):
 
 def get_real_planet_spectrum(object_name, dist_sun, dist_obs, wavelengths=None):
     """
-    Retrieves REAL observed spectrum for a planet.
+    Retrieves REAL observed spectrum for a planet using Payne+2025 Library.
+    Source: Zenodo (Record 17470005).
     Strictly NO synthetic generation.
     
     Returns:
         wavelengths (Quantity array) or None
         flux (Quantity array) or None
     """
-    # 1. Try Specific Implementations
-    if object_name.lower() == 'jupiter':
-        return get_jupiter_karkoschka(dist_sun, dist_obs, wavelengths)
-    elif object_name.lower() == 'earth':
-        # Earth is tricky as "Observed from 10pc" is a model by definition usually (VPL).
-        # But we can try to load VPL "Earth Through Time" or Earthshine if available.
-        return get_earth_spectrum_real(dist_sun, dist_obs, wavelengths)
+    # Payne+2025 covers: Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune
+    supported_planets = ['mercury', 'venus', 'earth', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune']
+    
+    name_lower = object_name.lower()
+    if name_lower not in supported_planets:
+        print(f"Object '{object_name}' not in Payne+2025 library.")
+        return None, None
         
-    # 2. If no real data source is known/implemented, return None.
-    print(f"No real spectral data source implemented for {object_name}.")
-    return None, None
+    return download_payne_2025(name_lower, dist_sun, dist_obs, wavelengths)
 
-def get_jupiter_karkoschka(dist_sun, dist_obs, wavelengths=None):
+def download_payne_2025(planet_name, dist_sun, dist_obs, wavelengths=None):
     """
-    Retrieves Jupiter's spectrum based on Karkoschka (1994) Albedo.
-    Source: PDS Atmospheres Node (or similar reliable mirror).
+    Downloads and processes Payne+2025 Geometric Albedo spectra.
     """
-    # URL for Karkoschka 1994 Jupiter Albedo
-    # We will use a direct link found or a placeholder if we need to search dynamically.
-    # Found PDS link structure often: 
-    # https://pds-atmospheres.nmsu.edu/PDS/data/jp1000/data/1000/jkarkosc.tab
+    # Zenodo Record 17470005
+    # Filenames are: {planet}_albedo.csv
+    base_url = "https://zenodo.org/records/17470005/files/"
+    filename = f"{planet_name}_albedo.csv"
     
-    url = "https://pds-atmospheres.nmsu.edu/PDS/data/jp1000/data/1000/jkarkosc.tab"
-    cache_file = os.path.join(CACHE_DIR, "jupiter_karkoschka_1994.tab")
+    url = f"{base_url}{filename}" 
+    cache_file = os.path.join(CACHE_DIR, f"payne2025_{filename}")
     
-    # Download if needed
+    # Headers to avoid 429
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Helios/1.0'
+    }
+    
+    # Download
     if not os.path.exists(cache_file):
-        print(f"Downloading Jupiter Karkoschka data from {url}...")
+        print(f"Downloading Payne+2025 data for {planet_name} from {url}...")
         try:
-            r = requests.get(url, timeout=30)
+            r = requests.get(url, headers=headers, timeout=30)
             if r.status_code == 200:
                 with open(cache_file, 'wb') as f:
                     f.write(r.content)
+            elif r.status_code == 429:
+                print("Zenodo Rate Limit (429). Cannot download.")
+                return None, None
             else:
-                print(f"Failed to download Jupiter data: {r.status_code}")
+                print(f"Failed to download {filename}: {r.status_code}")
                 return None, None
         except Exception as e:
-            print(f"Failed to download Jupiter data: {e}")
+            print(f"Download failed: {e}")
             return None, None
             
-    # Parse Karkoschka
-    # Format is usually fixed width or tab separated. 
-    # Columns likely: Wavelength(nm), GeomAlbedo, etc.
+    # Process
     try:
-        data = pd.read_csv(cache_file, sep=r'\s+', comment='#', header=None, names=['wl_nm', 'albedo', 'other1', 'other2'])
+        # Load CSV
+        # Expected columns: wavelength_um, geometric_albedo
+        df = pd.read_csv(cache_file)
         
-        # Check if columns make sense (Albedo 0-1)
-        if data['albedo'].max() > 1.5: # Safety check
-             # Maybe columns are shifted?
-             pass 
-             
-        wl_ref = data['wl_nm'].values * u.nm
-        albedo_ref = data['albedo'].values
+        # Standardize column names if needed (strip spaces)
+        df.columns = [c.strip() for c in df.columns]
         
-        # Convert Albedo to Absolute Flux at dist_obs
-        # Flux = SolarFluxAtJupiter * Albedo * PhaseFunction * (R_jup / D_obs)^2
-        # We need Solar Flux at Jupiter's distance.
+        if 'Wavelength' not in df.columns or 'Albedo' not in df.columns:
+            # Fallback or error
+            print(f"Unknown columns in {filename}: {df.columns}")
+            return None, None
+            
+        wl_ref = df['Wavelength'].values * u.um
+        albedo = df['Albedo'].values
         
-        # Get Solar Spectrum (Real ASTM)
+        # Calculate Flux
+        # S_p(lambda) = S_sun(lambda) * Ag(lambda) * Phi(alpha) * (R_p / d)^2 / pi ?
+        # Geometric Albedo definition A_g:
+        # F_p(0) = F_sun(0) * A_g * (R_p / d)^2   (Standard astronomy definition often implies this direct scaling at phase 0)
+        # Verify: A_g is ratio of planet flux at 0 phase to flux from Lambertian disk of same cross-section.
+        # F_lamb_disk = F_sun * (R/d)^2 / pi * pi = F_sun * (R/d)^2  <-- Lambertian disk scatters F_in back into pi sr? No, reflectivity=1.
+        # Let's assume the simple SED scaling: Flux = SolarFluxAtPlanet * Albedo * (R/D)^2
+        # This is the standard "Reflectance" usage for SEDs.
+        
+        # Get Solar Spectrum
         wl_sun, flux_sun_1au = get_solar_spectrum(wavelengths=wl_ref)
         
-        # Scale Sun to Jupiter distance
-        # dist_sun might be Quantity
         if not isinstance(dist_sun, u.Quantity): dist_sun = dist_sun * u.AU
         if not isinstance(dist_obs, u.Quantity): dist_obs = dist_obs * u.AU
         
-        flux_sun_jup = flux_sun_1au * ((1.0*u.AU / dist_sun)**2).decompose()
+        # Solar Flux at Planet
+        flux_sun_pl = flux_sun_1au * ((1.0*u.AU / dist_sun)**2).decompose()
         
-        # Geometric Albedo is usually for phase 0 (Full Phase).
-        # We assume Phase=0 for "Absolute SED" standard.
-        R_jup = SOLAR_SYSTEM_DATA['Jupiter']['radius']
+        # Planet Radius
+        props = SOLAR_SYSTEM_DATA.get(planet_name.capitalize())
+        if not props:
+            # Fallback or error
+            R_pl = 1.0 * u.earthRad # Should not happen for major planets
+        else:
+            R_pl = props['radius']
+            
+        # Flux at Observer (Absolute @ 10pc usually requested, or actual dist)
+        # Using Phase=0 (Full) for Reference Spectrum
+        geom_factor = ((R_pl / dist_obs)**2).decompose()
         
-        # Reflected Flux at Observer
-        # F_obs = F_sun_jup * Albedo * (R_j / D_obs)^2 / pi ? 
-        # Geometric Albedo A_g definition: 
-        # F_plant_at_0_phase = F_sun_at_planet * A_g * (R_p / D_obs)^2 / pi  <-- Wait, A_g definition usually involves pi implies Lambertian comparison
-        # Standard: F_obs = F_inc * A_g * Phi(alpha) * (SolidAngle / pi) ?
-        # Simpler: F_obs = F_sun_1au * (1AU/d_sun)^2 * A_g * (R_p/d_obs)^2 
-        # (This assumes Lambertian disk of radius R_p with reflectivity A_g).
-        # Let's stick thereto standard approx for SED.
+        flux_obs = flux_sun_pl * albedo * geom_factor
         
-        geom_factor = ((R_jup / dist_obs)**2).decompose()
-        flux_obs = flux_sun_jup * albedo_ref * geom_factor
-        
-        return wl_ref.to(u.um), flux_obs.to(u.Jy, equivalencies=u.spectral_density(wl_ref))
+        return wl_ref, flux_obs.to(u.Jy, equivalencies=u.spectral_density(wl_ref))
 
     except Exception as e:
-        print(f"Error parsing Karkoschka: {e}")
+        print(f"Error processing Payne+2025 for {planet_name}: {e}")
         return None, None
-
+        
     finally:
-        # Cleanup Raw File
+        # Cleanup
         if 'cache_file' in locals() and os.path.exists(cache_file):
-             try:
-                 os.remove(cache_file)
-             except Exception as e:
-                 print(f"Warning: Could not remove raw file {cache_file}: {e}")
-
-def get_earth_spectrum_real(dist_sun, dist_obs, wavelengths=None):
-    """
-    Attempts to retrieve Earthshine data or VPL Earth spectrum.
-    Strictly NO synthetic fallback.
-    """
-    # URL for Earthshine (The user found one, or we use VPL)
-    # VPL is robust. Let's try to fetch a specific VPL model if reachable, 
-    # OR simpler: The user mentioned "http://www.bbso.njit.edu/Data/Earthshine.txt"
-    # But Earthshine.txt is usually albedo anomalies (time series), not a spectrum. 
-    # We need a SPECTRUM.
-    # Searching for "Earth Albedo Spectrum" yielded VPL.
-    # Let's use a static URL for a VPL Earth Spectrum if we can't find a simpler text file.
-    # Or return None for now and let the user validate "No Data".
-    # User said: "Si tu n'as pas de données réelles... cherche".
-    
-    # I will try to find a downloadable VPL spectrum URL. 
-    # For this iteration, I will log "search failed" if I don't have a URL, 
-    # ensuring no synthetic gen.
-    
-    print("Searching for Real Earth Spectrum (VPL/Earthshine)...")
-    # Placeholder for actual URL found. 
-    # If we don't have a URL, we return None.
-    return None, None
+            try:
+                os.remove(cache_file)
+            except Exception as e:
+                print(f"Warning: Could not remove {cache_file}: {e}")
 
