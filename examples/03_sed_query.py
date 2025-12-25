@@ -25,6 +25,10 @@ from helios.io.external_query.exoplanets.query_all import get_exoplanet_properti
 
 def main():
     
+    # --- CONFIGURATION ---
+    PLOT_IN_FLAM = True # If True, plot in erg/s/cm^2/um. If False, plot in Jansky.
+    # ---------------------
+
     # Define targets
     # (Name, Type) tuples could be useful, or just distinct lists.
     targets = [
@@ -46,6 +50,14 @@ def main():
     # Import Exoplanet Spectrum Generator for Runtime Calculation
     from helios.io.external_query.exoplanets.spectrum import generate_exoplanet_spectrum
     
+    # Unit Setup
+    if PLOT_IN_FLAM:
+        target_unit = u.erg / (u.cm**2 * u.s * u.um)
+        ylabel = r'Spectral Flux Density ($erg \cdot s^{-1} \cdot cm^{-2} \cdot \mu m^{-1}$)'
+    else:
+        target_unit = u.Jy
+        ylabel = 'Flux Density (Jy)'
+
     global_max_flux = 0.0
     
     for name, obj_type in targets:
@@ -63,31 +75,51 @@ def main():
                 
                 # 1. Classical SED (Observed) -> Dashed
                 if len(sed.get('wavelength', [])) > 0:
-                    l, = plt.loglog(sed['wavelength'], sed['flux'], '--', label=f"{name} (Obs)", alpha=0.7)
+                    wl = sed['wavelength']
+                    flux = sed['flux']
+                    
+                    # Convert Unit
+                    if PLOT_IN_FLAM:
+                        flux = flux.to(target_unit, equivalencies=u.spectral_density(wl))
+                    else:
+                        flux = flux.to(target_unit)
+
+                    l, = plt.loglog(wl, flux, '--', label=f"{name} (Obs)", alpha=0.7)
                     color = l.get_color()
                     
                     # 2. Absolute SED (10pc) -> Continuous
                     # Calculate if not present
                     if dist is not None:
                         # Scaling factor: (D / 10pc)^2
-                        # Flux_10pc = Flux_obs * (D / 10pc)^2
-                        # Wait. Flux goes as 1/r^2. 
-                        # L = 4*pi*d^2 * F_obs. 
-                        # F_10pc = L / (4*pi*10pc^2) = F_obs * (d / 10pc)^2. Correct.
+                        # F_10pc = F_obs * (d / 10pc)^2. Correct.
                         factor = ((dist / (10.0 * u.pc))**2).decompose()
-                        flux_10pc = sed['flux'] * factor
+                        flux_10pc = flux * factor # Same unit as flux (already converted)
                         
                         current_max = np.max(flux_10pc)
                         if hasattr(current_max, 'value'): current_max = current_max.value
                         if current_max > global_max_flux: global_max_flux = current_max
                         
-                        plt.loglog(sed['wavelength'], flux_10pc, '-', color=color, label=f"{name} (Abs @10pc)")
+                        plt.loglog(wl, flux_10pc, '-', color=color, label=f"{name} (Abs @10pc)")
                         
                 # 3. Photometry -> Markers
                 if len(photo.get('wavelength', [])) > 0:
+                    wl_phot = photo['wavelength']
+                    flux_phot = photo['flux']
+                    err_phot = photo.get('flux_error')
+                    
+                    # Convert Photometry Units
+                    if PLOT_IN_FLAM:
+                        flux_phot = flux_phot.to(target_unit, equivalencies=u.spectral_density(wl_phot))
+                        if err_phot is not None:
+                             err_phot = err_phot.to(target_unit, equivalencies=u.spectral_density(wl_phot))
+                    else:
+                        flux_phot = flux_phot.to(target_unit)
+                        if err_phot is not None:
+                             err_phot = err_phot.to(target_unit)
+
                     col = color if color else 'red'
-                    plt.errorbar(photo['wavelength'], photo['flux'], 
-                                 yerr=photo.get('flux_error'), 
+                    plt.errorbar(wl_phot, flux_phot, 
+                                 yerr=err_phot, 
                                  fmt='o', color=col, ecolor=col, markersize=5, capsize=3, label='_nolegend_')
 
             elif obj_type == "SolarSystem":
@@ -153,7 +185,7 @@ def main():
                      
                      if albedo is None: albedo = 0.3 # Default
                      
-                     # Simulate
+                     # Simulate (Returns Jy usually)
                      # We use dist_metric (10pc) for the output flux level
                      flux_total, flux_refl, flux_therm = simulate_lit_planet(
                          wl_grid, sun_spec, dist_sun, radius, dist_metric, float(albedo), teff
@@ -183,6 +215,12 @@ def main():
                          final_flux = flux_total
                          label_txt = f"{name} (Synthetic)"
                          
+                     # Convert Final Flux to Target Unit
+                     if PLOT_IN_FLAM:
+                         final_flux = final_flux.to(target_unit, equivalencies=u.spectral_density(wl_grid))
+                     else:
+                         final_flux = final_flux.to(target_unit)
+
                      current_max = np.max(final_flux)
                      if hasattr(current_max, 'value'): current_max = current_max.value
                      if current_max > global_max_flux: global_max_flux = current_max
@@ -205,14 +243,6 @@ def main():
                     # We need a wavelength grid. Let's use 0.1 to 30 um
                     wl_grid = np.logspace(np.log10(0.1), np.log10(30.0), 500) * u.um
                     
-                    # We need to pass the physics dict to the generator
-                    # But wait, generate_exoplanet_spectrum might calculate Total Flux (Reflected + Thermal).
-                    # We need to check if it returns Observed or Surface flux.
-                    # Usually it returns Spectral Flux Density.
-                    
-                    # Let's inspect generate_exoplanet_spectrum signature or re-implement simple BB here.
-                    # Re-implementing safer to control distance.
-                    
                     # Thermal Emission (Blackbody)
                     T_eq = data['physics'].get('temperature_eq')
                     R_pl = data['physics'].get('radius')
@@ -227,6 +257,12 @@ def main():
                         solid_angle = (np.pi * (R_pl / dist_10pc)**2).decompose() * u.sr
                         flux_10pc = (flux_surface * solid_angle).to(u.Jy, equivalencies=u.spectral_density(wl_grid))
                         
+                        # Convert Unit
+                        if PLOT_IN_FLAM:
+                            flux_10pc = flux_10pc.to(target_unit, equivalencies=u.spectral_density(wl_grid))
+                        else:
+                            flux_10pc = flux_10pc.to(target_unit)
+                        
                         current_max = np.max(flux_10pc)
                         if hasattr(current_max, 'value'): current_max = current_max.value
                         if current_max > global_max_flux: global_max_flux = current_max
@@ -240,16 +276,24 @@ def main():
             print(f"Error processing {name}: {e}")
 
     plt.xlabel(r'Wavelength ($\mu$m)')
-    plt.ylabel('Flux Density (Jy)')
+    plt.ylabel(ylabel)
     plt.title('Absolute Spectral Energy Distributions (Normalized to 10 pc)')
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     plt.grid(True, which="both", ls="-", alpha=0.3)
     
+    # Configure Ticks to show every power of 10 on Y-axis
+    import matplotlib.ticker as ticker
+    ax = plt.gca()
+    ax.yaxis.set_major_locator(ticker.LogLocator(base=10.0, numticks=100))
+    # Ensure minor ticks are also visible if needed
+    ax.yaxis.set_minor_locator(ticker.LogLocator(base=10.0, subs='auto', numticks=100))
+    
     # Set limits
     if global_max_flux > 0:
-        plt.ylim(bottom=1e-10, top=global_max_flux * 1.1)
+        plt.ylim(bottom=1e-20 if PLOT_IN_FLAM else 1e-10, top=global_max_flux * 1.5)
     else:
-        plt.ylim(bottom=1e-10)
+        plt.ylim(bottom=1e-20 if PLOT_IN_FLAM else 1e-10)
     
     # Set X-limits (Restored to 20um as requested)
     plt.xlim(0.1, 20.0)
