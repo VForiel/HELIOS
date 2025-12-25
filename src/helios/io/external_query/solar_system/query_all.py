@@ -7,7 +7,7 @@ from astropy import units as u
 import numpy as np
 
 from .jpl_query import query_jpl_horizons
-from .spectrum import get_solar_spectrum, calculate_composite_planet_spectrum
+from .spectrum import get_solar_spectrum, get_real_planet_spectrum
 from .serialization import serialize_solar_data, deserialize_solar_data
 
 def get_solar_system_properties(object_name, complete_data=False, force=False):
@@ -73,11 +73,18 @@ def get_solar_system_properties(object_name, complete_data=False, force=False):
              # The user asked for "Absolute SED" only.
              
              dist_10pc = 10.0 * u.pc
-             dist_10pc = 10.0 * u.pc
-             wl_out, flux_abs = calculate_composite_planet_spectrum(safe_name, dist_sun, dist_10pc)
-             data['sed']['wavelength'] = wl_out
-             data['sed']['flux'] = flux_abs
-             data['sed']['source'] = "Synthetic: Thermal + Reflected (at 10pc)"
+             # Try to get REAL spectrum (No Synthetic)
+             # If unavailable, returns None, None - and we cache EMPTY to avoid re-querying or just leave it empty.
+             wl_out, flux_abs = get_real_planet_spectrum(safe_name, dist_sun, dist_10pc)
+             
+             if wl_out is not None and len(wl_out) > 0:
+                 data['sed']['wavelength'] = wl_out
+                 data['sed']['flux'] = flux_abs
+                 data['sed']['source'] = f"Real Observed Data (Scaled to 10pc)"
+             else:
+                 # NO SYNTHETIC DATA FALLBACK
+                 print(f"No real spectrum found for {safe_name}. Cache will contain empty SED.")
+                 data['sed'] = {'wavelength': [], 'flux': []}
         
         # 4. Save Cache
         try:

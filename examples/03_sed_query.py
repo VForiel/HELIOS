@@ -96,15 +96,19 @@ def main():
                 
                 # 1. Absolute SED (10pc) -> Continuous
                 # In our new structure, data['sed']['flux'] IS the Absolute Flux at 10pc.
-                if len(data.get('sed', {}).get('flux', [])) > 0:
-                    fl = data['sed']['flux']
+                sed_data = data.get('sed', {})
+                if sed_data and len(sed_data.get('flux', [])) > 0:
+                    fl = sed_data['flux']
                     
                     current_max = np.max(fl)
                     if hasattr(current_max, 'value'): current_max = current_max.value
                     if current_max > global_max_flux: global_max_flux = current_max
 
                     print(f"  > Plotting Abs SED. Max Flux: {current_max} (Nb: {len(fl)})")
-                    plt.loglog(data['sed']['wavelength'], fl, '-', label=f"{name} (Abs @10pc)")
+                    plt.loglog(sed_data['wavelength'], fl, '-', label=f"{name} (Abs @10pc)")
+                else:
+                    print(f"  > No spectral data in cache for {name} (Strict Real Data Policy).")
+
 
             elif obj_type == "Exoplanet":
                 data = get_exoplanet_properties(name, force=False)
