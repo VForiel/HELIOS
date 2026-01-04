@@ -11,11 +11,11 @@ from ...core.wavefront import Wavefront
 from .pupil import Pupil
 
 
-class Telescope(SamplingComponent):
-    __slots__ = ("pupil", "position", "size", "name")
+class Telescope(Pupil):
+    __slots__ = ("position", "size", "name")
     """Represents a single telescope with pupil geometry and position.
     
-    A Telescope is a Component that encapsulates the properties of an individual
+    A Telescope is a Pupil that encapsulates the properties of an individual
     telescope aperture, including its pupil geometry (transmission pattern), 
     physical size, and position in the aperture plane (for interferometric arrays).
     
@@ -25,7 +25,7 @@ class Telescope(SamplingComponent):
     Parameters
     ----------
     pupil : Pupil
-        Pupil geometry defining the aperture transmission pattern.
+        Source pupil geometry defining the aperture transmission pattern.
     position : Tuple[float, float] or Tuple[astropy.Quantity, astropy.Quantity]
         (x, y) position in the aperture plane. If floats, assumed to be meters.
         Can also be astropy Quantities. For single telescopes, use (0, 0).
@@ -36,20 +36,7 @@ class Telescope(SamplingComponent):
         Descriptive name for this telescope (e.g., "UT1", "AT3").
     **metadata
         Additional metadata (e.g., mount type, coating, location).
-    
-    Attributes
-    ----------
-    pupil : Pupil
-        The pupil geometry object.
-    position : Tuple[float, float]
-        Baseline coordinates in meters.
-    size : astropy.Quantity
-        Aperture diameter in meters.
-    name : str
-        Telescope identifier (inherited from Component).
-    metadata : dict
-        Additional properties.
-    
+
     Examples
     --------
     >>> # Create a VLT UT telescope
@@ -67,19 +54,21 @@ class Telescope(SamplingComponent):
         y = y.to(u.m).value if hasattr(y, 'to') else float(y)
         self.position = (x, y)
 
-        # Initialize Component with name
+        # Initialize Pupil (parent)
         default_name = f"Telescope@({self.position[0]:.1f},{self.position[1]:.1f})"
-        super().__init__(name=name or default_name)
         
-        self.pupil = pupil
+        # Inherit properties from the source pupil
+        super().__init__(diameter=pupil.diameter, focal_length=pupil.focal_length, name=name or default_name)
+        
+        # Copy elements (geometry)
+        from copy import deepcopy
+        self.elements = deepcopy(pupil.elements)
         
         # Infer size from pupil if not provided
         if size is None:
             if hasattr(pupil, 'diameter'):
                 if isinstance(pupil.diameter, u.Quantity):
                     size = pupil.diameter
-                else:
-                    size = pupil.diameter * u.m
             else:
                 size = 1.0 * u.m
         self.size = size
@@ -88,32 +77,48 @@ class Telescope(SamplingComponent):
         
     def to_dict(self) -> dict:
         """Serialize telescope."""
+        # Use super().to_dict() from Pupil (which uses SamplingComponent/Component)
+        # But Pupil.to_dict only saves diameter/focal_length/elements.
+        # We need to add telescope specific data.
         data = super().to_dict()
         data.update({
-            "pupil": self.pupil.to_dict(),
             "position": serialize_value(self.position),
             "size": serialize_value(self.size),
             "metadata": serialize_value(self.metadata)
         })
+        # Note: 'pupil' key is no longer needed since self IS the pupil
         return data
 
     @classmethod
     def from_dict(cls, data: dict) -> 'Telescope':
         """Create telescope from dict."""
         name = data.get("name")
-        pupil_data = data.get("pupil")
-        pupil = Pupil.from_dict(pupil_data) if pupil_data else None
         
-        # Position can be list/tuple from JSON
+        # Reconstruct base pupil properties
+        # In current design, we need a 'pupil' object to passed to __init__
+        # But we are deserializing a Telescope directly.
+        # We can create a temporary Pupil object from the data to pass to __init__.
+        # Or we can support creating Telescope without a source pupil in __init__?
+        # The current __init__ REQUIRES a pupil object. This is a constraint.
+        # Let's create a proxy Pupil from the dictionary data.
+        
+        diameter = deserialize_value(data.get("diameter", 1.0*u.m))
+        focal_length = deserialize_value(data.get("focal_length", 1.0*u.m))
+        proxy_pupil = Pupil(diameter=diameter, focal_length=focal_length)
+        
+        elements = data.get("elements", [])
+        for e in elements:
+             proxy_pupil.elements.append(deserialize_value(e))
+        
+        # Position
         pos_raw = deserialize_value(data.get("position", (0,0)))
-        # Ensure tuple
         if isinstance(pos_raw, list):
             pos_raw = tuple(pos_raw)
             
         size = deserialize_value(data.get("size"))
         metadata = deserialize_value(data.get("metadata", {}))
         
-        return cls(pupil=pupil, position=pos_raw, size=size, name=name, **metadata)
+        return cls(pupil=proxy_pupil, position=pos_raw, size=size, name=name, **metadata)
     
     def process(self, wavefront: Wavefront, pipeline: Optional['Pipeline'] = None, auto_magnify: Optional[bool] = None) -> Any:
         """
@@ -185,10 +190,10 @@ class Telescope(SamplingComponent):
             size_m = self.size.to(u.m).value if hasattr(self.size, 'to') else float(self.size)
             wavefront.pixel_scale = (size_m / N) * u.m
 
-        mask = self.pupil.get_array(npix=N, soft=True)
+        mask = self.get_array(npix=N, soft=True)
         wavefront[:] = wavefront * mask
 
-        wavefront._last_focal_length_m = float(self.pupil.focal_length.to(u.m).value)
+        wavefront._last_focal_length_m = float(self.focal_length.to(u.m).value)
 
         return wavefront
     
@@ -200,8 +205,7 @@ class Telescope(SamplingComponent):
         attrs = {}
         attrs['position'] = f"({self.position[0]:.2f}, {self.position[1]:.2f}) m"
         attrs['size'] = str(self.size)
-        if hasattr(self.pupil, 'diameter'):
-            attrs['pupil_diameter'] = f"{self.pupil.diameter:.2f} m"
+        attrs['pupil_diameter'] = f"{self.diameter:.2f} m"
         return attrs
 
     def plot(self, ax: Optional[_plt.Axes] = None, title: Optional[str] = None) -> _plt.Axes:
@@ -223,7 +227,7 @@ class Telescope(SamplingComponent):
             
         # Get pupil array
         N = 512
-        pupil_arr = self.pupil.get_array(npix=N, soft=True)
+        pupil_arr = self.get_array(npix=N, soft=True)
         
         # Extent in meters
         size_m = self.size.to(u.m).value if hasattr(self.size, 'to') else float(self.size)

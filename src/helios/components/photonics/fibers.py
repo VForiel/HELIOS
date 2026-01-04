@@ -10,7 +10,7 @@ from ...core.pipeline import Pipeline
 from ...core.wavefront import Wavefront
 
 
-class FiberIn(OpticalLayer):
+class FiberIn(OpticalComponent):
     """Fiber input coupler.
     
     Models coupling of light from free-space optics into optical fiber(s).
@@ -63,7 +63,7 @@ class FiberIn(OpticalLayer):
         return wavefront
 
 
-class FiberOut(OpticalLayer):
+class FiberOut(OpticalComponent):
     """Fiber output coupler.
     
     Models light exiting from optical fiber back into free-space optics.

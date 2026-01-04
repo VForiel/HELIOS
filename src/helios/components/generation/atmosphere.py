@@ -5,16 +5,16 @@ from astropy import units as u
 from typing import Tuple, List, Union, Optional
 import matplotlib.pyplot as _plt
 
-from ...core.component import Component, OpticalComponent
+from ...core.component import Component, OpticalComponent, GenerationComponent
 from ...core.layer import GenerationLayer, Layer
 from ...core.pipeline import Pipeline
 from ...utils.serialization import serialize_value, deserialize_value
-from ...core.wavefront import Wavefront, WavefrontArray
+from ...core.wavefront import Wavefront
 from ..sampling.telescope_array import TelescopeArray
 from ..sampling.telescope import Telescope
 
 
-class Atmosphere(GenerationLayer):
+class Atmosphere(GenerationComponent):
     """Kolmogorov atmosphere layer producing chromatic phase screens with frozen-flow turbulence.
 
     The atmosphere introduces optical path difference (OPD) errors that are chromatic - 
@@ -287,7 +287,7 @@ class Atmosphere(GenerationLayer):
         
         return screen
 
-    def process(self, wavefront: Union[Wavefront, List[Wavefront]]) -> Union[Wavefront, WavefrontArray]:
+    def process(self, wavefront: Union[Wavefront, List[Wavefront]]) -> Union[Wavefront, List[Wavefront]]:
         """Apply atmospheric turbulence to wavefront.
         
         Converts OPD (optical path difference) to phase: φ = 2π * OPD / λ
@@ -306,7 +306,7 @@ class Atmosphere(GenerationLayer):
         
         Returns
         -------
-        wavefront : Wavefront or WavefrontArray
+        wavefront : Wavefront or List[Wavefront]
             Wavefront(s) with atmospheric phase applied
         """
         if wavefront is None:
@@ -333,7 +333,7 @@ class Atmosphere(GenerationLayer):
         # Check if we should use optimization (multiple collectors found)
         # And input is a single Wavefront (not already split)
         use_optimization = (len(target_collectors) > 0 and 
-                           not isinstance(wavefront, (list, WavefrontArray)))
+                           not isinstance(wavefront, list))
         
         if use_optimization:
             return self._process_optimized(wavefront, target_collectors)
@@ -371,7 +371,7 @@ class Atmosphere(GenerationLayer):
         wavefront[:] = wavefront * np.exp(1j * phase).astype(wavefront.dtype)
         return wavefront
 
-    def _process_optimized(self, wavefront: Wavefront, collectors: List['Telescope']) -> WavefrontArray:
+    def _process_optimized(self, wavefront: Wavefront, collectors: List['Telescope']) -> List[Wavefront]:
         """Optimized processing for telescope arrays."""
         if wavefront.ndim == 3:
             N_in = wavefront.shape[-1]
@@ -535,7 +535,7 @@ class Atmosphere(GenerationLayer):
             new_wf[:] = new_wf * np.exp(1j * phase).astype(new_wf.dtype)
             output_wfs.append(new_wf)
             
-        return WavefrontArray(output_wfs)
+        return output_wfs
 
     def plot_screen_animation(self,
                              collectors: Optional[Union['Telescope', 'TelescopeArray', List['Telescope']]] = None,

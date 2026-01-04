@@ -272,7 +272,7 @@ class Planet(CelestialBody):
                  temperature: u.Quantity = 300*u.K,
                  albedo: float = 0.3,
                  reflection_ratio: Optional[float] = None,
-                 scene: Optional['Scene'] = None,
+                 scene: Optional['PlanetarySystem'] = None,
                  **kwargs):
         """
         Initialize a Planet object.
@@ -291,8 +291,8 @@ class Planet(CelestialBody):
             Direct override for reflected/emitted light ratio. If provided, this takes
             precedence over radius/albedo calculation. Useful for quick tuning without
             physical assumptions.
-        scene : Scene, optional
-            Parent scene containing stellar sources. Needed for reflected light calculation.
+        scene : PlanetarySystem, optional
+            Parent planetary system containing stellar sources. Needed for reflected light calculation.
         **kwargs
             Additional arguments passed to CelestialBody (position, etc.).
         """
@@ -335,7 +335,7 @@ class Planet(CelestialBody):
         albedo = data.get("albedo", 0.3)
         reflection_ratio = data.get("reflection_ratio")
         
-        # Note: scene is not restored here, it's linked when added to Scene object
+        # Note: scene is not restored here, it's linked when added to PlanetarySystem object
         return cls(name=name, position=position, mass=mass, radius=radius,
                    temperature=temperature, albedo=albedo, 
                    reflection_ratio=reflection_ratio, **kwargs)
@@ -359,7 +359,7 @@ class Planet(CelestialBody):
         temperature : astropy.Quantity, optional
             Planet effective temperature (default: 300 K).
         include_reflection : bool
-            If True and scene is available, add reflected stellar light (default: True).
+            If True and planetary system is available, add reflected stellar light (default: True).
         **kwargs
             Additional parameters for blackbody calculation (beta, lambda0, norm).
             
@@ -375,7 +375,7 @@ class Planet(CelestialBody):
         
         # 2. Reflected light component
         if include_reflection and self.scene is not None:
-            # Find stars in the scene
+            # Find stars in the planetary system
             stars = [obj for obj in self.scene.objects if isinstance(obj, Star)]
             
             if stars:
@@ -502,36 +502,36 @@ class Zodiacal(CelestialBody):
             temperature = 270 * u.K
         return modified_blackbody(wavelengths if wavelengths is not None else None, temperature, **kwargs)
 
-class Scene(GenerationLayer):
+class PlanetarySystem(GenerationLayer):
     """
-    Represents the astronomical scene containing stars, planets, zodiacal light, etc.
+    Represents an astronomical planetary system containing stars, planets, zodiacal light, etc.
     
-    Scene is a Layer that contains multiple CelestialBody elements. Each celestial
-    body contributes to the scene's total emission/reflection independently.
+    PlanetarySystem is a Layer that contains multiple CelestialBody elements. Each celestial
+    body contributes to the system's total emission/reflection independently.
     
     Parameters
     ----------
     distance : astropy.Quantity, optional
-        Distance to the scene. Default: 10 pc. Used to convert between physical
+        Distance to the planetary system. Default: 10 pc. Used to convert between physical
         positions (AU) and angular positions (arcsec).
     name : str, optional
-        Name of the scene for identification in diagrams.
+        Name of the planetary system for identification in diagrams.
     
     Attributes
     ----------
     elements : List[CelestialBody]
-        List of celestial bodies in this scene (inherited from Layer).
+        List of celestial bodies in this system (inherited from Layer).
     distance : astropy.Quantity
-        Distance to the scene.
+        Distance to the planetary system.
     
     Examples
     --------
-    >>> scene = Scene(distance=10*u.pc, name="Proxima System")
-    >>> scene.add(Star(temperature=5700*u.K, name="Proxima Centauri"))
-    >>> scene.add(Planet(temperature=300*u.K, position=(1*u.AU, 0*u.AU), name="Proxima b"))
+    >>> system = PlanetarySystem(distance=10*u.pc, name="Proxima System")
+    >>> system.add(Star(temperature=5700*u.K, name="Proxima Centauri"))
+    >>> system.add(Planet(temperature=300*u.K, position=(1*u.AU, 0*u.AU), name="Proxima b"))
     """
     def __init__(self, distance: Optional[u.Quantity] = 10*u.pc, name: Optional[str] = None):
-        super().__init__(name=name or "Scene")
+        super().__init__(name=name or "PlanetarySystem")
         self.distance = distance
         self.distance = distance
         # Note: self.elements is inherited from Layer
@@ -542,10 +542,10 @@ class Scene(GenerationLayer):
         return data
         
     @classmethod
-    def from_dict(cls, data: dict) -> 'Scene':
+    def from_dict(cls, data: dict) -> 'PlanetarySystem':
         name = data.get("name")
         distance = deserialize_value(data.get("distance"))
-        scene = cls(name=name, distance=distance)
+        system = cls(name=name, distance=distance)
         
         # Restore elements
         # We need to map types to classes again or reuse registry concept
@@ -563,17 +563,17 @@ class Scene(GenerationLayer):
             if type_name in type_map:
                 try:
                     obj = type_map[type_name].from_dict(elem_data)
-                    scene.add(obj)
+                    system.add(obj)
                 except Exception as e:
-                    print(f"Error restoring scene object {type_name}: {e}")
+                    print(f"Error restoring system object {type_name}: {e}")
             else:
                  print(f"Unknown scene object type: {type_name}")
                  
-        return scene
+        return system
 
     def add(self, obj: CelestialBody):
         """
-        Add a celestial body to the scene.
+        Add a celestial body to the planetary system.
         
         Parameters
         ----------
@@ -582,12 +582,12 @@ class Scene(GenerationLayer):
         
         Examples
         --------
-        >>> scene = Scene(distance=10*u.pc)
-        >>> scene.add(Star(temperature=5700*u.K))
-        >>> scene.add(Planet(mass=1*u.M_jup, position=(1*u.AU, 0*u.AU)))
+        >>> system = PlanetarySystem(distance=10*u.pc)
+        >>> system.add(Star(temperature=5700*u.K))
+        >>> system.add(Planet(mass=1*u.M_jup, position=(1*u.AU, 0*u.AU)))
         """
-        self.add_element(obj)
-        # Automatically link planets to this scene for reflection calculation
+        self.add_component(obj)
+        # Automatically link planets to this planetary system for reflection calculation
         if isinstance(obj, Planet) and obj.scene is None:
             obj.scene = self
     
@@ -597,7 +597,7 @@ class Scene(GenerationLayer):
         return self.elements
     
     def _get_detailed_attributes(self) -> dict:
-        """Return detailed attributes for Scene."""
+        """Return detailed attributes for PlanetarySystem."""
         attrs = {}
         if self.distance is not None:
             attrs['distance'] = str(self.distance)
@@ -606,7 +606,7 @@ class Scene(GenerationLayer):
 
     def get_flux_scaling(self) -> float:
         """
-        Calculate the total flux scaling factor from all objects in the scene.
+        Calculate the total flux scaling factor from all objects in the planetary system.
         
         Returns
         -------
@@ -632,7 +632,7 @@ class Scene(GenerationLayer):
 
     def process(self, wavefront: None) -> Wavefront:
         """
-        Generates the initial wavefront from the scene.
+        Generates the initial wavefront from the planetary system.
         
         The wavefront amplitude is scaled by:
         1. Distance: flux decreases as (d/d_ref)^-2 where d_ref = 10 pc
@@ -738,7 +738,7 @@ class Scene(GenerationLayer):
 
     def plot_sed(self, wavelengths: Optional[u.Quantity] = None, ax=None, **kwargs):
         """
-        Plot the SED of the entire scene (and individual components).
+        Plot the SED of the entire planetary system (and individual components).
 
         Parameters
         ----------
@@ -838,13 +838,13 @@ class Scene(GenerationLayer):
             pass
 
         ax.legend()
-        ax.set_title(f"Scene SED: {self.name}")
+        ax.set_title(f"Planetary System SED: {self.name}")
         
         return fig, ax
 
     def plot(self, ax=None):
         """
-        Plot the scene.
+        Plot the planetary system.
 
         Parameters
         ----------
@@ -967,18 +967,18 @@ class Scene(GenerationLayer):
         if not is_xkcd:
             plt.grid(True, linestyle='--', alpha=0.5)
 
-        plt.title(f"Scene (Distance: {self.distance})")
+        plt.title(f"Planetary System (Distance: {self.distance})")
         return fig, ax
 
 
 def test_scene_creation():
-    scene = Scene(distance=10*u.pc)
+    system = PlanetarySystem(distance=10*u.pc)
     star = Star(temperature=5000*u.K, magnitude=5, position=(0*u.AU, 0*u.AU))
     planet = Planet(mass=1*u.M_jup, position=(1*u.AU, 0*u.AU))
-    scene.add(star)
-    scene.add(planet)
-    assert len(scene.objects) == 2
-    assert scene.distance == 10*u.pc
+    system.add(star)
+    system.add(planet)
+    assert len(system.objects) == 2
+    assert system.distance == 10*u.pc
     # Test defaults
     default_star = Star()
     assert default_star.temperature == 5778*u.K
@@ -988,11 +988,11 @@ def test_scene_creation():
     default_planet = Planet()
     assert default_planet.mass == 1*u.M_jup
 
-    default_scene = Scene()
-    assert default_scene.distance == 10*u.pc
+    default_system = PlanetarySystem()
+    assert default_system.distance == 10*u.pc
 
-    # scene.plot() # Uncomment to test plotting visually
+    # system.plot() # Uncomment to test plotting visually
 
 if __name__ == "__main__":
     test_scene_creation()
-    print("Scene tests passed.")
+    print("PlanetarySystem tests passed.")

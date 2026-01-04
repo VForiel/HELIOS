@@ -9,15 +9,4 @@ Physical wavefront representation and simulation utilities.
    :show-inheritance:
 ```
 
-.. autoclass:: helios.WavefrontArray
-   :members:
-   :undoc-members:
-   :show-inheritance:
-```
 
-```{eval-rst}
-.. autoclass:: helios.PlaneType
-   :members:
-   :undoc-members:
-   :show-inheritance:
-```

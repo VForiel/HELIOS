@@ -6,6 +6,7 @@ The core framework provides the fundamental abstractions for building simulation
 :maxdepth: 2
 
 wavefront
+optical_scene
 pipeline
 layer
 component

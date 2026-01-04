@@ -9,7 +9,7 @@ Scene components define the astrophysical sources that generate light in the sim
 ## Scene Container
 
 ```{eval-rst}
-.. autoclass:: helios.components.Scene
+.. autoclass:: helios.components.PlanetarySystem
    :members:
    :undoc-members:
    :show-inheritance:

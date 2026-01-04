@@ -1,434 +1,67 @@
 # HELIOS AI Coding Agent Instructions
 
-## Project Overview
-HELIOS (Hierarchical End-to-end Lightpath & Instrumental response Simulation) is a Python astronomical simulation framework for modeling observations from scene → optics → detector. Built for scientific computing with C++ optimization via pybind11.
-
-## Python Environment (CRITICAL)
-
-**ALWAYS activate the virtual environment first** before running any Python commands, and avoid chaining multiple commands on a single line.
-
-```powershell
-# 1) Activer la venv (PowerShell) — À faire UNE fois au début
-.\.venv\Scripts\Activate.ps1
-
-# 2) Exécuter vos commandes normalement, une par ligne
-cd tests
-pytest
-
-# Pour la documentation
-cd ..\docs
-.\make.bat html
-```
-
-**Why venv activation is required**:
-- The venv uses **Python 3.13.9** (required for modern packages)
-- Sphinx Breeze theme requires Python ≥3.10
-- All project dependencies are installed in venv only
-- Documentation builds will **fail** without venv activation
-
-**Proper workflow**:
-1. **Activate venv ONCE** at the start: `.\.venv\Scripts\Activate.ps1`
-2. **Navigate normally** with `cd` commands
-3. **Use make.bat** for documentation: `cd docs` puis `.\make.bat html` (sur deux lignes)
-4. **Do not** chain commands on one line with `&` or `;`. Exécutez chaque commande sur sa propre ligne.
-
-**Build commands**:
-- **Documentation**:
-    ```powershell
-    cd docs
-    .\make.bat html
-    ```
-    (make.bat détecte automatiquement la venv)
-- **Tests**:
-    ```powershell
-    pytest
-    # ou
-    python -m pytest
-    ```
-- **Install package**:
-    ```powershell
-    pip install -e .
-    ```
-
-## Architecture Fundamentals
-
-### Layered Processing Model
-The core abstraction is a **Layer** pipeline orchestrated by **Context**:
-- All components inherit from `helios.core.context.Layer` and implement `process(wavefront, context)`
-- `Context.observe()` sequentially processes layers: Scene → Collectors → Optics/Photonics → Detectors
-- Layers can be parallel (list of layers) or sequential (single layer)
-- Signal flow: `Scene` generates initial `Wavefront`, each layer transforms it, `Camera` produces final array
-
-**Key files:** `src/helios/core/context.py`, `src/helios/core/simulation.py`
-
-### Matplotlib Figure Sizes (IMPORTANT)
-**Always use compact figure sizes** to ensure plots fit on standard screens:
-- Single plots: `figsize=(8, 6)` or smaller
-- Triple plots (1x3): `figsize=(12, 4)` maximum
-- Dual vertical plots (2x1): `figsize=(9, 6)` maximum
-- Large grids should scale proportionally but stay under 14 inches width
-
-**Example:**
-```python
-# ✅ GOOD - fits on screen
-fig, axes = plt.subplots(1, 3, figsize=(12, 4))
-
-# ❌ BAD - too large for most screens
-fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-```
-
-### Component Categories
-1. **Scene** (`components/scene.py`): First layer, generates celestial objects (Star, Planet, ExoZodiacal, Zodiacal)
-2. **Optics** (`components/optics.py`): Collectors, Pupil, Coronagraph, BeamSplitter, FiberIn/Out, Atmosphere, AdaptiveOptics
-3. **Photonics** (`components/photonics.py`): PhotonicChip, TOPS, MMI for integrated photonic circuits
-4. **Detectors** (`components/detectors.py`): Camera (terminal layer, returns numpy array)
-
-## Critical Conventions
-
-### Current Development Mode (CRITICAL)
-We are in active feature development. Backward compatibility is not required at this stage. When a refactor is introduced, you must propagate the change across the entire codebase (src, tests, examples, tools, docs) immediately.
-
-Guidelines for development mode:
-- Prefer correctness, clarity, and unit safety over performance.
-- Use `astropy.units.Quantity` broadly (both API and internal) to reduce ambiguity; we will optimize later.
-- Avoid dynamic attribute checks (`hasattr`, `getattr`) by defining complete attribute sets in constructors and locking them via `__slots__` when appropriate.
-- Keep implementations simple and explicit; remove legacy/obsolete code paths rather than maintaining shims.
-
-### Units: astropy.Quantity at API Boundaries
-**DEVELOPMENT PHASE RULE**: All user-facing parameters use `astropy.units.Quantity`. During current development, prefer keeping `Quantity` internally as well for clarity and unit safety. Performance conversions to native types can be reintroduced later when features stabilize.
-
-```python
-# ✅ Correct - API accepts Quantity
-def __init__(self, temperature: u.Quantity = 5778*u.K, mass: u.Quantity = 1*u.M_sun):
-    self.temperature = temperature  # Store as Quantity OR...
-    self.mass_kg = mass.to(u.kg).value  # Convert to float internally
-
-# ❌ Wrong - never accept raw floats for physical quantities
-def __init__(self, temperature: float, mass: float):
-```
-
-**When adding new components**: Always use `u.Quantity` for distances (u.m, u.AU, u.arcsec), masses (u.M_sun, u.M_jup), temperatures (u.K), wavelengths (u.nm, u.um).
-
-### Simplicity First (Development)
-For now, prioritize simplicity and unit safety:
-- Keep `Quantity` internally to reduce mistakes and ease reasoning.
-- Avoid premature optimization. No numba/C++ unless required for feature correctness.
-- Use straightforward numpy operations; refactor later if profiling indicates hot spots.
-
-### Attributes and __slots__
-Define all attributes explicitly and lock them when beneficial:
-- Declare attributes in `__init__` with defaults if optional (e.g., `None`).
-- Use `__slots__` to prevent accidental attribute addition and reduce dynamic lookups.
-- Remove avoidable `hasattr()`/`getattr()` checks by designing objects with complete data models.
-
-### Pupil Geometry System
-`Pupil` class builds aperture masks via primitives (disk, hexagon, spiders, segments):
-- **Coordinate system**: Pupil diameter in meters, elements positioned relative to center
-- **Segmented primaries**: Use `add_segmented_primary(seg_flat, rings, gap)` with flat-to-flat segment size
-- **Anti-aliasing**: Use `get_array(npix, soft=True, oversample=4)` for smooth edges
-- **Presets exist**: `Pupil.jwst()`, `Pupil.vlt()`, `Pupil.elt()` - use these as references
-
-**Example from `optics.py` lines 470-485**: ELT uses hexagonal tiling with gap=0.004m, 5 rings → 91 segments total (minus central)
-
-### Tests Embedded in Modules
-**PROJECT SPECIFIC**: Test functions live at the bottom of implementation files, not just in `/tests`:
-```python
-# At end of component files
-def test_camera():
-    cam = Camera(pixels=(100, 100))
-    assert cam.pixels == (100, 100)
-
-if __name__ == "__main__":
-    test_camera()
-```
-
-Main test suite is in `/tests` with pytest, but inline tests validate module behavior during development.
-
-## Build & Development Workflow
-
-### Installation & Testing
-```powershell
-# Install in development mode
-pip install .
-
-# Run tests (pytest discovers tests/ directory)
-pytest
-
-# Run specific test file
-pytest tests/test_helios.py
-
-# Execute demo notebook (integration test)
-python tools/execute_demo_notebook.py
-```
-
-### Package Structure
-- **Source**: `src/helios/` (installed package)
-- **Build artifacts**: `build/lib/helios/` (transient, gitignored)
-- **C++ extensions**: `src/helios/cpp/` (pybind11 bindings, not yet implemented)
-- **Tests**: `tests/` (pytest test suite, validation scripts)
-- **Tools**: `tools/` (utility scripts, build helpers, notebook processors)
-- **Examples**: `examples/` (demonstration scripts showing usage patterns)
-
-**Important**: Tests import via `sys.path.insert(0, '../src')` to use local source, not installed package.
-
-### File Organization Rules (CRITICAL)
-
-**AVOID creating files at project root**. Always organize code into appropriate directories:
-
-1. **`tests/`** - Validation and testing
-   - Unit tests for components (e.g., `test_atmosphere.py`, `test_pupil_geometry.py`)
-   - Integration tests (e.g., `test_helios.py`)
-   - Physical coherence validation (e.g., `test_flux_at.py`)
-   - **Purpose**: Verify code correctness AND physical validity
-
-2. **`tools/`** - Development utilities
-   - Build scripts and automation tools
-   - Notebook execution/validation tools (e.g., `execute_demo_notebook.py`)
-   - Code generation or analysis utilities
-   - **Purpose**: Developer tools not part of the helios library
-
-3. **`examples/`** - User-facing demonstrations
-   - Standalone scripts showing specific features (e.g., `demo_coronagraph.py`)
-   - Example workflows and use cases
-   - Sample configurations and setups
-   - **Purpose**: Educational code showing users how to use HELIOS
-
-**When to use each directory:**
-- Creating a test? → `tests/`
-- Creating a utility script? → `tools/`
-- Creating a demonstration? → `examples/`
-- Creating library code? → `src/helios/components/` or `src/helios/core/`
-
-**Examples of correct file placement:**
-- ✅ `tests/test_new_feature.py` - Test validating new feature
-- ✅ `tools/benchmark_performance.py` - Performance analysis tool
-- ✅ `examples/exoplanet_detection.py` - Complete example workflow
-- ❌ `test_something.py` at root - Should be in `tests/`
-- ❌ `demo_feature.py` at root - Should be in `examples/`
-- ❌ `utility_script.py` at root - Should be in `tools/`
-
-## Common Patterns
-
-### Adding New Celestial Bodies
-1. Inherit from `CelestialBody` in `components/scene.py`
-2. Accept `position: Tuple[u.Quantity, u.Quantity]` (angular or physical coords)
-3. Implement `sed(wavelengths, temperature, **kwargs)` returning modified blackbody
-4. Override defaults (e.g., `Planet` defaults to 300K, `ExoZodiacal` to 270K)
-
-### Adding New Optical Layers
-1. Inherit from `Layer` in `core/context.py`
-2. Implement `process(self, wavefront: Wavefront, context: Context) -> Wavefront`
-3. Convert input `u.Quantity` parameters to native types in `__init__`
-4. Register in `components/__init__.py` for import
-
-### Visualization Methods
-Scene and optical components implement `.plot()` methods:
-- `Scene.plot()`: Shows celestial objects in angular coordinates (arcsec/mas)
-- `Pupil.plot()`: Displays aperture mask
-- Use matplotlib, return Axes for chaining
-
-## Key File References
-
-- **Entry point**: `src/helios/__init__.py` exports `Context`, `components`
-- **Test example**: `tests/test_helios.py` shows full Scene→Collectors→Camera flow
-- **Pupil geometry**: `tests/test_pupil_geometry.py` validates segment counts using flood-fill
-- **Specifications**: `SPECIFICATIONS.md` contains detailed component specs and zodiacal light behavior
-
-## Documentation & CI
-
-- **Docs**: Sphinx with MyST (markdown), built via `.github/workflows/docs.yml`
-- **Publishing**: Automated PyPI via `.github/workflows/publish.yml`
-- **Docstrings**: All public APIs must have numpy-style docstrings for Sphinx autodoc
-- **Contribution Guidelines**: Always read the "Contribute" section in the documentation (`docs/contribute.md`) before making significant changes.
-
-## Code Quality Requirements (CRITICAL)
-
-### Educational Philosophy
-**HELIOS is a scientific project with educational clarity** - the code must be rigorous and scientifically accurate, but explained so that any scientist can understand it, even if they are not experts in the specific field. This means:
-
-- **Explain the physics**: Every optical/astronomical concept must be explained in docstrings and comments
-- **Provide context**: Don't assume users know why a particular algorithm or formula is used
-- **Use clear variable names**: Prefer descriptive names like `phase_rms` over `phi_rms`, `optical_path_difference` over `opd` (units are already in `astropy.Quantity` objects)
-- **Add educational comments**: Explain the "why" not just the "what"
-- **Include references**: When implementing published algorithms, cite the paper/textbook
-- **Validate physically**: Tests should verify that results make physical sense, not just that code runs
-- **Maintain consistency**: Unless otherwise instructed, when creating or modifying a class, check how other classes are constructed and try to maintain global consistency.
-
-### Every Function Must Have
-1. **English docstring** (numpy-style for Sphinx autodoc)
-   - Explain the physical concept being modeled
-   - Define all parameters with units and physical meaning
-   - Include mathematical formulas when relevant (using LaTeX in docstrings)
-2. **Clear English comments** explaining non-obvious logic
-   - Explain physical reasoning behind algorithmic choices
-   - Clarify coordinate systems, sign conventions, normalizations
-3. **Unit test** validating both correctness AND physical coherence
-   - Test edge cases and boundary conditions
-   - Verify conservation laws (energy, flux, etc.)
-   - Check dimensional analysis (units consistency)
-4. **Documentation generation** - ensure Sphinx autodoc can process it
-
-### Testing Philosophy
-Tests must verify:
-- ✅ Code executes without errors
-- ✅ **Physical results are coherent** (units, magnitudes, conservation laws)
-- ✅ Edge cases and boundary conditions
-
-Example from existing codebase (`components/scene.py`):
-```python
-def sed(self, wavelengths: Optional[u.Quantity] = None, ...):
-    """
-    Return a modified blackbody SED for this object.
-    
-    Parameters
-    ----------
-    wavelengths : astropy.Quantity, optional
-        Array of wavelengths. If None, creates log-spaced grid.
-    temperature : astropy.Quantity
-        Temperature in Kelvin.
-    
-    Returns
-    -------
-    tuple
-        (wavelengths, sed_values) in W/(m² m sr)
-    """
-    # Implementation with physical validation
-```
-
-### Documentation Maintenance
-- **Auto-generated docs**: All public APIs appear in `docs/` via Sphinx
-- **Static docs**: Add markdown files in `docs/` for architectural explanations
-- **Keep synchronized**: Update docstrings when changing function signatures
-
-## Agent Modification Logs (MANDATORY)
-
-**Every modification session must create a log file** in `agent-logs/` with format:
-```
-agent-logs/YYYY.MM.DD-NN_<topic>.md
-```
-
-Where:
-- `YYYY.MM.DD`: Date (e.g., 2025.11.25)
-- `NN`: Sequential number if multiple sessions same day (01, 02, ...)
-- `<topic>`: 1-2 word summary (e.g., `pupil-geometry`, `camera-noise`)
-
-**Log content should include**:
-- Summary of changes made
-- Files modified
-- New functions/classes added
-- Tests added/updated
-- Any breaking changes or migration notes
-
-Example: `agent-logs/2025.11.25-01_copilot-instructions.md`
-
-## Notebook Validation Protocol (CRITICAL)
-
-**When modifying code that impacts notebook cells**, you MUST validate the changes by executing the affected code:
-
-### Validation Methods (in order of preference)
-
-1. **Direct execution via `run_notebook_cell` tool** (preferred when available)
-   - Execute the modified notebook cells directly
-   - Verify outputs match expectations
-   - Check that no errors are raised
-
-2. **Standalone Python script** (when direct execution not available)
-   - Extract the relevant cell code into a temporary Python script
-   - Add necessary imports and setup code
-   - Execute via `run_in_terminal` to validate correctness
-
-3. **Data validation without plots** (most reliable)
-   - **PREFERRED**: Skip matplotlib visualization, validate data directly with `print()` statements
-   - Check array shapes, value ranges, statistical properties (mean, std, min, max)
-   - Verify physical coherence (units, magnitudes, conservation laws)
-   - Example:
-     ```python
-     print(f"PSF shape: {psf.shape}")
-     print(f"Peak value: {psf.max():.2e}")
-     print(f"Total flux: {psf.sum():.2e}")
-     print(f"Strehl ratio: {strehl:.3f}")
-     ```
-
-4. **File-based visualization** (only if visual inspection required)
-   - If plots are necessary, save to files with `plt.savefig('test_output.png')`
-   - Use descriptive filenames indicating what is being tested
-   - Analyze saved images to verify correctness
-   - Clean up test output files after validation
-
-### What to Validate
-- ✅ Code executes without errors
-- ✅ Output shapes and types are correct
-- ✅ Numerical values are in expected ranges
-- ✅ Physical quantities have correct units and magnitudes
-- ✅ Visualizations (if needed) display expected features
-
-### Example Validation Pattern
-```python
-# GOOD: Validate data directly
-import sys
-sys.path.insert(0, '../src')
-import helios
-from astropy import units as u
-import numpy as np
-
-# Test atmospheric phase screen generation
-atm = helios.Atmosphere(rms=0.5*u.rad, seed=42)
-wf = helios.Wavefront(wavelength=550e-9*u.m, size=512)
-wf.field = np.ones((512, 512), dtype=np.complex128)
-wf_atm = atm.process(wf, None)
-phase = np.angle(wf_atm.field)
-
-# Validate without plotting
-print(f"Phase shape: {phase.shape}")  # Expected: (512, 512)
-print(f"Phase range: [{phase.min():.3f}, {phase.max():.3f}] rad")  # Expected: [-π, π]
-print(f"Phase RMS: {np.std(phase):.3f} rad")  # Expected: ~0.5
-assert phase.shape == (512, 512), "Incorrect shape"
-assert -np.pi <= phase.min() <= phase.max() <= np.pi, "Phase out of range"
-print("✓ Validation passed")
-```
-
-**Always validate changes before finalizing** - this catches bugs early and ensures physical coherence.
-
-## Progress Bars for Long-Running Loops
-
-When implementing loops that may take noticeable time (processing samples, segments, propagation steps, IO batches), always include a visible progress bar with an estimated time remaining.
-
-- Preferred library: `tqdm` (works in notebooks and scripts).
-- Usage pattern:
-    - In Python scripts: `from tqdm import tqdm` and wrap iterables: `for i in tqdm(range(N), desc="Processing", unit="item"):`
-    - In notebooks: `from tqdm.auto import tqdm` to get the best renderer.
-    - For nested loops, use `tqdm(total=...)` with manual updates, or `tqdm` per level with `leave=False` to reduce clutter.
-- Include descriptive labels and units; `tqdm` shows processed/total, percentage, and ETA automatically.
-- If `tqdm` is unavailable, add a lightweight textual fallback (print every 5–10% completed).
-
-Example:
-
-```python
-from tqdm.auto import tqdm
-
-def process_batch(items):
-        for idx, item in enumerate(tqdm(items, desc="Simulating wavefronts", unit="wf")):
-                simulate(item)
-
-# Manual total with ETA
-bar = tqdm(total=total_steps, desc="Propagating", unit="step")
-for step in range(total_steps):
-        propagate_step(step)
-        bar.update(1)
-bar.close()
-```
-
-Scope:
-- Apply to loops in `src/helios/**`, `examples/**`, and `tools/**` where runtime can exceed ~1s or iterate over >500 elements.
-- Keep output clean in CI: prefer `tqdm` with `disable=not sys.stdout.isatty()` when necessary.
-
-## What NOT to Do
-- ❌ Don't use raw floats for physical quantities in APIs
-- ❌ Don't break Layer abstraction (components must implement `process()`)
-- ❌ Don't hardcode array sizes - use npix parameters
-- ❌ Don't ignore units when reading existing code - maintain consistency
-- ❌ Don't commit code without docstrings and unit tests
-- ❌ Don't skip the agent modification log
--- ❌ Don't modify notebook cells without validating the changes execute correctly
-- ❌ Don't preserve legacy compatibility during development — refactor globally and update all call sites
-- ❌ Don't run series of terminal commands sequentially (e.g., multiple tests). Create a script in `scripts/` that executes them and run that script instead.
+## 🚨 CRITICAL FIRST STEP 🚨
+
+**Before writing any code**, you **MUST** read the following documentation files to understand the project architecture, developer guidelines, and contribution standards:
+
+1.  **`README.md`** and **`docs/index.md`**: General project overview.
+2.  **`docs/architecture.md`**: Understanding the layered optical simulation engine and propagation logic.
+3.  **`docs/contribute.md`**: Strict coding conventions, unit standards, and "Full Agent" development strategy.
+
+**Failure to read these documents will result in incorrect architectural decisions.**
+
+---
+
+## 🤖 Full Agent Development Mode
+
+You are working in **"Full Agent"** mode. You are the primary developer.
+*   **Write code for AI readability**: Explain *why* you do things.
+*   **Log every session**: You MUST create a modification log in `.github/agent-logs/` (see `docs/contribute.md` for format).
+
+## ⚡ Quick Constraints Checklist
+
+*   **Virtual Env**: Always ensure the virtual environment is active.
+*   **Units**: ALL physical parameters MUST use `astropy.units`. Never use raw floats for physical quantities.
+*   **File Structure**:
+    *   `src/helios/`: Source code ONLY.
+    *   `tests/`: Tests ONLY.
+    *   `examples/`: User scripts.
+    *   `tmp/`: YOUR scratchpad. Use this for temporary scripts. **NEVER** create files at root.
+*   **Atomic Commands**: Run terminal commands one by one. Do NOT chain with `&` or `;`.
+
+## 🧪 Testing
+
+*   **Physical Coherence**: Tests must verify that results make physical sense (units, conservation of energy), not just that they run.
+*   **Run Tests**: Always run tests before finishing a task.
+
+---
+
+## 🍎 Physics Sources and Verification
+
+**ALWAYS** check on internet to ensure your physical reasoning and/or implementation is correct.
+
+For light propagation, refer to the following sources:
+
+| Bibliothèque | Langage / Backend | Type de propagation | Points forts | Points faibles | Limitations principales | Liens |
+|-------------|------------------|---------------------|--------------|----------------|-------------------------|-------|
+| **POPPY** | Python (NumPy) | Fresnel / Fraunhofer | Standard astro (JWST), excellente doc, unités Astropy | CPU only, architecture rigide | Peu flexible hors astro, FFT-centric | https://poppy-optics.readthedocs.io |
+| **HCIPy** | Python (NumPy/C++) | FFT, Fresnel, MFT | Très complet (AO, polarisation, segments), end-to-end | API complexe, courbe d’apprentissage | Scalaire par défaut, sampling délicat | https://hcipy.readthedocs.io |
+| **PROPER** | IDL / Python / Matlab | Fresnel (FFT) | Référence NASA/JPL, très robuste | API vieillissante, peu pythonique | Strictement propagation | https://proper-library.sourceforge.net |
+| **dLux** | Python (JAX, XLA) | Fourier optics différentiable | Autodiff, GPU/TPU, calibration inverse | Communauté réduite, JAX mindset | VRAM GPU, encore jeune | https://github.com/LouisDesdoigts/dLux |
+| **Diffractio** | Python | RS, BPM, Fresnel, vectoriel | Très pédagogique, vectoriel, X-ray | Performances modestes | Peu scalable pour pipelines lourds | https://diffractio.readthedocs.io |
+| **waveprop** | Python (NumPy / PyTorch) | Angular Spectrum, Fresnel | Simple, GPU possible, clair | Peu d’éléments optiques | Bas niveau | https://github.com/ebezzam/waveprop |
+| **LightPipes** | C++ / Python | FFT scalaire | Rapide, cavités, modes laser | Peu astro, unités faibles | Modèle ancien | https://opticspy.github.io/lightpipes |
+| **PyOptica** | Python | Diffraction scalaire | Léger, lisible | Petite communauté | Peu d’éléments avancés | https://pypi.org/project/pyoptica |
+| **PyNX (wavefront)** | Python (CUDA/OpenCL) | Fresnel / FFT | Très rapide, GPU, HPC | Peu généraliste | Orienté X-ray | https://pynx.esrf.fr |
+| **WPG** | Python / C++ | Cohérent & partiellement cohérent | Gestion avancée de cohérence | Courbe d’apprentissage | Peu astro visible | https://wpg.readthedocs.io |
+| **TorchOptics** | Python (PyTorch) | Fourier optics diff. | Autodiff, GPU, ML-ready | Jeune, API instable | Physique simplifiée | https://github.com/matthewfilipovich/torchoptics |
+| **AOtools** | Python | FFT paraxial | Turbulence, AO, PSF | Pas propagation pure | AO-centric | https://github.com/AOtools/aotools |
+| **HoloPy** | Python / Fortran | Diffraction scalaire | Propagation inverse, holographie | Cas d’usage étroit | Peu flexible | https://holopy.readthedocs.io |
+| **Wavesim** | Python / Matlab | Helmholtz (MBS) | Haute précision, sans FFT | Très coûteux numériquement | Champs limités | https://www.wavesim.org |
+| **Finesse 3** | C / Python | Modale / fréquentielle | Référence LIGO/Virgo, bruits quantiques | Pas image directe | Pas pixel-based | https://finesse.ifosim.org |
+| **Meep** | C++ / Python | EM complet (FDTD) | Physique complète | Lent, lourd | Pas Fourier optics | https://meep.readthedocs.io |
+| **FourierOpticsToolBox** | Matlab | Fourier optics | Clair, pédagogique | Matlab-only | Peu performant | https://github.com/USNavalResearchLaboratory/FourierOpticsToolBox |
+
+---
+
+**For all detailed rules, refer to `docs/contribute.md`.**

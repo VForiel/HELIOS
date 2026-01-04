@@ -38,7 +38,7 @@ source_suffix = {
 }
 
 templates_path = ['_templates']
-exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store', '.venv', 'requirements.txt']
+exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store', '.venv', 'requirements.txt', 'build_log.txt', 'warnings.txt', '*.bat']
 
 # -- Autodoc configuration ---------------------------------------------------
 

@@ -9,7 +9,7 @@ from ...core.wavefront import Wavefront
 import copy
 
 
-class PhotonicChip(OpticalLayer):
+class PhotonicChip(OpticalComponent):
     __slots__ = ("inputs", "lambda0", "num_inputs", "name")
     """
     Container for photonic elements.
@@ -22,14 +22,19 @@ class PhotonicChip(OpticalLayer):
         self.lambda0 = lambda0
         super().__init__()
         self.num_inputs = inputs
+        self.elements: List[Component] = []
 
-    def add_element(self, component: Component):
+    def add_component(self, component: Component):
         """Add a component to the chip and link it."""
-        super().add_element(component)
-        # We can also explicitly set a property on the element if needed,
-        # but accessing via self.layer (which is this chip) is cleaner.
-        # For convenience, we can check if the element has a set_chip method or similar.
-        pass
+        self.elements.append(component)
+        # Link context if needed, but Component usually links to Layer.
+        # Here Chip is acting as a pseudo-Layer or Composite Component.
+        # If Chip is in a Layer, component.layer should reference the Chip?
+        # But component.layer expects Layer type.
+        # We might need to adjust or just store it.
+        # For now, just store it.
+        if hasattr(component, 'pipeline') and self.pipeline:
+             component.pipeline = self.pipeline
 
     def process(self, wavefronts: Union[Wavefront, List[Wavefront]], pipeline: Optional['Pipeline'] = None) -> Union[Wavefront, List[Wavefront]]:
         """
