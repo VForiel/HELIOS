@@ -13,7 +13,60 @@ import shutil
 import subprocess
 from joblib import Parallel, delayed
 
-def _compute_mmi_field(N, M, L, W, n_eff, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, verbose=False):
+
+def _compute_symmetric_port_positions(num_ports, W, spacing, name):
+    """Compute symmetric port positions around x=W/2.
+
+    Parameters
+    ----------
+    num_ports : int
+        Number of ports.
+    W : float
+        MMI width [m].
+    spacing : float | None
+        Port-to-port spacing [m]. If None, uses the historical default spacing W/num_ports.
+    name : str
+        Human-readable name used for error messages (e.g., "input", "output").
+
+    Returns
+    -------
+    list[float]
+        Port center positions along x in [m], symmetric about x=W/2.
+
+    Raises
+    ------
+    ValueError
+        If spacing is non-positive or causes ports to lie outside the MMI [0, W].
+    """
+    if num_ports <= 0:
+        raise ValueError(f"{name} ports must be a positive integer, got {num_ports}.")
+    if W <= 0:
+        raise ValueError(f"MMI width W must be positive, got {W}.")
+
+    if spacing is None:
+        spacing = W / num_ports
+    if spacing <= 0:
+        raise ValueError(f"{name} spacing must be > 0, got {spacing}.")
+
+    center = 0.5 * W
+    offsets = (np.arange(num_ports, dtype=float) - 0.5 * (num_ports - 1)) * spacing
+    positions = center + offsets
+
+    # Numerical tolerance in meters (scaled with W).
+    eps = max(1e-15, 1e-15 * abs(W))
+    min_pos = float(np.min(positions))
+    max_pos = float(np.max(positions))
+    if (min_pos < -eps) or (max_pos > W + eps):
+        raise ValueError(
+            f"{name} spacing {spacing} m is too large for W={W} m: "
+            f"{name} positions would span [{min_pos}, {max_pos}] m outside [0, {W}] m."
+        )
+
+    # Clamp tiny numerical noise at boundaries.
+    positions = np.clip(positions, 0.0, W)
+    return positions.tolist()
+
+def _compute_mmi_field(N, M, L, W, n_eff, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, verbose=False, Din=None, Dout=None):
     """
     Core field calculation (Internal helper).
     Returns:
@@ -37,8 +90,7 @@ def _compute_mmi_field(N, M, L, W, n_eff, wavelength, input_amplitudes, num_mode
     elif verbose and z_resolution is not None:
         print(f"Warning: num_z_steps ({num_z_steps}) provided, ignoring z_resolution ({z_resolution})")
 
-    # input_positions = [W/N * (i + 0.5) for i in range(N)]
-    input_positions = [(2*(i+1)-1)/(2*N)*W for i in range(N)]
+    input_positions = _compute_symmetric_port_positions(N, W, Din, name="input")
     
     # 2. Define Waveguide Modes (Hard Wall Approximation)
     x_grid = np.linspace(0, W, 500)
@@ -100,8 +152,7 @@ def _compute_mmi_field(N, M, L, W, n_eff, wavelength, input_amplitudes, num_mode
         E_z = np.dot(weights, modes)
         field_evolution[iz, :] = E_z
 
-    # output_positions = [W/M * (j + 0.5) for j in range(M)]
-    output_positions = [(2*(j+1)-1)/(2*M)*W for j in range(M)]
+    output_positions = _compute_symmetric_port_positions(M, W, Dout, name="output")
     
     return z_grid, x_grid, field_evolution, output_positions, input_positions, beam_waist, dx
 
@@ -280,18 +331,18 @@ def _make_video_from_frames(output_file, frame_dir, fps=30):
     
     subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-def _compute_single_field_wrapper(i, N, M, L, W, n_eff, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution):
+def _compute_single_field_wrapper(i, N, M, L, W, n_eff, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, Din, Dout):
     """Wrapper to compute field for a single input (parallel helper)."""
     single_input = np.zeros(N, dtype=complex)
     single_input[i] = input_amplitudes[i]
     
     # We only need the field_evolution (3rd return, index 2)
     ret = _compute_mmi_field(
-        N, M, L, W, n_eff, wavelength, single_input, num_modes, num_z_steps, z_resolution, verbose=False
+        N, M, L, W, n_eff, wavelength, single_input, num_modes, num_z_steps, z_resolution, verbose=False, Din=Din, Dout=Dout
     )
     return ret[2]
 
-def simulate(N=2, M=2, L=None, W=10.0e-6, n_eff=2.0458, wavelength=1.55e-6, input_amplitudes=None, num_modes=50, num_z_steps=None, z_resolution=None, output_file=None, verbose=False):
+def simulate(N=2, M=2, L=None, W=10.0e-6, n_eff=2.0458, wavelength=1.55e-6, input_amplitudes=None, num_modes=50, num_z_steps=None, z_resolution=None, output_file=None, verbose=False, Din=None, Dout=None):
 
 
     """
@@ -326,6 +377,12 @@ def simulate(N=2, M=2, L=None, W=10.0e-6, n_eff=2.0458, wavelength=1.55e-6, inpu
         Number of steps for z-propagation grid. If None, calculated from `z_resolution`.
     z_resolution : float, optional
         Step size in z [m]. Defaults to wavelength/30 if `num_z_steps` is also None.
+    Din : float, optional
+        Input port spacing [m]. If None, uses the historical default spacing ``W/N``.
+        Inputs are placed symmetrically about the centerline at x = W/2.
+    Dout : float, optional
+        Output port spacing [m]. If None, uses the historical default spacing ``W/M``.
+        Outputs are placed symmetrically about the centerline at x = W/2.
     output_file : str, optional
         Path to save an animation of the propagation (e.g., 'mmi_prop.mp4'). 
         If None, no animation is generated.
@@ -359,7 +416,7 @@ def simulate(N=2, M=2, L=None, W=10.0e-6, n_eff=2.0458, wavelength=1.55e-6, inpu
 
     # Run internal simulation
     z_grid, x_grid, field_evolution, output_positions, input_positions, beam_waist, dx = _compute_mmi_field(
-        N, M, L, W, n_eff, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, verbose
+        N, M, L, W, n_eff, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, verbose, Din=Din, Dout=Dout
     )
     
     # Update num_z_steps to match the actual grid size used
@@ -416,7 +473,7 @@ def simulate(N=2, M=2, L=None, W=10.0e-6, n_eff=2.0458, wavelength=1.55e-6, inpu
 
     return output_amplitudes
 
-def compute_contributions(N, M, L, W, n_eff, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, verbose=False):
+def compute_contributions(N, M, L, W, n_eff, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, verbose=False, Din=None, Dout=None):
     """
     Calculates MMI fields and contributions, returning raw data for analysis or custom plotting.
 
@@ -447,6 +504,12 @@ def compute_contributions(N, M, L, W, n_eff, wavelength, input_amplitudes, num_m
         Z resolution [m].
     verbose : bool, default=False
         Print status.
+    Din : float, optional
+        Input port spacing [m]. If None, uses the historical default spacing ``W/N``.
+        Inputs are placed symmetrically about x = W/2.
+    Dout : float, optional
+        Output port spacing [m]. If None, uses the historical default spacing ``W/M``.
+        Outputs are placed symmetrically about x = W/2.
 
     Returns
     -------
@@ -479,7 +542,7 @@ def compute_contributions(N, M, L, W, n_eff, wavelength, input_amplitudes, num_m
     
     # Common geometry data from first run
     z_grid, x_grid, field_total_evol, output_positions, input_positions, beam_waist, dx = _compute_mmi_field(
-        N, M, L, W, n_eff, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, verbose
+        N, M, L, W, n_eff, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, verbose, Din=Din, Dout=Dout
     )
     
     # Update num_z_steps to match (important for animation frames)
@@ -495,7 +558,7 @@ def compute_contributions(N, M, L, W, n_eff, wavelength, input_amplitudes, num_m
     
     contributions_fields = Parallel(n_jobs=-1)(
         delayed(_compute_single_field_wrapper)(
-            i, N, M, L, W, n_eff, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution
+            i, N, M, L, W, n_eff, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, Din, Dout
         ) for i in range(N)
     )
         
@@ -532,7 +595,7 @@ def compute_contributions(N, M, L, W, n_eff, wavelength, input_amplitudes, num_m
         "num_z_steps": num_z_steps
     }
 
-def simulate_contributions(N=2, M=2, L=None, W=10.0e-6 , n_eff=2.0458, wavelength=1.55e-6, input_amplitudes=None, num_modes=50, num_z_steps=None, z_resolution=None, output_file=None, verbose=False):
+def simulate_contributions(N=2, M=2, L=None, W=10.0e-6 , n_eff=2.0458, wavelength=1.55e-6, input_amplitudes=None, num_modes=50, num_z_steps=None, z_resolution=None, output_file=None, verbose=False, Din=None, Dout=None):
     """
     Simulates light propagation with explicit visualization of phasor contributions from each input.
     
@@ -566,6 +629,12 @@ def simulate_contributions(N=2, M=2, L=None, W=10.0e-6 , n_eff=2.0458, wavelengt
         If provided, generates a detailed MP4 animation.
     verbose : bool, default=False
         Print status.
+    Din : float, optional
+        Input port spacing [m]. If None, uses the historical default spacing ``W/N``.
+        Inputs are placed symmetrically about x = W/2.
+    Dout : float, optional
+        Output port spacing [m]. If None, uses the historical default spacing ``W/M``.
+        Outputs are placed symmetrically about x = W/2.
 
     Returns
     -------
@@ -573,7 +642,7 @@ def simulate_contributions(N=2, M=2, L=None, W=10.0e-6 , n_eff=2.0458, wavelengt
         Complex amplitudes at the M outputs.
     """
     # 1. Calculate Data
-    data = compute_contributions(N, M, L, W, n_eff, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, verbose)
+    data = compute_contributions(N, M, L, W, n_eff, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, verbose, Din=Din, Dout=Dout)
     
     z_grid = data["z_grid"]
     x_grid = data["x_grid"]
@@ -603,7 +672,7 @@ def simulate_contributions(N=2, M=2, L=None, W=10.0e-6 , n_eff=2.0458, wavelengt
             _make_video_from_frames(output_file, temp_dir, fps=30)
         
     # Return total output
-    output_amplitudes = simulate(N, M, L, W, n_eff, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, output_file=None, verbose=verbose)
+    output_amplitudes = simulate(N, M, L, W, n_eff, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, output_file=None, verbose=verbose, Din=Din, Dout=Dout)
 
     if verbose:
         print(f"Output amplitudes: {output_amplitudes}")
