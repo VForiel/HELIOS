@@ -71,6 +71,17 @@ def __init__(self, temperature: float):
 *   **Contextual Comments**: Explain *why* a formula is used, cite papers/textbooks.
 *   **Physical Validation**: Tests must verify results make physical sense (energy conservation, units), not just that the code runs without error.
 
+### 5. Project Philosophy: The "Glue" Architecture
+
+**Don't Reinvent the Wheel**: HELIOS relies as much as possible on existing, proven libraries (e.g., dLux, POPPY, HCIPy) rather than reimplementing core algorithms.
+
+**The "Glue" Role**: HELIOS acts as a high-level orchestration layer ("glue") between these specialized libraries. Its primary value is providing:
+*   **Intuitive Interfaces**: Unified, easy-to-use APIs for complex underlying tools.
+*   **Pedagogical Documentation**: Clear explanations making the field accessible to non-experts.
+*   **Accessible WebApp**: Allowing usage without prior deep technical knowledge.
+
+**Native Simulations**: Occasionally, HELIOS implements its own simulations for specific applications or educational purposes, ensuring the code is rigorously commented to serve as a learning resource.
+
 ## How to Contribute
 
 ### As a Human Contributor

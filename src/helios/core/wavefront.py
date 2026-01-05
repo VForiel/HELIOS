@@ -221,6 +221,19 @@ class Wavefront(u.Quantity):
             field_out = propagation.rs_direct(field_in, D, wavelength, d, Lf=L_out, Nf=N_out)
         elif regime == 'fresnel_custom':
              field_out = propagation.fresnel_custom(field_in, D, wavelength, d, Lf=L_out, Nf=N_out)
+        elif regime == 'poppy':
+             field_out = propagation.poppy_fresnel(field_in, D, wavelength, d, Lf=L_out, Nf=N_out)
+        elif regime == 'hcipy':
+             field_out = propagation.hcipy_fresnel(field_in, D, wavelength, d, Lf=L_out, Nf=N_out)
+        elif regime == 'lightpipes':
+             field_out = propagation.lightpipes_fresnel(field_in, D, wavelength, d, Lf=L_out, Nf=N_out)
+        elif regime.lower().startswith('dlux'):
+             # Handle dlux variants: dlux, dlux_asm, dlux_mft, dlux_fft
+             method = 'ASM'
+             parts = regime.split('_')
+             if len(parts) > 1:
+                 method = parts[1].upper()
+             field_out = propagation.dlux_propagate(field_in, D, wavelength, d, Lf=L_out, Nf=N_out, method=method)
         else:
              raise ValueError(f"Unknown propagation regime: {regime}")
 

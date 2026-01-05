@@ -3,6 +3,41 @@ from scipy.fft import fft2, ifft2, fftshift, ifftshift
 import numba as nb
 import warnings
 
+# Lazy Imports for optional dependencies
+def _import_poppy():
+    try:
+        import poppy
+        return poppy
+    except ImportError:
+        raise ImportError("Poppy is not installed. Please install it via 'pip install poppy'")
+
+def _import_hcipy():
+    try:
+        import hcipy
+        return hcipy
+    except ImportError:
+        raise ImportError("HCIPy is not installed. Please install it via 'pip install hcipy'")
+
+def _import_lightpipes():
+    try:
+        import LightPipes
+        return LightPipes
+    except ImportError:
+        raise ImportError("LightPipes is not installed. Please install it via 'pip install LightPipes'")
+        
+def _import_dlux():
+    try:
+        try:
+            import dlux
+        except ImportError:
+            import dLux as dlux
+            
+        import jax.numpy as jnp
+        import jax
+        return dlux, jax, jnp
+    except ImportError:
+        raise ImportError("dLux (or JAX) is not installed. Please install via 'pip install dlux'")
+
 def _crop_or_pad(array: np.ndarray, size: int) -> np.ndarray:
     """
     Resize a 2D array to a target size by cropping or zero-padding.
@@ -299,6 +334,173 @@ def fresnel_custom(ψ0, L0, λ, z, Lf=None, Nf=None, verbose=False):
     if Nf is None: Nf = N0
     if Lf is None: Lf = L0
     return _fresnel_custom_kernel(ψ0, L0/N0, λ, z, Lf/Nf, Nf)
+
+def poppy_fresnel(ψ0, L0, λ, z, Lf=None, Nf=None, verbose=False):
+    """Wrapper for POPPY Fresnel propagation."""
+    if verbose: print("--- POPPY Fresnel ---")
+    poppy = _import_poppy()
+    from astropy import units as u
+    
+    N = ψ0.shape[0]
+    
+    # POPPY expects astropy quantities
+    wavelen_q = λ * u.m
+    diam_q = L0 * u.m
+    z_q = z * u.m
+    
+    # POPPY setup
+    # poppy.FresnelWavefront expects beam_radius, not diameter
+    
+    if hasattr(poppy, 'FresnelWavefront'):
+         wf = poppy.FresnelWavefront(beam_radius=diam_q/2, wavelength=wavelen_q, npix=N, oversample=1)
+    else:
+         wf = poppy.Wavefront(wavelength=wavelen_q, npix=N, diam=diam_q)
+         
+    wf.wavefront[:] = ψ0 # Inject our field
+    
+    # Propagate
+    # 'propagate_to' requires an optic.
+    # 'propagate_direct' is for free space propagation.
+    if hasattr(wf, 'propagate_direct'):
+         wf.propagate_direct(z_q)
+    elif hasattr(wf, 'propagate_to'):
+         # Maybe pass a dummy detector?
+         # sys = poppy.Detector(distance=z_q, ...)
+         # wf.propagate_to(sys)
+         pass
+    elif hasattr(wf, 'propagate_fresnel'):
+        wf.propagate_fresnel(z_q)
+    else:
+        # Fallback for very old poppy?
+        pass
+    
+    return _crop_or_pad(wf.wavefront, Nf if Nf else N)
+
+def hcipy_fresnel(ψ0, L0, λ, z, Lf=None, Nf=None, verbose=False):
+    """Wrapper for HCIPy Fresnel propagation."""
+    if verbose: print("--- HCIPy Fresnel ---")
+    hcipy = _import_hcipy()
+    
+    N = ψ0.shape[0]
+    
+    # Grids
+    pupil_grid = hcipy.make_pupil_grid((N, N), L0)
+    field = hcipy.Field(ψ0.ravel(), pupil_grid)
+    wf = hcipy.Wavefront(field, wavelength=λ)
+    
+    # Propagator
+    # HCIPy FresnelPropagator is efficient
+    prop = hcipy.FresnelPropagator(pupil_grid, z)
+    wf_out = prop(wf)
+    
+    # Reshaping
+    res = wf_out.electric_field.shaped
+    return _crop_or_pad(res, Nf if Nf else N)
+
+def lightpipes_fresnel(ψ0, L0, λ, z, Lf=None, Nf=None, verbose=False):
+    """Wrapper for LightPipes Fresnel."""
+    if verbose: print("--- LightPipes Fresnel ---")
+    lp = _import_lightpipes()
+    
+    N = ψ0.shape[0]
+    
+    # LightPipes Field initialization
+    F = lp.Begin(L0, λ, N)
+    
+    # Inject field (LightPipes uses a specific internal structure, we need to overwrite it)
+    # F.field is the complex array
+    # We must ensure layout matches (LightPipes is usually top-left origin?)
+    # usually it's centered, similar to others.
+    F.field = ψ0.astype(complex)
+    
+    # Propagate
+    F_out = lp.Fresnel(F, z)
+    
+    return _crop_or_pad(F_out.field, Nf if Nf else N)
+
+def dlux_propagate(ψ0, L0, λ, z, Lf=None, Nf=None, method='ASM', verbose=False):
+    """
+    Wrapper for dLux propagation.
+    
+    Parameters
+    ----------
+    method : str
+        'ASM': Angular Spectrum Method (dlux.AngularSpectrum)
+        'MFT': Matrix Fourier Transform (dlux.MFT)
+        'FFT': Fast Fourier Transform (dlux.FFT) - typically for Fraunhofer
+    """
+    if verbose: print(f"--- dLux Propagation ({method}) ---")
+    dlux, jax, jnp = _import_dlux()
+    
+    N = ψ0.shape[0]
+    if Nf is None: Nf = N
+    
+    # dLux v0.14+ signature: Wavefront(npixels, diameter, wavelength)
+    wf = dlux.Wavefront(
+        npixels=N,
+        diameter=L0,
+        wavelength=λ
+    )
+    
+    # Set amplitude and phase (Equinox/Zodiax pattern)
+    wf = wf.set('amplitude', jnp.abs(ψ0))
+    wf = wf.set('phase', jnp.angle(ψ0))
+    
+    # Select Propagator
+    prop_layer = None
+    
+    if method.upper() in ['ASM', 'ANGULARSPECTRUM']:
+        if hasattr(dlux.propagators, 'AngularSpectrum'):
+            prop_layer = dlux.propagators.AngularSpectrum(z)
+        else:
+            if verbose: print("dLux.propagators.AngularSpectrum not found. Falling back to MFT (approximated).")
+            # Fallback to MFT? Or raise error?
+            # MFT config for near field is tricky without correct focal length context.
+            # But let's try to map to a simple MFT
+            pixel_scale_out = L0 / Nf # Same scale
+            prop_layer = dlux.propagators.MFT(
+                npixels=Nf,
+                pixel_scale=pixel_scale_out,
+                focal_length=z
+            )
+        
+    elif method.upper() == 'MFT':
+        if Lf is None: Lf = L0
+        pixel_scale_out = Lf / Nf
+        prop_layer = dlux.propagators.MFT(
+            npixels=Nf,
+            pixel_scale=pixel_scale_out,
+            focal_length=z
+        )
+        
+    elif method.upper() == 'FFT':
+        prop_layer = dlux.propagators.FFT(focal_length=z)
+        
+    else:
+        # Default / Fallback
+        if verbose: print(f"Unknown dLux method '{method}', defaulting to MFT")
+        prop_layer = dlux.propagators.MFT(
+             npixels=Nf,
+             pixel_scale=L0/Nf,
+             focal_length=z
+        )
+    
+    # Apply
+    # dLux v0.14+ layers (Equinox modules) use .apply(wf)
+    if hasattr(prop_layer, 'apply'):
+        wf_out = prop_layer.apply(wf)
+    else:
+        # Fallback for other potential structures (e.g. callable)
+        wf_out = prop_layer(wf)
+    
+    # Extract
+    field_out_jax = wf_out.amplitude * jnp.exp(1j * wf_out.phase)
+    
+    # Convert back to numpy
+    field_out = np.array(field_out_jax)
+    
+    return _crop_or_pad(field_out, Nf)
+
 
 #==============================================================================
 # Demo

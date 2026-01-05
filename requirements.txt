@@ -10,3 +10,10 @@ pandas
 openpyxl
 requests
 xlrd
+
+
+# External Propagation Libraries
+poppy
+hcipy
+LightPipes
+dlux
