@@ -14,6 +14,283 @@ import subprocess
 from joblib import Parallel, delayed
 
 
+def _wrap_phase_radians(phases_rad):
+    """Wrap phases to [0, 2π).
+
+    Parameters
+    ----------
+    phases_rad : array-like
+        Phase values in radians.
+
+    Returns
+    -------
+    np.ndarray
+        Wrapped phases in [0, 2π).
+    """
+    phases = np.asarray(phases_rad, dtype=float)
+    return np.mod(phases, 2 * np.pi)
+
+
+def _calibrate_phases_genetic_like(
+    evaluate_metric,
+    n_phases,
+    beta=0.8,
+    initial_step=np.pi / 2,
+    epsilon=1e-4,
+    initial_phases=None,
+    fixed_indices=None,
+    max_outer_iterations=200,
+    verbose=False,
+):
+    """Calibrate phase shifters using a genetic-like coordinate descent.
+
+    This is inspired by the "genetic-like" calibration loops used in PHISE and PHOBos.
+    Despite the name, it is a deterministic hill-climb / coordinate descent with a
+    decaying step size. It is architecture-independent: the only required ingredient
+    is a callable that evaluates the metric for a vector of phases.
+
+    Parameters
+    ----------
+    evaluate_metric : callable
+        Function ``evaluate_metric(phases_rad) -> float`` to minimize.
+    n_phases : int
+        Number of phase shifters.
+    beta : float, default=0.8
+        Step decay factor. Must satisfy ``0.5 <= beta < 1``.
+    initial_step : float, default=π/2
+        Initial phase step size [rad].
+    epsilon : float, default=1e-4
+        Minimum step size [rad]. The loop stops when the step becomes smaller.
+    initial_phases : array-like, optional
+        Initial phases [rad]. Defaults to all zeros.
+    fixed_indices : set[int] | list[int] | None, optional
+        Indices to keep fixed (e.g., {0} to remove global phase degeneracy).
+    max_outer_iterations : int, default=200
+        Safety cap on the number of outer iterations (step decays).
+    verbose : bool, default=False
+        If True, prints progress.
+
+    Returns
+    -------
+    dict
+        Dictionary containing:
+        - ``metric``: metric history (1D)
+        - ``phases``: phase history (2D: steps x n_phases)
+        - ``best_metric``: best metric encountered
+        - ``best_phases``: best phases [rad]
+    """
+    if not (0.5 <= beta < 1.0):
+        raise ValueError("beta must be in the range [0.5, 1[")
+    if n_phases <= 0:
+        raise ValueError(f"n_phases must be positive, got {n_phases}.")
+    if initial_step <= 0:
+        raise ValueError(f"initial_step must be > 0, got {initial_step}.")
+    if epsilon <= 0:
+        raise ValueError(f"epsilon must be > 0, got {epsilon}.")
+    if max_outer_iterations <= 0:
+        raise ValueError(f"max_outer_iterations must be > 0, got {max_outer_iterations}.")
+
+    if initial_phases is None:
+        phases = np.zeros(n_phases, dtype=float)
+    else:
+        phases = np.asarray(initial_phases, dtype=float).copy()
+        if phases.shape != (n_phases,):
+            raise ValueError(f"initial_phases must have shape ({n_phases},), got {phases.shape}.")
+
+    phases = _wrap_phase_radians(phases)
+
+    fixed = set(fixed_indices or [])
+    variable_indices = [i for i in range(n_phases) if i not in fixed]
+
+    metric_history = []
+    phases_history = []
+
+    best_metric = float("inf")
+    best_phases = phases.copy()
+
+    step = float(initial_step)
+    outer_it = 0
+
+    while (step > epsilon) and (outer_it < max_outer_iterations):
+        if verbose:
+            print(f"--- Iteration {outer_it} --- Δφ={step:.3e} rad")
+
+        for i in variable_indices:
+            phases_pos = phases.copy()
+            phases_neg = phases.copy()
+            phases_pos[i] = (phases_pos[i] + step) % (2 * np.pi)
+            phases_neg[i] = (phases_neg[i] - step) % (2 * np.pi)
+
+            m_old = float(evaluate_metric(phases))
+            m_pos = float(evaluate_metric(phases_pos))
+            m_neg = float(evaluate_metric(phases_neg))
+
+            metric_history.append(m_old)
+            phases_history.append(phases.copy())
+
+            if m_old < best_metric:
+                best_metric = m_old
+                best_phases = phases.copy()
+            if m_pos < best_metric:
+                best_metric = m_pos
+                best_phases = phases_pos.copy()
+            if m_neg < best_metric:
+                best_metric = m_neg
+                best_phases = phases_neg.copy()
+
+            if verbose:
+                print(f"Phase {i}: {m_neg:.3e} | {m_old:.3e} | {m_pos:.3e}")
+
+            # Minimize metric (pick best of {neg, old, pos})
+            if (m_pos < m_old) and (m_pos < m_neg):
+                phases = phases_pos
+            elif (m_neg < m_old) and (m_neg < m_pos):
+                phases = phases_neg
+
+            # Enforce fixed indices exactly (avoid drift due to numerical ops)
+            for j in fixed:
+                phases[j] = float(_wrap_phase_radians(phases[j]))
+
+        step *= beta
+        outer_it += 1
+
+    # Record final state
+    metric_history.append(float(evaluate_metric(phases)))
+    phases_history.append(phases.copy())
+    if metric_history[-1] < best_metric:
+        best_metric = metric_history[-1]
+        best_phases = phases.copy()
+
+    return {
+        "metric": np.asarray(metric_history, dtype=float),
+        "phases": np.asarray(phases_history, dtype=float),
+        "best_metric": float(best_metric),
+        "best_phases": _wrap_phase_radians(best_phases),
+    }
+
+
+def calibrate_input_phases_genetic(
+    N=4,
+    M=4,
+    L=None,
+    W=10.0e-6,
+    n_eff=2.0458,
+    wavelength=1.55e-6,
+    input_amplitudes=None,
+    bright_output_idx=0,
+    num_modes=50,
+    num_z_steps=None,
+    z_resolution=None,
+    Din=None,
+    Dout=None,
+    beta=0.8,
+    initial_step=np.pi / 2,
+    epsilon=1e-4,
+    verbose=False,
+):
+    """Calibrate input phases to redirect flux to a bright output.
+
+    The phase shifters are modeled as the input phases (one per input). The objective is
+    to minimize the null-depth-like metric:
+
+    ``metric = sum(null_outputs) / bright_output``
+
+    where "null outputs" are all outputs except the chosen bright output.
+
+    Notes
+    -----
+    - The global phase is physically irrelevant for intensities; by default the first
+      input phase (index 0) is fixed to 0 rad.
+    - This uses a genetic-like coordinate-descent algorithm with decaying step, inspired
+      by PHISE/PHOBos calibration utilities.
+
+    Parameters
+    ----------
+    N, M, L, W, n_eff, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution :
+        Same meaning as in :func:`simulate`.
+    bright_output_idx : int, default=0
+        Output index to maximize (the "Bright" output).
+    Din, Dout : float, optional
+        Input/output port spacing [m]. See :func:`simulate`.
+    beta, initial_step, epsilon : float
+        Calibration loop parameters.
+    verbose : bool
+        Print progress.
+
+    Returns
+    -------
+    dict
+        Dictionary with:
+        - ``metric``: metric history
+        - ``phases``: phase history [rad]
+        - ``best_metric``: best metric
+        - ``best_phases``: best phases [rad]
+        - ``bright_output_idx``: bright output index
+    """
+    if not (0 <= bright_output_idx < M):
+        raise ValueError(f"bright_output_idx must be in [0, {M-1}], got {bright_output_idx}.")
+
+    # Use the same default L heuristic as simulate().
+    if L is None:
+        L_pi = 4 * n_eff * W**2 / (3 * wavelength)
+        L = L_pi / 2
+
+    if input_amplitudes is None:
+        input_amplitudes = [1.0 / np.sqrt(N)] * N
+    if len(input_amplitudes) != N:
+        raise ValueError(f"Length of input_amplitudes ({len(input_amplitudes)}) must match N ({N})")
+
+    input_amplitudes = np.asarray(input_amplitudes, dtype=complex)
+    magnitudes = np.abs(input_amplitudes)
+    start_phases = _wrap_phase_radians(np.angle(input_amplitudes))
+
+    # Fix global phase degeneracy.
+    start_phases[0] = 0.0
+
+    def evaluate_metric(phases_rad):
+        phases_rad = _wrap_phase_radians(phases_rad)
+        phases_rad[0] = 0.0
+        amps = magnitudes * np.exp(1j * phases_rad)
+
+        out = simulate(
+            N=N,
+            M=M,
+            L=L,
+            W=W,
+            n_eff=n_eff,
+            wavelength=wavelength,
+            input_amplitudes=amps,
+            num_modes=num_modes,
+            num_z_steps=num_z_steps,
+            z_resolution=z_resolution,
+            output_file=None,
+            verbose=False,
+            Din=Din,
+            Dout=Dout,
+        )
+
+        intensities = np.abs(out) ** 2
+        bright = float(intensities[bright_output_idx])
+        null_sum = float(np.sum(intensities) - bright)
+
+        if bright <= 0:
+            return float("inf")
+        return null_sum / bright
+
+    result = _calibrate_phases_genetic_like(
+        evaluate_metric=evaluate_metric,
+        n_phases=N,
+        beta=beta,
+        initial_step=initial_step,
+        epsilon=epsilon,
+        initial_phases=start_phases,
+        fixed_indices={0},
+        verbose=verbose,
+    )
+    result["bright_output_idx"] = int(bright_output_idx)
+    return result
+
+
 def _compute_symmetric_port_positions(num_ports, W, spacing, name):
     """Compute symmetric port positions around x=W/2.
 
