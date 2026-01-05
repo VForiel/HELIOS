@@ -197,12 +197,16 @@ def calibrate_input_phases_genetic(
 
     where "null outputs" are all outputs except the chosen bright output.
 
-    Notes
-    -----
-    - The global phase is physically irrelevant for intensities; by default the first
-      input phase (index 0) is fixed to 0 rad.
-    - This uses a genetic-like coordinate-descent algorithm with decaying step, inspired
-      by PHISE/PHOBos calibration utilities.
+        Notes
+        -----
+        - The global phase is physically irrelevant when the metric depends only on output
+            intensities (as it does here). Therefore the solution is not unique: adding a
+            constant phase offset to all inputs yields the same metric.
+        - We intentionally do *not* fix the phase of any input as a reference. This keeps
+            the input-1 phase as a free degree of freedom, which can be important when
+            interfacing with hardware that has no absolute phase origin.
+        - This uses a genetic-like coordinate-descent algorithm with decaying step, inspired
+            by PHISE/PHOBos calibration utilities.
 
     Parameters
     ----------
@@ -244,12 +248,8 @@ def calibrate_input_phases_genetic(
     magnitudes = np.abs(input_amplitudes)
     start_phases = _wrap_phase_radians(np.angle(input_amplitudes))
 
-    # Fix global phase degeneracy.
-    start_phases[0] = 0.0
-
     def evaluate_metric(phases_rad):
         phases_rad = _wrap_phase_radians(phases_rad)
-        phases_rad[0] = 0.0
         amps = magnitudes * np.exp(1j * phases_rad)
 
         out = simulate(
@@ -284,7 +284,7 @@ def calibrate_input_phases_genetic(
         initial_step=initial_step,
         epsilon=epsilon,
         initial_phases=start_phases,
-        fixed_indices={0},
+        fixed_indices=None,
         verbose=verbose,
     )
     result["bright_output_idx"] = int(bright_output_idx)
