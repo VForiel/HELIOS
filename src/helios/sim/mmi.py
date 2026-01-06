@@ -187,7 +187,7 @@ def calibrate_input_phases_genetic(
     L=None,
     W=10.0e-6,
     n_core=2.0458,
-    n_clad=1.95,
+    delta_n=0.0958,
     wavelength=1.55e-6,
     input_amplitudes=None,
     bright_output_idx=0,
@@ -207,6 +207,8 @@ def calibrate_input_phases_genetic(
 
     The phase shifters are modeled as the input phases (one per input). The objective is
     to minimize the null-depth-like metric:
+    
+    Note: n_clad is calculated as n_clad = n_core - delta_n
 
     ``metric = sum(null_outputs) / bright_output``
 
@@ -225,7 +227,7 @@ def calibrate_input_phases_genetic(
 
     Parameters
     ----------
-    N, M, L, W, n_core, n_clad, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution :
+    N, M, L, W, n_core, delta_n, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution :
         Same meaning as in :func:`simulate`. n_eff is computed automatically from n_core and n_clad.
     bright_output_idx : int, default=0
         Output index to maximize (the "Bright" output).
@@ -248,6 +250,9 @@ def calibrate_input_phases_genetic(
         - ``best_phases``: best phases [rad]
         - ``bright_output_idx``: bright output index
     """
+    # Calculate n_clad from delta_n
+    n_clad = n_core - delta_n
+    
     if not (0 <= bright_output_idx < M):
         raise ValueError(f"bright_output_idx must be in [0, {M-1}], got {bright_output_idx}.")
 
@@ -279,7 +284,7 @@ def calibrate_input_phases_genetic(
             L=L,
             W=W,
             n_core=n_core,
-            n_clad=n_clad,
+            delta_n=delta_n,
             wavelength=wavelength,
             input_amplitudes=amps,
             num_modes=num_modes,
@@ -420,14 +425,15 @@ def _compute_symmetric_port_positions(num_ports, W, spacing, name):
     positions = np.clip(positions, 0.0, W)
     return positions.tolist()
 
-def _compute_mmi_field(N, M, L, W, n_core, n_clad, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, verbose=False, Din=None, Dout=None, Sin=None, Sout=None):
+def _compute_mmi_field(N, M, L, W, n_core, delta_n, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, verbose=False, Din=None, Dout=None, Sin=None, Sout=None):
     """
     Core field calculation (Internal helper).
     
     Parameters
     ----------
-    N, M, L, W, n_core, n_clad, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, verbose, Din, Dout : 
-        Standard MMI simulation parameters. n_eff is computed automatically from n_core and n_clad for each mode.
+    N, M, L, W, n_core, delta_n, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, verbose, Din, Dout : 
+        Standard MMI simulation parameters. n_eff is computed automatically from n_core and delta_n for each mode.
+        n_clad = n_core - delta_n
     Sin : float, optional
         Width of input waveguide single-mode field (Field Mode Width, FMW) [m].
         If None, uses historical default: (W / N) / 4.
@@ -444,6 +450,9 @@ def _compute_mmi_field(N, M, L, W, n_core, n_clad, wavelength, input_amplitudes,
         (z_grid, x_grid, field_evolution, output_positions, input_positions, beam_waist, dx)
         where beam_waist is the effective mode width used for overlaps.
     """
+    # Calculate n_clad from delta_n
+    n_clad = n_core - delta_n
+    
     k0 = 2 * np.pi / wavelength
     
     # Defaults for z-resolution if num_z_steps is not explicit
@@ -817,8 +826,10 @@ def _compute_single_field_wrapper(i, N, M, L, W, n_core, n_clad, wavelength, inp
     )
     return ret[2]
 
-def simulate(N=2, M=2, L=None, W=10.0e-6, n_core=2.0458, n_clad=1.95, wavelength=1.55e-6, input_amplitudes=None, num_modes=50, num_z_steps=None, z_resolution=None, output_file=None, verbose=False, Din=None, Dout=None, Sin=None, Sout=None):
+def simulate(N=2, M=2, L=None, W=10.0e-6, n_core=2.0458, delta_n=0.0958, wavelength=1.55e-6, input_amplitudes=None, num_modes=50, num_z_steps=None, z_resolution=None, output_file=None, verbose=False, Din=None, Dout=None, Sin=None, Sout=None):
 
+    # Calculate n_clad from delta_n
+    n_clad = n_core - delta_n
 
     """
     Simulates light propagation in an NxM MMI (Multi-Mode Interferometer) using Eigenmode Expansion (Hard Wall).
@@ -934,7 +945,7 @@ def simulate(N=2, M=2, L=None, W=10.0e-6, n_core=2.0458, n_clad=1.95, wavelength
     
     # Run internal simulation
     z_grid, x_grid, field_evolution, output_positions, input_positions, beam_waist, dx = _compute_mmi_field(
-        N, M, L, W, n_core, n_clad, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, verbose, Din=Din, Dout=Dout, Sin=Sin, Sout=Sout
+        N, M, L, W, n_core, delta_n, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, verbose, Din=Din, Dout=Dout, Sin=Sin, Sout=Sout
     )
     
     # Update num_z_steps to match the actual grid size used
@@ -1091,7 +1102,7 @@ def simulate(N=2, M=2, L=None, W=10.0e-6, n_core=2.0458, n_clad=1.95, wavelength
 
     return output_amplitudes
 
-def compute_contributions(N, M, L, W, n_core, n_clad, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, verbose=False, Din=None, Dout=None, Sin=None, Sout=None):
+def compute_contributions(N, M, L, W, n_core, delta_n, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, verbose=False, Din=None, Dout=None, Sin=None, Sout=None):
     """
     Calculates MMI fields and contributions, returning raw data for analysis or custom plotting.
 
@@ -1110,8 +1121,8 @@ def compute_contributions(N, M, L, W, n_core, n_clad, wavelength, input_amplitud
         Width of the MMI region [m].
     n_core : float
         Refractive index of the MMI core.
-    n_clad : float
-        Refractive index of the cladding.
+    delta_n : float
+        Index contrast (n_core - n_clad). n_clad = n_core - delta_n.
     wavelength : float
         Wavelength [m].
     input_amplitudes : list
@@ -1152,6 +1163,9 @@ def compute_contributions(N, M, L, W, n_core, n_clad, wavelength, input_amplitud
         - ``num_z_steps``: Actual number of z steps used.
     """
     # Defaults logic
+    # Calculate n_clad from delta_n
+    n_clad = n_core - delta_n
+    
     if L is None:
         n_eff = 0.7 * n_core + 0.3 * n_clad
         L_pi = 4 * n_eff * W**2 / (3 * wavelength)
@@ -1173,7 +1187,7 @@ def compute_contributions(N, M, L, W, n_core, n_clad, wavelength, input_amplitud
     
     # Common geometry data from first run
     z_grid, x_grid, field_total_evol, output_positions, input_positions, beam_waist, dx = _compute_mmi_field(
-        N, M, L, W, n_core, n_clad, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, verbose, Din=Din, Dout=Dout, Sin=Sin, Sout=Sout
+        N, M, L, W, n_core, delta_n, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, verbose, Din=Din, Dout=Dout, Sin=Sin, Sout=Sout
     )
     
     # Update num_z_steps to match (important for animation frames)
@@ -1189,7 +1203,7 @@ def compute_contributions(N, M, L, W, n_core, n_clad, wavelength, input_amplitud
     
     contributions_fields = Parallel(n_jobs=-1)(
         delayed(_compute_single_field_wrapper)(
-            i, N, M, L, W, n_core, n_clad, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, Din, Dout, Sin, Sout
+            i, N, M, L, W, n_core, delta_n, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, Din, Dout, Sin, Sout
         ) for i in range(N)
     )
         
@@ -1229,7 +1243,7 @@ def compute_contributions(N, M, L, W, n_core, n_clad, wavelength, input_amplitud
         "num_z_steps": num_z_steps
     }
 
-def simulate_contributions(N=2, M=2, L=None, W=10.0e-6 , n_core=2.0458, n_clad=1.95, wavelength=1.55e-6, input_amplitudes=None, num_modes=50, num_z_steps=None, z_resolution=None, output_file=None, verbose=False, Din=None, Dout=None, Sin=None, Sout=None):
+def simulate_contributions(N=2, M=2, L=None, W=10.0e-6 , n_core=2.0458, delta_n=0.0958, wavelength=1.55e-6, input_amplitudes=None, num_modes=50, num_z_steps=None, z_resolution=None, output_file=None, verbose=False, Din=None, Dout=None, Sin=None, Sout=None):
     """
     Simulates light propagation with explicit visualization of phasor contributions from each input.
     
@@ -1249,8 +1263,8 @@ def simulate_contributions(N=2, M=2, L=None, W=10.0e-6 , n_core=2.0458, n_clad=1
         Width of the MMI [m].
     n_core : float, default=2.0458
         Refractive index of the MMI core.
-    n_clad : float, default=1.95
-        Refractive index of the cladding.
+    delta_n : float, default=0.0958
+        Index contrast (n_core - n_clad).
     wavelength : float, default=1.55e-6
         Wavelength [m].
     input_amplitudes : list, optional
@@ -1281,8 +1295,11 @@ def simulate_contributions(N=2, M=2, L=None, W=10.0e-6 , n_core=2.0458, n_clad=1
     np.ndarray
         Complex amplitudes at the M outputs.
     """
+    # Calculate n_clad from delta_n
+    n_clad = n_core - delta_n
+    
     # 1. Calculate Data
-    data = compute_contributions(N, M, L, W, n_core, n_clad, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, verbose, Din=Din, Dout=Dout, Sin=Sin, Sout=Sout)
+    data = compute_contributions(N, M, L, W, n_core, delta_n, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, verbose, Din=Din, Dout=Dout, Sin=Sin, Sout=Sout)
     
     z_grid = data["z_grid"]
     x_grid = data["x_grid"]
@@ -1312,7 +1329,7 @@ def simulate_contributions(N=2, M=2, L=None, W=10.0e-6 , n_core=2.0458, n_clad=1
             _make_video_from_frames(output_file, temp_dir, fps=30)
         
     # Return total output
-    output_amplitudes = simulate(N, M, L, W, n_core, n_clad, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, output_file=None, verbose=verbose, Din=Din, Dout=Dout)
+    output_amplitudes = simulate(N, M, L, W, n_core, delta_n, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, output_file=None, verbose=verbose, Din=Din, Dout=Dout)
 
     if verbose:
         print(f"Output amplitudes: {output_amplitudes}")
