@@ -28,6 +28,7 @@ You are working in **"Full Agent"** mode. You are the primary developer.
     *   `examples/`: User scripts.
     *   `tmp/`: YOUR scratchpad. Use this for temporary scripts. **NEVER** create files at root.
 *   **Atomic Commands**: Run terminal commands one by one. Do NOT chain with `&` or `;`.
+*   **Do not run scripts in terminal**: Avoid `python -c "..."`. Create a temporary script instead and then run it.
 
 ## 🧪 Testing
 
