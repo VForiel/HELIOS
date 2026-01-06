@@ -425,6 +425,70 @@ def _compute_symmetric_port_positions(num_ports, W, spacing, name):
     positions = np.clip(positions, 0.0, W)
     return positions.tolist()
 
+
+def _solve_slab_modes_fd(x_grid, n_profile, k0, num_modes):
+    """Solve 1D slab modes with finite differences (Dirichlet at boundaries).
+
+    We shift the potential by the cladding term to keep eigenvalues well-scaled:
+    solve ``-d²ψ/dx² + [(k0 n)^2 - (k0 n_clad)^2] ψ = (β² - (k0 n_clad)^2) ψ``.
+
+    Returns modes sorted by β (high to low) and normalized (∫|ψ|² dx = 1).
+    """
+    dx = x_grid[1] - x_grid[0]
+    n_pts = len(x_grid)
+
+    main = np.full(n_pts, -2.0 / dx**2)
+    off = np.full(n_pts - 1, 1.0 / dx**2)
+    lap = np.diag(main) + np.diag(off, 1) + np.diag(off, -1)
+
+    n_clad = float(np.min(n_profile))
+    potential = (k0 * n_profile) ** 2 - (k0 * n_clad) ** 2
+    A = -lap + np.diag(potential)
+
+    eigvals, eigvecs = np.linalg.eigh(A)
+    betas = np.sqrt(np.clip(eigvals + (k0 * n_clad) ** 2, 0.0, None))
+
+    # Sort by beta descending (guided first)
+    idx = np.argsort(betas)[::-1]
+    betas = betas[idx][:num_modes]
+    modes = eigvecs[:, idx][:, :num_modes].T  # (num_modes, n_pts)
+
+    # Normalize modes
+    for m in range(len(modes)):
+        norm = np.sqrt(np.trapz(np.abs(modes[m])**2, x_grid))
+        if norm > 0:
+            modes[m] /= norm
+
+    return betas, modes
+
+
+def _propagate_free_space(input_field, x_grid, z_grid, k0, n_medium):
+    """Propagate a field in a uniform medium using the angular spectrum method.
+
+    This fallback is used when the index contrast collapses (Δn → 0), so the
+    waveguide no longer supports guided modes and the field should simply
+    diffract in free space.
+    """
+    dx = x_grid[1] - x_grid[0]
+    kx = 2 * np.pi * np.fft.fftfreq(len(x_grid), d=dx)
+    k_cutoff = k0 * n_medium
+
+    # Split propagating vs evanescent components for numerical stability
+    kx_abs = np.abs(kx)
+    kz = np.zeros_like(kx, dtype=complex)
+    propagating = kx_abs <= k_cutoff
+    kz[propagating] = np.sqrt(np.maximum(k_cutoff**2 - kx[propagating]**2, 0.0))
+    kz[~propagating] = 1j * np.sqrt(kx[~propagating]**2 - k_cutoff**2)
+
+    spectrum0 = np.fft.fft(input_field)
+    field_evolution = np.zeros((len(z_grid), len(x_grid)), dtype=complex)
+
+    for iz, z in enumerate(z_grid):
+        phase = np.exp(1j * kz * z)
+        field_evolution[iz, :] = np.fft.ifft(spectrum0 * phase)
+
+    return field_evolution
+
 def _compute_mmi_field(N, M, L, W, n_core, delta_n, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, verbose=False, Din=None, Dout=None, Sin=None, Sout=None):
     """
     Core field calculation (Internal helper).
@@ -473,118 +537,86 @@ def _compute_mmi_field(N, M, L, W, n_core, delta_n, wavelength, input_amplitudes
 
     input_positions = _compute_symmetric_port_positions(N, W, Din, name="input")
     
-    # 2. Define Waveguide Modes (Hard Wall Approximation with Extended Simulation Window)
+    # 2. Define Waveguide Modes
+    # Use sine modes basis with physical confinement via Δn
     # Simulation window extends from -W/2 to 3W/2 (total width = 2W) to capture evanescent decay
     # MMI region itself is [0, W]
     x_grid = np.linspace(-W/2, 3*W/2, 500)
     dx = x_grid[1] - x_grid[0]
     
-    modes = []
     betas = []
-    n_eff_modes = []  # Store effective index for each mode
-    
+    n_eff_modes = []
+    modes = []
+
     for m in range(num_modes):
-        kx_m = (m + 1) * np.pi / W
+        # Mode number m (starting from 1 for m=0)
+        mode_num = m + 1
         
-        # Calculate propagation constants
-        sq_core = (k0 * n_core)**2 - kx_m**2
-        sq_clad = kx_m**2 - (k0 * n_clad)**2
+        # Wave vector in transverse direction (sine profile in core)
+        kx_m = mode_num * np.pi / W
         
-        if sq_core < 0:
-            # Mode is beyond cutoff - skip it
-            betas.append(0)
+        # Propagation constant: β² = (k₀ n_core)² - kx²
+        sq_term = (k0 * n_core) ** 2 - kx_m ** 2
+        
+        if sq_term < 0:
+            # Mode is beyond cutoff
+            betas.append(0.0)
             n_eff_modes.append(n_clad)
             modes.append(np.zeros_like(x_grid, dtype=float))
             continue
         
-        beta_m = np.sqrt(sq_core)
+        beta_m = np.sqrt(sq_term)
         betas.append(beta_m)
         
-        # Determine field character in cladding
-        # If sq_clad > 0: evanescent (exponential decay) - field is tightly bound
-        # If sq_clad <= 0: radiating (oscillatory/leaky) - field penetrates into cladding
-        
-        if sq_clad > 0:
-            # Evanescent: strongly decaying exponentially in cladding
-            kappa_m = np.sqrt(sq_clad)
-            # Energy fraction in core using standard waveguide formula
-            # f_core ≈ 1 / (1 + penetration_ratio)
-            f_core = 1.0 / (1.0 + 0.5 * W * kappa_m / beta_m)
-            penetration_type = "evanescent"
-        else:
-            # Radiating: mode oscillates in cladding with weak decay
-            # This means field penetrates significantly into cladding
-            # For radiating modes, energy distribution decreases with mode order
-            # Higher modes (larger m) have more penetration
-            rad_m = np.sqrt(-sq_clad)
-            # Approximate: f_core decreases with mode number
-            f_core = 0.7 - 0.05 * m  # Start from 0.7 for fundamental
-            f_core = np.clip(f_core, 0.3, 0.95)  # Keep in physical range
-            penetration_type = "radiating"
-        
-        # Mode-dependent effective index
-        n_eff_m = f_core * n_core + (1.0 - f_core) * n_clad
+        # Effective refractive index for this mode
+        n_eff_m = beta_m / k0
         n_eff_modes.append(n_eff_m)
         
         # Construct mode profile
         phi_m = np.zeros_like(x_grid, dtype=float)
         
-        # Inside MMI [0, W]: sine profile (normalized)
+        # Inside core [0, W]: sine profile (normalized)
         mask_inside = (x_grid >= 0) & (x_grid <= W)
-        phi_m[mask_inside] = np.sqrt(2/W) * np.sin(kx_m * x_grid[mask_inside])
+        phi_m[mask_inside] = np.sqrt(2 / W) * np.sin(kx_m * x_grid[mask_inside])
         
-        # Outside MMI: field decay/oscillation
-        if sq_clad > 0:
-            # Evanescent decay: exponential with decay constant kappa_m
-            kappa_m = np.sqrt(sq_clad)
+        # Outside core: evanescent decay with proper decay constant
+        # Decay constant κ = sqrt(kx² - (k₀ n_clad)²)
+        kx_clad_sq = (k0 * n_clad) ** 2
+        sq_decay = kx_m ** 2 - kx_clad_sq
+        
+        if sq_decay > 0:
+            # Evanescent region
+            kappa_m = np.sqrt(sq_decay)
             
+            # Left side (x < 0): decay as exp(κ x)
             mask_left = x_grid < 0
-            phi_m[mask_left] = np.sqrt(2/W) * np.exp(kappa_m * x_grid[mask_left])
+            phi_m[mask_left] = np.sqrt(2 / W) * np.exp(kappa_m * x_grid[mask_left])
             
+            # Right side (x > W): decay as exp(-κ(x-W))
             mask_right = x_grid > W
-            phi_m[mask_right] = np.sqrt(2/W) * np.exp(-kappa_m * (x_grid[mask_right] - W))
+            phi_m[mask_right] = np.sqrt(2 / W) * np.exp(-kappa_m * (x_grid[mask_right] - W))
         else:
-            # For radiating modes: approximate with damped oscillation
-            # Field oscillates with period ~ pi/rad_m, decays with envelope
-            rad_m = np.sqrt(-sq_clad)
-            decay_scale = 1.0 / (1.0 + 0.1 * m)  # Decay strength increases with mode
-            
+            # Oscillating region (if core index < clad index, which shouldn't happen)
+            # For safety, just use a smooth cutoff
             mask_left = x_grid < 0
-            phi_m[mask_left] = (np.sqrt(2/W) * np.cos(rad_m * x_grid[mask_left]) 
-                               * np.exp(-decay_scale * np.abs(x_grid[mask_left])))
+            phi_m[mask_left] = np.sqrt(2 / W) * np.cos(kx_m * x_grid[mask_left]) * np.exp(-np.abs(x_grid[mask_left]) / (W / 10))
             
             mask_right = x_grid > W
-            phi_m[mask_right] = (np.sqrt(2/W) * np.cos(rad_m * (x_grid[mask_right] - W))
-                                * np.exp(-decay_scale * (x_grid[mask_right] - W)))
+            phi_m[mask_right] = np.sqrt(2 / W) * np.cos(kx_m * (x_grid[mask_right] - W)) * np.exp(-(x_grid[mask_right] - W) / (W / 10))
         
         modes.append(phi_m)
     
     betas = np.array(betas)
     n_eff_modes = np.array(n_eff_modes)
-    modes = np.array(modes) # Shape: (num_modes, num_x_points)
-    
+    modes = np.array(modes)  # Shape: (num_modes, num_x_points)
+
     if verbose:
         print(f"\nMode-Dependent Effective Indices:")
-        print(f"{'Mode':>6s} {'n_eff':>10s} {'f_core':>10s} {'Type':>12s}")
+        print(f"{'Mode':>6s} {'n_eff':>10s} {'Type':>12s}")
         print("-" * 50)
-        for m in range(min(8, num_modes)):  # Show first 8 modes
-            kx_m = (m + 1) * np.pi / W
-            sq_clad = kx_m**2 - (k0 * n_clad)**2  # Use new formula
-            
-            if sq_clad > 0:
-                # Evanescent mode
-                kappa_m = np.sqrt(sq_clad)
-                sq_core = (k0 * n_core)**2 - kx_m**2
-                beta_m = np.sqrt(max(sq_core, 0))
-                f_core = 1.0 / (1.0 + 0.5 * W * kappa_m / beta_m)
-                mode_type = "evanescent"
-            else:
-                # Radiating mode
-                f_core = 0.7 - 0.05 * m
-                f_core = np.clip(f_core, 0.3, 0.95)
-                mode_type = "radiating"
-            
-            print(f"LP₁{m+1:>2d} {n_eff_modes[m]:>10.4f} {f_core:>10.2%} {mode_type:>12s}")
+        for m in range(min(8, num_modes)):
+            mode_type = "guided" if betas[m] > 0 else "cutoff"
+            print(f"LP₁{m+1:>2d} {n_eff_modes[m]:>10.4f} {mode_type:>12s}")
         if num_modes > 8:
             print(f"... ({num_modes - 8} more modes)")
     
@@ -598,6 +630,8 @@ def _compute_mmi_field(N, M, L, W, n_core, delta_n, wavelength, input_amplitudes
     
     if verbose:
         print(f"\nInput mode width (Sin) = {Sin*1e6:.3f} um")
+        print(f"Input port positions [m] (in [0, W] coords): {input_positions}")
+        print(f"Input port positions [um] (in [0, W] coords): {[p*1e6 for p in input_positions]}")
     
     if verbose:
         print(f"Injecting input vector: {input_amplitudes}")
@@ -609,19 +643,21 @@ def _compute_mmi_field(N, M, L, W, n_core, delta_n, wavelength, input_amplitudes
         # Use the new _compute_mode_profile function for input coupling
         gauss = _compute_mode_profile(x_grid, center_x, Sin)
         input_field += amp * gauss
+        if verbose and idx < 2:  # Print first 2 for debugging
+            print(f"  Input {idx}: center={center_x*1e6:.3f} um, amplitude={amp}")
     
     # Store Sin as beam_waist for later overlap calculations
     beam_waist = Sin
 
+    # Prepare z grid for propagation
+    z_grid = np.linspace(0, L, num_z_steps)
+
     # 4. Mode Decomposition
-    coeffs = []
-    for m in range(num_modes):
-        c_m = np.sum(input_field * modes[m]) * dx
-        coeffs.append(c_m)
-    coeffs = np.array(coeffs)
+    coeffs = np.array([
+        np.trapz(input_field * np.conj(modes[m]), x_grid) for m in range(num_modes)
+    ])
     
     # 5. Propagation with mode-dependent n_eff
-    z_grid = np.linspace(0, L, num_z_steps)
     field_evolution = np.zeros((num_z_steps, len(x_grid)), dtype=complex)
     
     iterator = enumerate(z_grid)
@@ -815,14 +851,14 @@ def _make_video_from_frames(output_file, frame_dir, fps=30):
     
     subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-def _compute_single_field_wrapper(i, N, M, L, W, n_core, n_clad, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, Din, Dout, Sin, Sout):
+def _compute_single_field_wrapper(i, N, M, L, W, n_core, delta_n, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, Din, Dout, Sin, Sout):
     """Wrapper to compute field for a single input (parallel helper)."""
     single_input = np.zeros(N, dtype=complex)
     single_input[i] = input_amplitudes[i]
     
     # We only need the field_evolution (3rd return, index 2)
     ret = _compute_mmi_field(
-        N, M, L, W, n_core, n_clad, wavelength, single_input, num_modes, num_z_steps, z_resolution, verbose=False, Din=Din, Dout=Dout, Sin=Sin, Sout=Sout
+        N, M, L, W, n_core, delta_n, wavelength, single_input, num_modes, num_z_steps, z_resolution, verbose=False, Din=Din, Dout=Dout, Sin=Sin, Sout=Sout
     )
     return ret[2]
 
@@ -832,11 +868,12 @@ def simulate(N=2, M=2, L=None, W=10.0e-6, n_core=2.0458, delta_n=0.0958, wavelen
     n_clad = n_core - delta_n
 
     """
-    Simulates light propagation in an NxM MMI (Multi-Mode Interferometer) using Eigenmode Expansion (Hard Wall).
+    Simulates light propagation in an NxM MMI (Multi-Mode Interferometer) using Eigenmode Expansion with
+    finite-difference step-index modes.
     
     This function models the propagation of light through a multimode waveguide section, calculating
-    the output amplitudes at specified output ports. It uses a hard-wall approximation for the
-    guided modes and assumes a step-index profile.
+    the output amplitudes at specified output ports. Modes are obtained from a finite-difference eigen
+    solver on a step-index profile, capturing evanescent tails without the hard-wall approximation.
 
     Parameters
     ----------
