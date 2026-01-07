@@ -1280,6 +1280,153 @@ def compute_contributions(N, M, L, W, n_core, delta_n, wavelength, input_amplitu
         "num_z_steps": num_z_steps
     }
 
+
+def plot_mmi_interactive(
+    N, M, L, W, n_core, delta_n, wavelength, input_amplitudes,
+    num_modes, num_z_steps, z_resolution, Din, Dout, Sin, Sout,
+    verbose=False
+):
+    """Generate interactive MMI visualization plot.
+    
+    Builds and returns a matplotlib figure showing the complete MMI simulation
+    with intensity map, cross-sections, phasor contributions, and z-profiles.
+    
+    Parameters
+    ----------
+    N, M, L, W, n_core, delta_n, wavelength, input_amplitudes, num_modes : 
+        Same as :func:`compute_contributions`.
+    num_z_steps, z_resolution, Din, Dout, Sin, Sout, verbose :
+        Same as :func:`compute_contributions`.
+    
+    Returns
+    -------
+    matplotlib.figure.Figure
+        The complete MMI visualization figure.
+    """
+    # Compute data
+    data = compute_contributions(
+        N=N, M=M, L=L, W=W, n_core=n_core, delta_n=delta_n,
+        wavelength=wavelength, input_amplitudes=input_amplitudes,
+        num_modes=num_modes, num_z_steps=num_z_steps, z_resolution=z_resolution,
+        Din=Din, Dout=Dout, Sin=Sin, Sout=Sout, verbose=verbose
+    )
+    
+    z_grid = data['z_grid']
+    x_grid = data['x_grid']
+    intensity_map = data['intensity_total_evol']
+    phasors = data['phasors']
+    input_pos = data['input_positions']
+    output_pos = data['output_positions']
+    L_sim = data['L']
+
+    # Build figure
+    fig = plt.figure(figsize=(12, 16))
+    gs = fig.add_gridspec(4, M, height_ratios=[1.5, 1, 1.5, 1.5])
+
+    # 1. Intensity Map (Top)
+    ax_map = fig.add_subplot(gs[0, :])
+    # Show full 2W simulation window (x_grid goes from -W/2 to 3W/2)
+    # Shift coordinates so x=0 corresponds to left edge of simulation window
+    x_min = x_grid[0]  # -W/2
+    x_max = x_grid[-1]  # 3W/2
+    extent = [0, L_sim*1e6, (x_min + W/2)*1e6, (x_max + W/2)*1e6]  # Shift to [0, 2W]
+    
+    im = ax_map.imshow(intensity_map.T, origin='lower', aspect='auto', extent=extent, cmap='inferno')
+    ax_map.set_xlabel('z [um]')
+    ax_map.set_ylabel('x [um]')
+    
+    # Add white lines to mark MMI core boundaries
+    # MMI core is at x ∈ [0, W] in original coordinates
+    # After shift: x ∈ [W/2, 3W/2] in display coordinates
+    ax_map.axhline(y=0.5*W*1e6, color='white', linestyle='--', linewidth=1.5, alpha=0.7, label='MMI Core Boundary')
+    ax_map.axhline(y=1.5*W*1e6, color='white', linestyle='--', linewidth=1.5, alpha=0.7)
+    
+    # Title with mode widths and wavelength
+    sin_str = f"{Sin*1e6:.2f}" if Sin else "auto"
+    sout_str = f"{Sout*1e6:.2f}" if Sout else "auto"
+    n_clad_calc = n_core - delta_n
+    n_eff_calc = 0.7 * n_core + 0.3 * n_clad_calc
+    ax_map.set_title(f'Intensity Map - Full 2W Window (λ={wavelength*1e6:.2f} µm, n_core={n_core:.4f}, Δn={delta_n:.4f}, n_eff={n_eff_calc:.4f})\nSin={sin_str} µm, Sout={sout_str} µm | White lines: MMI core boundaries', fontsize=9)
+    
+    # Markers - adjust for shifted coordinates
+    ax_map.scatter([0]*N, [(p + W/2)*1e6 for p in input_pos], color='cyan', s=10, marker='o', label='Inputs')
+    ax_map.scatter([L_sim*1e6]*M, [(p + W/2)*1e6 for p in output_pos], color='lime', s=10, marker='s', label='Outputs')
+    ax_map.legend(loc='upper right', fontsize=8)
+
+    # 2. Cross Section at Output (Row 2)
+    ax_prof = fig.add_subplot(gs[1, :])
+    # Shift x-axis to match intensity map display
+    x_display = (x_grid + W/2) * 1e6
+    ax_prof.plot(x_display, intensity_map[-1, :], 'b-', lw=2)
+    
+    # Mark MMI core boundaries
+    ax_prof.axvline(x=0.5*W*1e6, color='red', linestyle='--', alpha=0.5, label='MMI Core')
+    ax_prof.axvline(x=1.5*W*1e6, color='red', linestyle='--', alpha=0.5)
+    
+    # Mark output positions
+    for p in output_pos:
+        ax_prof.axvline(x=(p + W/2)*1e6, color='k', linestyle=':', alpha=0.5)
+    
+    ax_prof.set_xlim(0, 2*W*1e6)  # Full 2W window
+    ax_prof.set_xlabel('x [um]')
+    ax_prof.set_ylabel('Intensity')
+    ax_prof.set_title('Output Profile (x) - Full 2W Window')
+    ax_prof.legend(loc='upper right', fontsize=8)
+
+    # 3. Polar Plots (Row 3)
+    colors = plt.cm.get_cmap('hsv', N+1)
+    max_val = np.max(np.abs(phasors[-1, :, :]))
+    limit = max_val * 1.1 if max_val > 1e-6 else 1.0
+
+    for j in range(M):
+        ax_p = fig.add_subplot(gs[2, j], projection='polar')
+        ax_p.set_title(f'Out {j+1}')
+        ax_p.set_ylim(0, limit)
+        
+        # Contributions
+        for i in range(N):
+            val = phasors[-1, j, i]
+            ax_p.plot([0, np.angle(val)], [0, np.abs(val)], color=colors(i), lw=2, label=f'In {i+1}')
+        
+        # Total
+        tot = np.sum(phasors[-1, j, :])
+        ax_p.plot([0, np.angle(tot)], [0, np.abs(tot)], 'k--', lw=2, label='Total')
+        
+        if j == M-1:
+            ax_p.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1), fontsize=7)
+
+    # 4. Z-Profile Plot (Row 4) - Grouped
+    ax_z = fig.add_subplot(gs[3, :])
+    ax_z.set_title('Z-Profile All Outputs')
+    
+    # Determine colors for Z-curves
+    z_colors = plt.cm.get_cmap('tab10', M)
+    
+    # Max intensity for scaling
+    max_int_z = np.max(intensity_map)*1.1
+    
+    for j in range(M):
+        # Find x index for this output
+        x_out = output_pos[j]
+        ix = np.argmin(np.abs(x_grid - x_out))
+        
+        # Extract I(z) at this x
+        I_z = intensity_map[:, ix]
+        
+        ax_z.plot(z_grid*1e6, I_z, color=z_colors(j), lw=1.5, label=f'Out {j+1}')
+    
+    # Vertical line for current L (end)
+    ax_z.axvline(x=L_sim*1e6, color='r', linestyle='--', lw=1.0)
+    
+    ax_z.set_xlabel('z [um]')
+    ax_z.set_xlim(0, L_sim*1e6)
+    ax_z.set_ylim(0, max_int_z)
+    ax_z.legend(loc='upper right', fontsize=8)
+
+    plt.tight_layout()
+    return fig
+
+
 def simulate_contributions(N=2, M=2, L=None, W=10.0e-6 , n_core=2.0458, delta_n=0.0958, wavelength=1.55e-6, input_amplitudes=None, num_modes=50, num_z_steps=None, z_resolution=None, output_file=None, verbose=False, Din=None, Dout=None, Sin=None, Sout=None):
     """
     Simulates light propagation with explicit visualization of phasor contributions from each input.

@@ -1,5 +1,5 @@
 """
-11_uml_visualization.py
+14_uml_visualization.py
 
 Demonstrates how to generate UML diagrams of the optical pipeline.
 Includes two examples:
@@ -77,7 +77,6 @@ def run_demo():
     # Atmosphere
     atmosphere = helios.Atmosphere(name="Atmosphere")
     
-    # Telescopes (4 collectors)
     # Telescopes (4 collectors)
     pupil = helios.Pupil(8*u.m)
     telescopes = helios.TelescopeArray(pupil=pupil, size=8*u.m, name="Interferometer Array")
