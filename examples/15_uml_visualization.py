@@ -1,5 +1,5 @@
 """
-14_uml_visualization.py
+15_uml_visualization.py
 
 Demonstrates how to generate UML diagrams of the optical pipeline.
 Includes two examples:
