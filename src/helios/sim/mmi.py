@@ -320,6 +320,320 @@ def calibrate_input_phases_genetic(
     return result
 
 
+def calibrate_n_core_and_phases(
+    N=4,
+    M=4,
+    L=None,
+    W=10.0e-6,
+    n_core_min=None,
+    n_core_max=None,
+    n_core_initial=2.0458,
+    delta_n=0.0958,
+    wavelength=1.55e-6,
+    input_amplitudes=None,
+    bright_output_idx=0,
+    num_modes=50,
+    num_z_steps=None,
+    z_resolution=None,
+    Din=None,
+    Dout=None,
+    Sin=None,
+    Sout=None,
+    n_core_steps_coarse=20,
+    gradient_convergence_threshold=1e-3,
+    gradient_initial_step=0.01,
+    beta=0.8,
+    initial_step=np.pi / 2,
+    epsilon=1e-4,
+    verbose=False,
+    progress_callback_coarse=None,
+    progress_callback_gradient=None,
+):
+    """Calibrate n_core and input phases to optimize null depth using coarse scan + gradient descent.
+    
+    This function performs a hierarchical optimization strategy:
+    
+    **Stage 1: Coarse Scan**
+        - Explores wide range from 1.0 to 2×n_core_initial
+        - Identifies promising starting point with deep nulls
+    
+    **Stage 2: Gradient Descent**
+        - Starting from best coarse point, descends gradient
+        - Adaptive step size with convergence when |Δn_core| < threshold
+        - Automatically stops when no further improvement possible
+    
+    This approach efficiently finds optimal n_core even when it lies far from
+    the initial guess, then refines to high precision via gradient descent.
+    
+    Parameters
+    ----------
+    N, M, L, W, delta_n, wavelength, input_amplitudes, bright_output_idx, num_modes, num_z_steps, z_resolution :
+        Same meaning as in :func:`calibrate_input_phases_genetic`.
+    n_core_min : float, optional
+        Minimum n_core for coarse scan. Defaults to 1.0.
+    n_core_max : float, optional
+        Maximum n_core for coarse scan. Defaults to 2 × n_core_initial.
+    n_core_initial : float, default=2.0458
+        Initial/center value for n_core (used to set default range).
+    n_core_steps_coarse : int, default=20
+        Number of n_core values in coarse scan.
+    gradient_convergence_threshold : float, default=1e-3
+        Stop gradient descent when |Δn_core| < this value.
+    gradient_initial_step : float, default=0.01
+        Initial step size for gradient descent.
+    Din, Dout, Sin, Sout, beta, initial_step, epsilon :
+        Same as in :func:`calibrate_input_phases_genetic`.
+    verbose : bool
+        Print progress.
+    progress_callback_coarse : callable, optional
+        Function called after each coarse scan evaluation: callback(current_step, total_steps).
+    progress_callback_gradient : callable, optional
+        Function called after each gradient step: callback(iteration, delta_n_core).
+    
+    Returns
+    -------
+    dict
+        Dictionary with:
+        - ``n_core_values_coarse``: array of coarse scan n_core values
+        - ``metrics_coarse``: corresponding metrics for coarse scan
+        - ``n_core_values_gradient``: list of n_core values visited during gradient descent
+        - ``metrics_gradient``: corresponding metrics for gradient descent
+        - ``best_n_core``: optimal n_core value (from gradient descent)
+        - ``best_metric``: best null depth metric achieved
+        - ``best_phases``: optimal phases [rad] for the best n_core
+        - ``bright_output_idx``: bright output index
+    """
+    # Set default search range for coarse scan
+    if n_core_min is None:
+        n_core_min = 1.0
+    if n_core_max is None:
+        n_core_max = 2.0 * n_core_initial
+    
+    if n_core_min >= n_core_max:
+        raise ValueError(f"n_core_min ({n_core_min}) must be < n_core_max ({n_core_max})")
+    
+    if n_core_steps_coarse < 2:
+        raise ValueError(f"n_core_steps_coarse must be >= 2, got {n_core_steps_coarse}")
+    
+    # ========================================================================
+    # STAGE 1: COARSE SCAN
+    # ========================================================================
+    if verbose:
+        print("="*70)
+        print("STAGE 1: COARSE N_CORE SCAN")
+        print("="*70)
+        print(f"n_core range: [{n_core_min:.4f}, {n_core_max:.4f}]")
+        print(f"n_core steps: {n_core_steps_coarse}")
+        print(f"Bright output: {bright_output_idx}")
+        print("="*70)
+    
+    n_core_values_coarse = np.linspace(n_core_min, n_core_max, n_core_steps_coarse)
+    metrics_coarse = []
+    all_phases_coarse = []
+    
+    for i, n_core_test in enumerate(n_core_values_coarse):
+        if verbose:
+            print(f"\n[Coarse {i+1}/{n_core_steps_coarse}] Testing n_core = {n_core_test:.4f}")
+        
+        # Calibrate phases for this n_core
+        result = calibrate_input_phases_genetic(
+            N=N,
+            M=M,
+            L=L,
+            W=W,
+            n_core=n_core_test,
+            delta_n=delta_n,
+            wavelength=wavelength,
+            input_amplitudes=input_amplitudes,
+            bright_output_idx=bright_output_idx,
+            num_modes=num_modes,
+            num_z_steps=num_z_steps,
+            z_resolution=z_resolution,
+            Din=Din,
+            Dout=Dout,
+            Sin=Sin,
+            Sout=Sout,
+            beta=beta,
+            initial_step=initial_step,
+            epsilon=epsilon,
+            verbose=False,
+        )
+        
+        metric = result['best_metric']
+        phases = result['best_phases']
+        
+        metrics_coarse.append(metric)
+        all_phases_coarse.append(phases)
+        
+        if progress_callback_coarse is not None:
+            progress_callback_coarse(i + 1, n_core_steps_coarse)
+        
+        if verbose:
+            print(f"   Metric: {metric:.3e}")
+    
+    metrics_coarse = np.array(metrics_coarse)
+    best_coarse_idx = np.argmin(metrics_coarse)
+    best_coarse_n_core = n_core_values_coarse[best_coarse_idx]
+    best_coarse_metric = metrics_coarse[best_coarse_idx]
+    
+    if verbose:
+        print("\n" + "="*70)
+        print("COARSE SCAN COMPLETE")
+        print("="*70)
+        print(f"Best coarse n_core: {best_coarse_n_core:.4f}")
+        print(f"Best coarse metric: {best_coarse_metric:.3e}")
+        print("="*70)
+    
+    # ========================================================================
+    # STAGE 2: GRADIENT DESCENT
+    # ========================================================================
+    if verbose:
+        print("\n" + "="*70)
+        print("STAGE 2: GRADIENT DESCENT")
+        print("="*70)
+        print(f"Starting from: n_core = {best_coarse_n_core:.4f}")
+        print(f"Convergence threshold: |Δn_core| < {gradient_convergence_threshold}")
+        print("="*70)
+    
+    # Helper function to evaluate metric at a given n_core
+    def evaluate_n_core(n_core_val):
+        result = calibrate_input_phases_genetic(
+            N=N,
+            M=M,
+            L=L,
+            W=W,
+            n_core=n_core_val,
+            delta_n=delta_n,
+            wavelength=wavelength,
+            input_amplitudes=input_amplitudes,
+            bright_output_idx=bright_output_idx,
+            num_modes=num_modes,
+            num_z_steps=num_z_steps,
+            z_resolution=z_resolution,
+            Din=Din,
+            Dout=Dout,
+            Sin=Sin,
+            Sout=Sout,
+            beta=beta,
+            initial_step=initial_step,
+            epsilon=epsilon,
+            verbose=False,
+        )
+        return result['best_metric'], result['best_phases']
+    
+    # Initialize gradient descent
+    n_core_current = best_coarse_n_core
+    metric_current = best_coarse_metric
+    phases_current = all_phases_coarse[best_coarse_idx]
+    step_size = gradient_initial_step
+    
+    n_core_values_gradient = [n_core_current]
+    metrics_gradient = [metric_current]
+    all_phases_gradient = [phases_current]
+    
+    iteration = 0
+    max_iterations = 100  # Safety limit
+    
+    while iteration < max_iterations:
+        iteration += 1
+        
+        # Evaluate gradient by finite differences
+        n_core_plus = n_core_current + step_size
+        n_core_minus = n_core_current - step_size
+        
+        # Clip to valid range
+        n_core_plus = np.clip(n_core_plus, n_core_min, n_core_max)
+        n_core_minus = np.clip(n_core_minus, n_core_min, n_core_max)
+        
+        if verbose:
+            print(f"\n[Gradient {iteration}] Evaluating gradient at n_core = {n_core_current:.4f}")
+        
+        metric_plus, phases_plus = evaluate_n_core(n_core_plus)
+        metric_minus, phases_minus = evaluate_n_core(n_core_minus)
+        
+        if verbose:
+            print(f"   n_core={n_core_minus:.4f} → metric={metric_minus:.3e}")
+            print(f"   n_core={n_core_plus:.4f}  → metric={metric_plus:.3e}")
+        
+        # Determine best direction
+        if metric_plus < metric_current and metric_plus < metric_minus:
+            # Move in + direction
+            n_core_new = n_core_plus
+            metric_new = metric_plus
+            phases_new = phases_plus
+            direction = "+"
+        elif metric_minus < metric_current and metric_minus < metric_plus:
+            # Move in - direction
+            n_core_new = n_core_minus
+            metric_new = metric_minus
+            phases_new = phases_minus
+            direction = "-"
+        else:
+            # No improvement, reduce step size
+            step_size *= 0.5
+            if verbose:
+                print(f"   No improvement. Reducing step size to {step_size:.4f}")
+            
+            # Check convergence
+            if step_size < gradient_convergence_threshold:
+                if verbose:
+                    print(f"   Step size below threshold. Converged!")
+                break
+            continue
+        
+        delta_n_core = abs(n_core_new - n_core_current)
+        
+        if verbose:
+            print(f"   → Moving {direction}: n_core = {n_core_new:.4f}, Δn = {delta_n_core:.4f}")
+        
+        # Update current position
+        n_core_current = n_core_new
+        metric_current = metric_new
+        phases_current = phases_new
+        
+        n_core_values_gradient.append(n_core_current)
+        metrics_gradient.append(metric_current)
+        all_phases_gradient.append(phases_current)
+        
+        if progress_callback_gradient is not None:
+            progress_callback_gradient(iteration, delta_n_core)
+        
+        # Check convergence
+        if delta_n_core < gradient_convergence_threshold:
+            if verbose:
+                print(f"   Converged! |Δn_core| = {delta_n_core:.4f} < {gradient_convergence_threshold}")
+            break
+    
+    if iteration >= max_iterations:
+        if verbose:
+            print(f"\n   Warning: Max iterations ({max_iterations}) reached without convergence")
+    
+    best_n_core = n_core_current
+    best_metric = metric_current
+    best_phases = phases_current
+    
+    if verbose:
+        print("\n" + "="*70)
+        print("OPTIMIZATION COMPLETE")
+        print("="*70)
+        print(f"Gradient iterations: {len(n_core_values_gradient) - 1}")
+        print(f"Optimal n_core: {best_n_core:.4f}")
+        print(f"Best metric (null/bright): {best_metric:.3e}")
+        print(f"Best phases [rad]: {best_phases}")
+        print("="*70)
+    
+    return {
+        "n_core_values_coarse": n_core_values_coarse,
+        "metrics_coarse": metrics_coarse,
+        "n_core_values_gradient": np.array(n_core_values_gradient),
+        "metrics_gradient": np.array(metrics_gradient),
+        "best_n_core": best_n_core,
+        "best_metric": best_metric,
+        "best_phases": best_phases,
+        "bright_output_idx": bright_output_idx,
+    }
+
+
 def _compute_mode_profile(x_grid, center, width):
     """Compute normalized Gaussian mode profile for a single-mode waveguide.
     
