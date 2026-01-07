@@ -374,14 +374,14 @@ def _compute_mode_profile(x_grid, center, width):
 
 
 def _compute_symmetric_port_positions(num_ports, W, spacing, name):
-    """Compute symmetric port positions around x=W/2.
+    """Compute symmetric port positions centered at x=0.
 
     Parameters
     ----------
     num_ports : int
         Number of ports.
     W : float
-        MMI width [m].
+        MMI width [m]. The MMI core extends from [-W/2, W/2].
     spacing : float | None
         Port-to-port spacing [m]. If None, uses the historical default spacing W/num_ports.
     name : str
@@ -390,12 +390,12 @@ def _compute_symmetric_port_positions(num_ports, W, spacing, name):
     Returns
     -------
     list[float]
-        Port center positions along x in [m], symmetric about x=W/2.
+        Port center positions along x in [m], symmetric about x=0 (centered).
 
     Raises
     ------
     ValueError
-        If spacing is non-positive or causes ports to lie outside the MMI [0, W].
+        If spacing is non-positive or causes ports to lie outside the MMI [-W/2, W/2].
     """
     if num_ports <= 0:
         raise ValueError(f"{name} ports must be a positive integer, got {num_ports}.")
@@ -407,7 +407,8 @@ def _compute_symmetric_port_positions(num_ports, W, spacing, name):
     if spacing <= 0:
         raise ValueError(f"{name} spacing must be > 0, got {spacing}.")
 
-    center = 0.5 * W
+    # Center at x=0, distribute symmetrically
+    center = 0.0
     offsets = (np.arange(num_ports, dtype=float) - 0.5 * (num_ports - 1)) * spacing
     positions = center + offsets
 
@@ -415,14 +416,14 @@ def _compute_symmetric_port_positions(num_ports, W, spacing, name):
     eps = max(1e-15, 1e-15 * abs(W))
     min_pos = float(np.min(positions))
     max_pos = float(np.max(positions))
-    if (min_pos < -eps) or (max_pos > W + eps):
+    if (min_pos < -W/2 - eps) or (max_pos > W/2 + eps):
         raise ValueError(
             f"{name} spacing {spacing} m is too large for W={W} m: "
-            f"{name} positions would span [{min_pos}, {max_pos}] m outside [0, {W}] m."
+            f"{name} positions would span [{min_pos}, {max_pos}] m outside [-{W/2}, {W/2}] m."
         )
 
     # Clamp tiny numerical noise at boundaries.
-    positions = np.clip(positions, 0.0, W)
+    positions = np.clip(positions, -W/2, W/2)
     return positions.tolist()
 
 
@@ -539,9 +540,9 @@ def _compute_mmi_field(N, M, L, W, n_core, delta_n, wavelength, input_amplitudes
     
     # 2. Define Waveguide Modes
     # Use sine modes basis with physical confinement via Δn
-    # Simulation window extends from -W/2 to 3W/2 (total width = 2W) to capture evanescent decay
-    # MMI region itself is [0, W]
-    x_grid = np.linspace(-W/2, 3*W/2, 500)
+    # Simulation window extends from -W to W (total width = 2W) to capture evanescent decay
+    # MMI region itself is centered at x=0: [-W/2, W/2]
+    x_grid = np.linspace(-W, W, 500)
     dx = x_grid[1] - x_grid[0]
     
     betas = []
@@ -575,9 +576,11 @@ def _compute_mmi_field(N, M, L, W, n_core, delta_n, wavelength, input_amplitudes
         # Construct mode profile
         phi_m = np.zeros_like(x_grid, dtype=float)
         
-        # Inside core [0, W]: sine profile (normalized)
-        mask_inside = (x_grid >= 0) & (x_grid <= W)
-        phi_m[mask_inside] = np.sqrt(2 / W) * np.sin(kx_m * x_grid[mask_inside])
+        # Inside core [-W/2, W/2]: sine profile (normalized)
+        # Shift coordinate system: x_core = x + W/2 to map [-W/2, W/2] to [0, W] for sine
+        mask_inside = (x_grid >= -W/2) & (x_grid <= W/2)
+        x_shifted = x_grid[mask_inside] + W/2
+        phi_m[mask_inside] = np.sqrt(2 / W) * np.sin(kx_m * x_shifted)
         
         # Outside core: evanescent decay with proper decay constant
         # Decay constant κ = sqrt(kx² - (k₀ n_clad)²)
@@ -588,21 +591,21 @@ def _compute_mmi_field(N, M, L, W, n_core, delta_n, wavelength, input_amplitudes
             # Evanescent region
             kappa_m = np.sqrt(sq_decay)
             
-            # Left side (x < 0): decay as exp(κ x)
-            mask_left = x_grid < 0
-            phi_m[mask_left] = np.sqrt(2 / W) * np.exp(kappa_m * x_grid[mask_left])
+            # Left side (x < -W/2): decay as exp(κ(x + W/2))
+            mask_left = x_grid < -W/2
+            phi_m[mask_left] = np.sqrt(2 / W) * np.exp(kappa_m * (x_grid[mask_left] + W/2))
             
-            # Right side (x > W): decay as exp(-κ(x-W))
-            mask_right = x_grid > W
-            phi_m[mask_right] = np.sqrt(2 / W) * np.exp(-kappa_m * (x_grid[mask_right] - W))
+            # Right side (x > W/2): decay as exp(-κ(x - W/2))
+            mask_right = x_grid > W/2
+            phi_m[mask_right] = np.sqrt(2 / W) * np.exp(-kappa_m * (x_grid[mask_right] - W/2))
         else:
             # Oscillating region (if core index < clad index, which shouldn't happen)
             # For safety, just use a smooth cutoff
-            mask_left = x_grid < 0
-            phi_m[mask_left] = np.sqrt(2 / W) * np.cos(kx_m * x_grid[mask_left]) * np.exp(-np.abs(x_grid[mask_left]) / (W / 10))
+            mask_left = x_grid < -W/2
+            phi_m[mask_left] = np.sqrt(2 / W) * np.cos(kx_m * (x_grid[mask_left] + W/2)) * np.exp(-np.abs(x_grid[mask_left] + W/2) / (W / 10))
             
-            mask_right = x_grid > W
-            phi_m[mask_right] = np.sqrt(2 / W) * np.cos(kx_m * (x_grid[mask_right] - W)) * np.exp(-(x_grid[mask_right] - W) / (W / 10))
+            mask_right = x_grid > W/2
+            phi_m[mask_right] = np.sqrt(2 / W) * np.cos(kx_m * (x_grid[mask_right] - W/2)) * np.exp(-(x_grid[mask_right] - W/2) / (W / 10))
         
         modes.append(phi_m)
     
@@ -630,8 +633,8 @@ def _compute_mmi_field(N, M, L, W, n_core, delta_n, wavelength, input_amplitudes
     
     if verbose:
         print(f"\nInput mode width (Sin) = {Sin*1e6:.3f} um")
-        print(f"Input port positions [m] (in [0, W] coords): {input_positions}")
-        print(f"Input port positions [um] (in [0, W] coords): {[p*1e6 for p in input_positions]}")
+        print(f"Input port positions [m] (centered at x=0): {input_positions}")
+        print(f"Input port positions [um] (centered at x=0): {[p*1e6 for p in input_positions]}")
     
     if verbose:
         print(f"Injecting input vector: {input_amplitudes}")
@@ -690,13 +693,18 @@ def _render_frame_static(frame_idx, z_grid, x_grid, intensity_evolution, L, W, i
     
     fig, (ax_static, ax_anim) = plt.subplots(2, 1, figsize=(10, 10))
     
-    # 1. Static Plot
-    extent = [0, L*1e6, 0, W*1e6] # microns
+    # 1. Static Plot (CENTERED COORDINATES)
+    extent = [0, L*1e6, -W*1e6, W*1e6]  # z: [0, L], x: [-W, W]
     ax_static.set_title(f"MMI Propagation Field Intensity (L={L*1e6:.1f}um, W={W*1e6:.1f}um)")
     ax_static.imshow(intensity_evolution.T, origin='lower', aspect='auto', 
                           extent=extent, cmap='inferno')
     ax_static.set_xlabel("z [um]")
     ax_static.set_ylabel("x [um]")
+    
+    # MMI core boundaries [-W/2, W/2]
+    ax_static.axhline(y=-W/2*1e6, color='white', linestyle=':', linewidth=1, alpha=0.5)
+    ax_static.axhline(y=W/2*1e6, color='white', linestyle=':', linewidth=1, alpha=0.5)
+    ax_static.axhline(y=0, color='cyan', linestyle='-', linewidth=1.5, alpha=0.7, label='x=0')
     
     # Inputs/Outputs markers
     for y_pos in input_positions:
@@ -705,11 +713,11 @@ def _render_frame_static(frame_idx, z_grid, x_grid, intensity_evolution, L, W, i
         ax_static.text(L*1e6, y_pos*1e6, 'Out', color='white', ha='left', va='center', fontsize=8)
 
     # Moving vertical line
-    ax_static.plot([z_val*1e6, z_val*1e6], [0, W*1e6], 'w--', lw=1.5)
+    ax_static.plot([z_val*1e6, z_val*1e6], [-W*1e6, W*1e6], 'w--', lw=1.5)
     
     # 2. Dynamic Plot
     ax_anim.set_title(f"Cross-section at z = {z_val*1e6:.1f} um")
-    ax_anim.set_xlim(0, W*1e6)
+    ax_anim.set_xlim(-W*1e6, W*1e6)
     max_intensity = np.max(intensity_evolution)
     ax_anim.set_ylim(0, max_intensity * 1.1)
     ax_anim.set_xlabel("x [um]")
@@ -751,13 +759,14 @@ def _render_contrib_frame_static(frame_idx, z_grid, x_grid, intensity_total_evol
     ax_z.set_xlabel("z [um]")
     z_axes.append(ax_z)
         
-    # -- Static Plot --
-    extent = [0, L*1e6, 0, W*1e6]
+    # -- Static Plot (CENTERED COORDINATES) --
+    extent = [0, L*1e6, -W*1e6, W*1e6]  # z: [0, L], x: [-W, W]
     ax_static.set_title(f"Field Intensity (L={L*1e6:.1f}um)")
     ax_static.imshow(intensity_total_evol.T, origin='lower', aspect='auto', extent=extent, cmap='inferno')
     ax_static.set_xlabel("z [um]")
     ax_static.set_ylabel("x [um]")
-    ax_static.plot([z_val*1e6, z_val*1e6], [0, W*1e6], 'w--', lw=1.5)
+    ax_static.axhline(y=0, color='cyan', linestyle='-', linewidth=1.5, alpha=0.7)  # Center line
+    ax_static.plot([z_val*1e6, z_val*1e6], [-W*1e6, W*1e6], 'w--', lw=1.5)
     
     # Markers
     ax_static.scatter([0]*N, [p*1e6 for p in input_positions], color='white', marker='o', s=20, zorder=10)
@@ -765,7 +774,7 @@ def _render_contrib_frame_static(frame_idx, z_grid, x_grid, intensity_total_evol
 
     # -- Profile Plot --
     ax_anim.set_title(f"Cross-section at z={z_val*1e6:.1f} um")
-    ax_anim.set_xlim(0, W*1e6)
+    ax_anim.set_xlim(-W*1e6, W*1e6)
     ax_anim.set_ylim(0, np.max(intensity_total_evol)*1.1)
     ax_anim.set_xlabel("x [um]")
     ax_anim.plot(x_grid*1e6, intensity_total_evol[frame_idx, :], 'b-', lw=2)
@@ -850,6 +859,78 @@ def _make_video_from_frames(output_file, frame_dir, fps=30):
     ]
     
     subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+def _compute_input_intensity_normalization(field_z0, x_grid, W, dx):
+    """
+    Compute input intensity normalization factor from MMI CORE region only.
+    
+    Calculates intensity integrated over the MMI core region [0.5*W, 1.5*W] at z=0.
+    This normalization makes the core power equal to 1.0 at the input plane.
+    
+    **Physical interpretation after normalization:**
+    
+    - At z=0: Core power = 1.0 (by construction)
+    - During propagation:
+      - core_power > 1.0: Energy from outside core couples in (evanescent → core)
+      - core_power < 1.0: Energy leaks from core to evanescent regions
+      - core_power = 1.0: Energy remains confined in core
+    
+    **Important note:** At z=0, if the input modes are correctly positioned at the
+    entrance of the MMI core, there should be very little power outside the core region
+    (<10%). The evanescent tails develop during propagation inside the MMI, not at z=0.
+    
+    If significant power (>10%) is outside the core at z=0, this indicates:
+    - Input mode field diameter (MFD) too large
+    - Input waveguide positions incorrect
+    - Input modes already include propagation effects
+    
+    This function will issue a warning if more than 10% of power is outside core at z=0.
+    
+    Parameters
+    ----------
+    field_z0 : array
+        Complex electric field at z=0 (first z-plane).
+    x_grid : array
+        x spatial grid points [m].
+    W : float
+        Width of the MMI region [m]. Core is [0.5*W, 1.5*W].
+    dx : float
+        Spatial grid spacing [m].
+    
+    Returns
+    -------
+    float
+        Input power integrated over MMI core region. If zero or near-zero,
+        returns 1.0 to avoid division issues.
+    """
+    intensity_z0 = np.abs(field_z0)**2
+    
+    # Integrate over MMI CORE region only [-W/2, W/2] (centered at x=0)
+    mask = (x_grid >= -W/2) & (x_grid <= W/2)
+    input_power_core = np.sum(intensity_z0[mask]) * dx
+    
+    # For diagnostic: compute total power and fraction outside core
+    input_power_total = np.sum(intensity_z0) * dx
+    power_outside_core = input_power_total - input_power_core
+    fraction_outside = power_outside_core / input_power_total if input_power_total > 1e-12 else 0.0
+    
+    # Warn if significant power is outside core at z=0 (should not happen with proper input modes)
+    if fraction_outside > 0.10:  # More than 10% outside
+        import warnings
+        warnings.warn(
+            f"⚠️ Significant power outside MMI core at z=0: {fraction_outside*100:.1f}%\n"
+            f"   Power in core: {input_power_core:.3e}, Power total: {input_power_total:.3e}\n"
+            f"   This suggests input modes are too wide or incorrectly positioned.\n"
+            f"   Expected: <10% outside core at z=0 (evanescent tails develop during propagation)",
+            UserWarning
+        )
+    
+    # Avoid division by zero
+    if input_power_core < 1e-15:
+        return 1.0
+    
+    return input_power_core
+
 
 def _compute_single_field_wrapper(i, N, M, L, W, n_core, delta_n, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, Din, Dout, Sin, Sout):
     """Wrapper to compute field for a single input (parallel helper)."""
@@ -989,6 +1070,11 @@ def simulate(N=2, M=2, L=None, W=10.0e-6, n_core=2.0458, delta_n=0.0958, wavelen
     num_z_steps = len(z_grid)
 
     intensity_evolution = np.abs(field_evolution)**2
+    
+    # Normalize by input intensity (integrated over core region at z=0)
+    input_power = _compute_input_intensity_normalization(field_evolution[0, :], x_grid, W, dx)
+    if input_power > 0:
+        intensity_evolution = intensity_evolution / input_power
 
     # --- Calculation of Output Vector (Multi-Mode Waveguide Coupling) ---
     # The output amplitudes are calculated by overlapping the MMI field at the output
@@ -1232,6 +1318,11 @@ def compute_contributions(N, M, L, W, n_core, delta_n, wavelength, input_amplitu
     
     # Store total intensity for main plot
     intensity_total_evol = np.abs(field_total_evol)**2
+    
+    # Normalize by input intensity (integrated over core region at z=0)
+    input_power = _compute_input_intensity_normalization(field_total_evol[0, :], x_grid, W, dx)
+    if input_power > 0:
+        intensity_total_evol = intensity_total_evol / input_power
 
     # Now compute individual contributions
     # For each input i, simulate with only input_amplitudes[i] active
@@ -1266,6 +1357,10 @@ def compute_contributions(N, M, L, W, n_core, delta_n, wavelength, input_amplitu
                 coupling = np.sum(E_i_z * np.conj(psi_out)) * dx
                 phasors[iz, j, i] = coupling
 
+    # Compute final Sin and Sout values (after defaults)
+    Sin_final = Sin if Sin is not None else (W / N) / 4
+    Sout_final = Sout_use
+
     return {
         "z_grid": z_grid,
         "x_grid": x_grid,
@@ -1277,7 +1372,9 @@ def compute_contributions(N, M, L, W, n_core, delta_n, wavelength, input_amplitu
         "W": W,
         "N": N,
         "M": M,
-        "num_z_steps": num_z_steps
+        "num_z_steps": num_z_steps,
+        "Sin": Sin_final,
+        "Sout": Sout_final
     }
 
 
@@ -1318,68 +1415,103 @@ def plot_mmi_interactive(
     input_pos = data['input_positions']
     output_pos = data['output_positions']
     L_sim = data['L']
+    W = data['W']
+    Sin_computed = data['Sin']
+    Sout_computed = data['Sout']
 
     # Build figure
-    fig = plt.figure(figsize=(12, 16))
-    gs = fig.add_gridspec(4, M, height_ratios=[1.5, 1, 1.5, 1.5])
+    fig = plt.figure(figsize=(12, 24))
+    gs = fig.add_gridspec(6, M, height_ratios=[1.5, 1, 1, 1.5, 1.5, 1])
 
-    # 1. Intensity Map (Top)
+    # 1. Intensity Map (Top) - CENTERED COORDINATES
     ax_map = fig.add_subplot(gs[0, :])
-    # Show full 2W simulation window (x_grid goes from -W/2 to 3W/2)
-    # Shift coordinates so x=0 corresponds to left edge of simulation window
-    x_min = x_grid[0]  # -W/2
-    x_max = x_grid[-1]  # 3W/2
-    extent = [0, L_sim*1e6, (x_min + W/2)*1e6, (x_max + W/2)*1e6]  # Shift to [0, 2W]
+    # Show full 2W simulation window (x_grid goes from -W to W, centered at x=0)
+    x_min = x_grid[0]  # -W
+    x_max = x_grid[-1]  # W
+    extent = [0, L_sim*1e6, x_min*1e6, x_max*1e6]  # z: [0, L], x: [-W, W]
     
     im = ax_map.imshow(intensity_map.T, origin='lower', aspect='auto', extent=extent, cmap='inferno')
     ax_map.set_xlabel('z [um]')
-    ax_map.set_ylabel('x [um]')
+    ax_map.set_ylabel('x [um] (centered at 0)')
     
-    # Add white lines to mark MMI core boundaries
-    # MMI core is at x ∈ [0, W] in original coordinates
-    # After shift: x ∈ [W/2, 3W/2] in display coordinates
-    ax_map.axhline(y=0.5*W*1e6, color='white', linestyle='--', linewidth=1.5, alpha=0.7, label='MMI Core Boundary')
-    ax_map.axhline(y=1.5*W*1e6, color='white', linestyle='--', linewidth=1.5, alpha=0.7)
+    # Add lines to mark MMI core boundaries
+    # MMI core: x ∈ [-W/2, W/2] (centered at x=0)
+    ax_map.axhline(y=-W/2*1e6, color='white', linestyle='--', linewidth=1.5, alpha=0.7, label='MMI Core Boundary')
+    ax_map.axhline(y=W/2*1e6, color='white', linestyle='--', linewidth=1.5, alpha=0.7)
     
     # Title with mode widths and wavelength
     sin_str = f"{Sin*1e6:.2f}" if Sin else "auto"
     sout_str = f"{Sout*1e6:.2f}" if Sout else "auto"
     n_clad_calc = n_core - delta_n
     n_eff_calc = 0.7 * n_core + 0.3 * n_clad_calc
-    ax_map.set_title(f'Intensity Map - Full 2W Window (λ={wavelength*1e6:.2f} µm, n_core={n_core:.4f}, Δn={delta_n:.4f}, n_eff={n_eff_calc:.4f})\nSin={sin_str} µm, Sout={sout_str} µm | White lines: MMI core boundaries', fontsize=9)
+    ax_map.set_title(f'Intensity Map - Centered Coords (λ={wavelength*1e6:.2f} µm, n_core={n_core:.4f}, Δn={delta_n:.4f}, n_eff={n_eff_calc:.4f})\nSin={sin_str} µm, Sout={sout_str} µm | White lines: MMI core [-W/2, W/2], Cyan: x=0', fontsize=9)
     
-    # Markers - adjust for shifted coordinates
-    ax_map.scatter([0]*N, [(p + W/2)*1e6 for p in input_pos], color='cyan', s=10, marker='o', label='Inputs')
-    ax_map.scatter([L_sim*1e6]*M, [(p + W/2)*1e6 for p in output_pos], color='lime', s=10, marker='s', label='Outputs')
+    # Markers - already in centered coordinates
+    ax_map.scatter([0]*N, [p*1e6 for p in input_pos], color='cyan', s=10, marker='o', label='Inputs')
+    ax_map.scatter([L_sim*1e6]*M, [p*1e6 for p in output_pos], color='lime', s=10, marker='s', label='Outputs')
     ax_map.legend(loc='upper right', fontsize=8)
 
-    # 2. Cross Section at Output (Row 2)
-    ax_prof = fig.add_subplot(gs[1, :])
-    # Shift x-axis to match intensity map display
-    x_display = (x_grid + W/2) * 1e6
+    # 2. Input Profile (Row 2) - CENTERED COORDINATES
+    ax_prof_in = fig.add_subplot(gs[1, :])
+    # x_grid is already in centered coordinates [-W, W]
+    x_display = x_grid * 1e6
+    ax_prof_in.plot(x_display, intensity_map[0, :], 'b-', lw=2)
+    
+    # Add filled boxes for input waveguides (always displayed)
+    input_colors = plt.cm.get_cmap('Set3', N)
+    for i, p in enumerate(input_pos):
+        ax_prof_in.axvspan((p - Sin_computed/2)*1e6, (p + Sin_computed/2)*1e6, 
+                              alpha=0.15, color=input_colors(i), label=f'Input {i+1}' if i < 3 else '')
+    
+    # Mark MMI core boundaries (centered at x=0)
+    ax_prof_in.axvline(x=-W/2*1e6, color='red', linestyle='--', alpha=0.5, label='MMI Core [-W/2, W/2]')
+    ax_prof_in.axvline(x=W/2*1e6, color='red', linestyle='--', alpha=0.5)
+    ax_prof_in.axvline(x=0, color='cyan', linestyle='-', lw=2, alpha=0.7, label='Center (x=0)')
+    
+    # Mark input positions
+    for p in input_pos:
+        ax_prof_in.axvline(x=p*1e6, color='k', linestyle=':', alpha=0.5)
+    
+    ax_prof_in.set_xlim(-W*1e6, W*1e6)  # Full 2W window centered
+    ax_prof_in.set_xlabel('x [um]')
+    ax_prof_in.set_ylabel('Intensity')
+    ax_prof_in.set_title('Input Profile (x) at z=0')
+    ax_prof_in.legend(loc='upper right', fontsize=8)
+
+    # 3. Output Profile (Row 3) - CENTERED COORDINATES
+    ax_prof = fig.add_subplot(gs[2, :])
+    # x_grid is already in centered coordinates [-W, W]
+    x_display = x_grid * 1e6
     ax_prof.plot(x_display, intensity_map[-1, :], 'b-', lw=2)
     
-    # Mark MMI core boundaries
-    ax_prof.axvline(x=0.5*W*1e6, color='red', linestyle='--', alpha=0.5, label='MMI Core')
-    ax_prof.axvline(x=1.5*W*1e6, color='red', linestyle='--', alpha=0.5)
+    # Add filled boxes for output waveguides (always displayed)
+    output_colors = plt.cm.get_cmap('Set2', M)
+    for j, p in enumerate(output_pos):
+        ax_prof.axvspan((p - Sout_computed/2)*1e6, (p + Sout_computed/2)*1e6, 
+                           alpha=0.15, color=output_colors(j), label=f'Output {j+1}' if j < 3 else '')
+    
+    # Mark MMI core boundaries (centered at x=0)
+    ax_prof.axvline(x=-W/2*1e6, color='red', linestyle='--', alpha=0.5, label='MMI Core [-W/2, W/2]')
+    ax_prof.axvline(x=W/2*1e6, color='red', linestyle='--', alpha=0.5)
+    ax_prof.axvline(x=0, color='cyan', linestyle='-', lw=2, alpha=0.7, label='Center (x=0)')
     
     # Mark output positions
     for p in output_pos:
-        ax_prof.axvline(x=(p + W/2)*1e6, color='k', linestyle=':', alpha=0.5)
+        ax_prof.axvline(x=p*1e6, color='k', linestyle=':', alpha=0.5)
     
-    ax_prof.set_xlim(0, 2*W*1e6)  # Full 2W window
+    ax_prof.set_xlim(-W*1e6, W*1e6)  # Full 2W window centered
     ax_prof.set_xlabel('x [um]')
     ax_prof.set_ylabel('Intensity')
-    ax_prof.set_title('Output Profile (x) - Full 2W Window')
+    ax_prof.set_title('Output Profile (x) at z=L')
     ax_prof.legend(loc='upper right', fontsize=8)
 
-    # 3. Polar Plots (Row 3)
+    # 4. Polar Plots (Row 4)
     colors = plt.cm.get_cmap('hsv', N+1)
     max_val = np.max(np.abs(phasors[-1, :, :]))
     limit = max_val * 1.1 if max_val > 1e-6 else 1.0
 
     for j in range(M):
-        ax_p = fig.add_subplot(gs[2, j], projection='polar')
+        ax_p = fig.add_subplot(gs[3, j], projection='polar')
         ax_p.set_title(f'Out {j+1}')
         ax_p.set_ylim(0, limit)
         
@@ -1395,8 +1527,8 @@ def plot_mmi_interactive(
         if j == M-1:
             ax_p.legend(loc='upper right', bbox_to_anchor=(1.3, 1.1), fontsize=7)
 
-    # 4. Z-Profile Plot (Row 4) - Grouped
-    ax_z = fig.add_subplot(gs[3, :])
+    # 5. Z-Profile Plot (Row 5) - Grouped
+    ax_z = fig.add_subplot(gs[4, :])
     ax_z.set_title('Z-Profile All Outputs')
     
     # Determine colors for Z-curves
@@ -1422,6 +1554,33 @@ def plot_mmi_interactive(
     ax_z.set_xlim(0, L_sim*1e6)
     ax_z.set_ylim(0, max_int_z)
     ax_z.legend(loc='upper right', fontsize=8)
+
+    # 6. Integrated Power in Core (Row 6) - Power evolution along z
+    ax_power = fig.add_subplot(gs[5, :])
+    ax_power.set_title('Integrated Power in Core [-W/2, W/2] vs. Propagation')
+    
+    # Calculate integrated intensity within core at each z (CENTERED COORDINATES)
+    mask_core = (x_grid >= -W/2) & (x_grid <= W/2)
+    dx = x_grid[1] - x_grid[0]
+    
+    # Compute power in core at each z step
+    power_in_core_z = np.array([
+        np.sum(intensity_map[iz, mask_core]) * dx for iz in range(len(z_grid))
+    ])
+    
+    # Plot power evolution
+    ax_power.plot(z_grid*1e6, power_in_core_z, 'darkblue', lw=2.5, label='Power in Core')
+    ax_power.axhline(y=1.0, color='green', linestyle='--', lw=2, alpha=0.7, label='Input Reference (1.0)')
+    
+    # Vertical line for current L (end)
+    ax_power.axvline(x=L_sim*1e6, color='r', linestyle='--', lw=1.0, alpha=0.7)
+    
+    ax_power.set_xlabel('z [um]')
+    ax_power.set_ylabel('Integrated Power')
+    ax_power.set_xlim(0, L_sim*1e6)
+    ax_power.set_ylim(0, min(2.0, max(power_in_core_z)*1.2))  # Scale to see detail
+    ax_power.grid(True, alpha=0.3)
+    ax_power.legend(loc='upper right', fontsize=8)
 
     plt.tight_layout()
     return fig
