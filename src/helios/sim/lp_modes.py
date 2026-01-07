@@ -40,8 +40,57 @@ Educational Notes
     to the fundamental mode, contrary to the naive "larger = more overlap" intuition.
 """
 
+import os
+import logging
+from contextlib import contextmanager
 import numpy as np
 from scipy.special import jv, kn  # Bessel functions
+
+# Module-level logger and warning suppression control
+_logger = logging.getLogger(__name__)
+_SUPPRESS_LP_WARNINGS = bool(int(os.getenv("HELIOS_SUPPRESS_LP_WARNINGS", "0")))
+_EMITTED_KEYS = set()
+
+def set_lp_warning_suppression(suppress: bool = True) -> None:
+    """Enable/disable LP-mode warning messages.
+
+    Parameters
+    ----------
+    suppress : bool, default=True
+        If True, LP-mode related warnings are suppressed.
+    """
+    global _SUPPRESS_LP_WARNINGS
+    _SUPPRESS_LP_WARNINGS = bool(suppress)
+
+
+@contextmanager
+def suppress_lp_warnings():
+    """Context manager to temporarily suppress LP-mode warnings."""
+    global _SUPPRESS_LP_WARNINGS
+    prev = _SUPPRESS_LP_WARNINGS
+    try:
+        _SUPPRESS_LP_WARNINGS = True
+        yield
+    finally:
+        _SUPPRESS_LP_WARNINGS = prev
+
+
+def _emit_lp_warning(key: str, message: str) -> None:
+    """Emit a warning at most once per unique key, unless suppressed.
+
+    Parameters
+    ----------
+    key : str
+        Unique key identifying this warning kind (e.g., "fallback_LP02").
+    message : str
+        Human-readable warning message.
+    """
+    if _SUPPRESS_LP_WARNINGS:
+        return
+    if key in _EMITTED_KEYS:
+        return
+    _EMITTED_KEYS.add(key)
+    _logger.warning(message)
 
 
 def compute_v_number(core_diameter, wavelength, n_core, n_cladding):
@@ -289,8 +338,11 @@ def compute_lp_mode_profile(
     
     # Check if mode is guided
     if V < V_cutoff:
-        # Mode is evanescent (not guided) → return zeros with warning
-        print(f"⚠️ LP_{l}{m} is below cutoff (V={V:.3f} < {V_cutoff:.3f})")
+        # Mode is evanescent (not guided) → return zeros (warn once if not suppressed)
+        _emit_lp_warning(
+            key=f"below_cutoff_LP{l}{m}",
+            message=f"⚠️ LP_{l}{m} is below cutoff (V={V:.3f} < {V_cutoff:.3f})"
+        )
         return np.zeros_like(x_grid)
     
     # Radial coordinate relative to center
@@ -354,7 +406,10 @@ def compute_lp_mode_profile(
     
     else:
         # Higher modes: not implemented, use Gaussian fallback
-        print(f"⚠️ LP_{l}{m} profile not implemented, using Gaussian approximation")
+        _emit_lp_warning(
+            key=f"fallback_LP{l}{m}",
+            message=f"⚠️ LP_{l}{m} profile not implemented, using Gaussian approximation"
+        )
         w0 = radius * 0.8  # Rough estimate
         sigma = w0 / np.sqrt(2)
         field = np.exp(-(r**2) / (2 * sigma**2))

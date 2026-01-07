@@ -1,5 +1,6 @@
 
 import sys
+from contextlib import nullcontext
 import time
 import numpy as np
 import matplotlib
@@ -19,11 +20,16 @@ try:
         compute_v_number,
         compute_multimode_coupling,
         print_mode_info,
+        suppress_lp_warnings,
+        set_lp_warning_suppression,
     )
     _HAS_LP_MODES = True
 except ImportError:
     _HAS_LP_MODES = False
-    print("⚠️ LP modes module not available - using Gaussian approximation only")
+    import logging as _logging
+    _logging.getLogger(__name__).warning(
+        "⚠️ LP modes module not available - using Gaussian approximation only"
+    )
 
 
 def _wrap_phase_radians(phases_rad):
@@ -306,16 +312,30 @@ def calibrate_input_phases_genetic(
             return float("inf")
         return null_sum / bright
 
-    result = _calibrate_phases_genetic_like(
-        evaluate_metric=evaluate_metric,
-        n_phases=N,
-        beta=beta,
-        initial_step=initial_step,
-        epsilon=epsilon,
-        initial_phases=start_phases,
-        fixed_indices=None,
-        verbose=verbose,
-    )
+    if _HAS_LP_MODES:
+        # Suppress verbose LP-mode fallback/cutoff warnings during calibration
+        with suppress_lp_warnings():
+            result = _calibrate_phases_genetic_like(
+                evaluate_metric=evaluate_metric,
+                n_phases=N,
+                beta=beta,
+                initial_step=initial_step,
+                epsilon=epsilon,
+                initial_phases=start_phases,
+                fixed_indices=None,
+                verbose=verbose,
+            )
+    else:
+        result = _calibrate_phases_genetic_like(
+            evaluate_metric=evaluate_metric,
+            n_phases=N,
+            beta=beta,
+            initial_step=initial_step,
+            epsilon=epsilon,
+            initial_phases=start_phases,
+            fixed_indices=None,
+            verbose=verbose,
+        )
     result["bright_output_idx"] = int(bright_output_idx)
     return result
 
@@ -415,17 +435,20 @@ def calibrate_n_core_and_phases(
     if n_core_steps_coarse < 2:
         raise ValueError(f"n_core_steps_coarse must be >= 2, got {n_core_steps_coarse}")
     
-    # ========================================================================
-    # STAGE 1: COARSE SCAN
-    # ========================================================================
-    if verbose:
-        print("="*70)
-        print("STAGE 1: COARSE N_CORE SCAN")
-        print("="*70)
-        print(f"n_core range: [{n_core_min:.4f}, {n_core_max:.4f}]")
-        print(f"n_core steps: {n_core_steps_coarse}")
-        print(f"Bright output: {bright_output_idx}")
-        print("="*70)
+    # Suppress LP-mode warnings during both coarse scan and gradient descent
+    ctx = suppress_lp_warnings() if _HAS_LP_MODES else nullcontext()
+    with ctx:
+        # ========================================================================
+        # STAGE 1: COARSE SCAN
+        # ========================================================================
+        if verbose:
+            print("="*70)
+            print("STAGE 1: COARSE N_CORE SCAN")
+            print("="*70)
+            print(f"n_core range: [{n_core_min:.4f}, {n_core_max:.4f}]")
+            print(f"n_core steps: {n_core_steps_coarse}")
+            print(f"Bright output: {bright_output_idx}")
+            print("="*70)
     
     n_core_values_coarse = np.linspace(n_core_min, n_core_max, n_core_steps_coarse)
     metrics_coarse = []
@@ -484,16 +507,16 @@ def calibrate_n_core_and_phases(
         print(f"Best coarse metric: {best_coarse_metric:.3e}")
         print("="*70)
     
-    # ========================================================================
-    # STAGE 2: GRADIENT DESCENT
-    # ========================================================================
-    if verbose:
-        print("\n" + "="*70)
-        print("STAGE 2: GRADIENT DESCENT")
-        print("="*70)
-        print(f"Starting from: n_core = {best_coarse_n_core:.4f}")
-        print(f"Convergence threshold: |Δn_core| < {gradient_convergence_threshold}")
-        print("="*70)
+        # ========================================================================
+        # STAGE 2: GRADIENT DESCENT
+        # ========================================================================
+        if verbose:
+            print("\n" + "="*70)
+            print("STAGE 2: GRADIENT DESCENT")
+            print("="*70)
+            print(f"Starting from: n_core = {best_coarse_n_core:.4f}")
+            print(f"Convergence threshold: |Δn_core| < {gradient_convergence_threshold}")
+            print("="*70)
     
     # Helper function to evaluate metric at a given n_core
     def evaluate_n_core(n_core_val):
@@ -604,14 +627,14 @@ def calibrate_n_core_and_phases(
                 print(f"   Converged! |Δn_core| = {delta_n_core:.4f} < {gradient_convergence_threshold}")
             break
     
-    if iteration >= max_iterations:
-        if verbose:
-            print(f"\n   Warning: Max iterations ({max_iterations}) reached without convergence")
+        if iteration >= max_iterations:
+            if verbose:
+                print(f"\n   Warning: Max iterations ({max_iterations}) reached without convergence")
     
     best_n_core = n_core_current
     best_metric = metric_current
     best_phases = phases_current
-    
+
     if verbose:
         print("\n" + "="*70)
         print("OPTIMIZATION COMPLETE")
@@ -621,7 +644,7 @@ def calibrate_n_core_and_phases(
         print(f"Best metric (null/bright): {best_metric:.3e}")
         print(f"Best phases [rad]: {best_phases}")
         print("="*70)
-    
+
     return {
         "n_core_values_coarse": n_core_values_coarse,
         "metrics_coarse": metrics_coarse,
@@ -775,34 +798,6 @@ def _solve_slab_modes_fd(x_grid, n_profile, k0, num_modes):
             modes[m] /= norm
 
     return betas, modes
-
-
-def _propagate_free_space(input_field, x_grid, z_grid, k0, n_medium):
-    """Propagate a field in a uniform medium using the angular spectrum method.
-
-    This fallback is used when the index contrast collapses (Δn → 0), so the
-    waveguide no longer supports guided modes and the field should simply
-    diffract in free space.
-    """
-    dx = x_grid[1] - x_grid[0]
-    kx = 2 * np.pi * np.fft.fftfreq(len(x_grid), d=dx)
-    k_cutoff = k0 * n_medium
-
-    # Split propagating vs evanescent components for numerical stability
-    kx_abs = np.abs(kx)
-    kz = np.zeros_like(kx, dtype=complex)
-    propagating = kx_abs <= k_cutoff
-    kz[propagating] = np.sqrt(np.maximum(k_cutoff**2 - kx[propagating]**2, 0.0))
-    kz[~propagating] = 1j * np.sqrt(kx[~propagating]**2 - k_cutoff**2)
-
-    spectrum0 = np.fft.fft(input_field)
-    field_evolution = np.zeros((len(z_grid), len(x_grid)), dtype=complex)
-
-    for iz, z in enumerate(z_grid):
-        phase = np.exp(1j * kz * z)
-        field_evolution[iz, :] = np.fft.ifft(spectrum0 * phase)
-
-    return field_evolution
 
 def _compute_mmi_field(N, M, L, W, n_core, delta_n, wavelength, input_amplitudes, num_modes, num_z_steps, z_resolution, verbose=False, Din=None, Dout=None, Sin=None, Sout=None):
     """

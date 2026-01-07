@@ -8,4 +8,5 @@ This section provides a step-by-step guide to understand all physics behind the 
 :maxdepth: 3
 
 propagation/index
+mmi/index
 ```
