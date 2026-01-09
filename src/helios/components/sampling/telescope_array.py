@@ -6,7 +6,7 @@ import matplotlib.pyplot as _plt
 
 from ...core.pipeline import Pipeline
 from ...utils.serialization import serialize_value, deserialize_value
-from ...core.wavefront import Wavefront, WavefrontArray
+from ...core.wavefront import Wavefront
 from .pupil import Pupil
 from .telescope import Telescope
 
@@ -550,9 +550,9 @@ class TelescopeArray(Telescope):
         
         Returns
         -------
-        wavefront : WavefrontArray or Wavefront
+        wavefront : List[Wavefront] or Wavefront
             If single telescope: returns single Wavefront
-            If multiple telescopes: returns WavefrontArray with one wavefront per position
+            If multiple telescopes: returns list of wavefronts
         """
         # Create temporary Telescope objects for each position to reuse existing logic
         # This maintains compatibility while using the new architecture
@@ -566,8 +566,8 @@ class TelescopeArray(Telescope):
         if wavefront is None:
             raise ValueError("Wavefront input required for TelescopeArray.process()")
 
-        # Handle WavefrontArray input (already split/shifted by get_input_wavefront)
-        if isinstance(wavefront, WavefrontArray):
+        # Handle list input (already split/shifted by get_input_wavefront)
+        if isinstance(wavefront, list):
             # Process each wavefront with corresponding telescope
             if len(wavefront) != len(telescopes):
                  # Mismatch: simple pass-through or error?
@@ -575,15 +575,13 @@ class TelescopeArray(Telescope):
                  pass
             
             processed_wfs = []
-            for wf, tel in zip(wavefront.wavefronts, telescopes):
+            for wf, tel in zip(wavefront, telescopes):
                 # Process with single telescope logic (pupil mask + magnification)
                 out_wf = tel.process(wf, auto_magnify=True)
                 processed_wfs.append(out_wf)
             
-            # Return updated array
-            # Note: WavefrontArray does not hold pixel_scale, individual wavefronts do
-            wavefront.wavefronts = processed_wfs
-            return wavefront
+            # Return updated list
+            return processed_wfs
 
         # Single wavefront input (e.g. from Source)
         # Split it into N copies (interferometer mode)
@@ -603,4 +601,4 @@ class TelescopeArray(Telescope):
         if len(outputs) == 1:
             return outputs[0]
         else:
-            return WavefrontArray(outputs, locations=self.positions)
+            return outputs

@@ -10,7 +10,14 @@ The simulation pipeline is structured into 5 strict types of layers, representin
 *   **Input**: None (or previous Generation layer).
 *   **Output**: Full continuous Wavefront/Field.
 *   **Constraint**: Unique path (Single Link).
-*   **Components**: `Scene`, `Atmosphere`.
+*   **Components**: `PlanetarySystem`.
+
+### 🌫️ EnvironmentLayer (Field Modifier)
+*   **Role**: Modifies the continuous electromagnetic field before sampling (e.g. atmosphere, dust).
+*   **Input**: `GenerationLayer` or `EnvironmentLayer`.
+*   **Output**: Full continuous Wavefront/Field.
+*   **Constraint**: Unique path.
+*   **Components**: `Atmosphere`, `DustCloud`.
 
 ### 🔶 SamplingLayer (Field Discrete Sampling)
 *   **Role**: Interfaces the continuous world with the discrete instrument. Samples the field at specific aperture positions.
@@ -92,7 +99,7 @@ classDiagram
         +propagate(distance)
     }
     
-    class Element {
+    class Component {
         <<abstract>>
         +str name
         +Layer layer
@@ -106,7 +113,7 @@ classDiagram
     class Layer {
         <<abstract>>
         +str name
-        +List~Element~ elements
+        +List~Component~ elements
         +Pipeline pipeline
         +__init__(name)
         +add_element(element)
@@ -134,11 +141,11 @@ classDiagram
     
     %% Relationships - Core
     Pipeline "1" *-- "0..*" Layer : contains
-    Layer "1" *-- "0..*" Element : contains
-    Element ..> Wavefront : processes
+    Layer "1" *-- "0..*" Component : contains
+    Component ..> Wavefront : processes
     Layer ..> Wavefront : processes
-    Element --> Layer : belongs to
-    Element --> Pipeline : references
+    Component --> Layer : belongs to
+    Component --> Pipeline : references
     Layer --> Pipeline : belongs to
     
     %% ============================================
@@ -170,7 +177,7 @@ classDiagram
         +Quantity temperature
         +float albedo
         +float reflection_ratio
-        +Scene scene
+        +PlanetarySystem scene
         +__init__(mass, radius, temperature, albedo, **kwargs)
         +sed(wavelengths, temperature, include_reflection, **kwargs) Tuple
         +_get_detailed_attributes() dict
@@ -200,7 +207,7 @@ classDiagram
         +_get_detailed_attributes() dict
     }
     
-    class Scene {
+    class PlanetarySystem {
         +Quantity distance
         +List~CelestialBody~ bodies
         +__init__(distance, name)
@@ -215,15 +222,15 @@ classDiagram
     }
     
     %% Relationships - Scene
-    CelestialBody --|> Element
+    CelestialBody --|> Component
     Star --|> CelestialBody
     Planet --|> CelestialBody
     ZodiacalLight --|> CelestialBody
     LocalZodi --|> ZodiacalLight
     ExoZodi --|> ZodiacalLight
-    Scene --|> Layer
-    Scene "1" *-- "0..*" CelestialBody : contains
-    Planet --> Scene : references
+    PlanetarySystem --|> Layer
+    PlanetarySystem "1" *-- "0..*" CelestialBody : contains
+    Planet --> PlanetarySystem : references
     
     %% ============================================
     %% COLLECTOR COMPONENTS - Telescopes
@@ -277,7 +284,7 @@ classDiagram
     }
     
     %% Relationships - Collectors
-    Collector --|> Element
+    Collector --|> Component
     TelescopeArray --|> Layer
     Collector "1" *-- "1" Pupil : has
     TelescopeArray "1" *-- "1..*" Collector : contains
@@ -287,6 +294,7 @@ classDiagram
     %% ============================================
     
     class Atmosphere {
+        %% EnvironmentLayer component
         +Quantity rms
         +Quantity wind_speed
         +float wind_direction
@@ -314,8 +322,8 @@ classDiagram
     }
     
     %% Relationships - Atmosphere
-    Atmosphere --|> Element
-    AdaptiveOptics --|> Element
+    Atmosphere --|> Component
+    AdaptiveOptics --|> Component
     
     %% ============================================
     %% CORONAGRAPH
@@ -332,7 +340,7 @@ classDiagram
     }
     
     %% Relationships - Coronagraph
-    Coronagraph --|> Element
+    Coronagraph --|> Component
     
     %% ============================================
     %% DETECTOR
@@ -356,7 +364,7 @@ classDiagram
     }
     
     %% Relationships - Camera
-    Camera --|> Element
+    Camera --|> Component
     
     %% ============================================
     %% BEAM SPLITTING
@@ -370,7 +378,7 @@ classDiagram
     }
     
     %% Relationships - BeamSplitter
-    BeamSplitter --|> Element
+    BeamSplitter --|> Component
     
     %% ============================================
     %% FIBER OPTICS
@@ -435,7 +443,36 @@ Represents the complex electromagnetic field (amplitude and phase) at a given wa
 - `field`: Complex 2D array representing amplitude and phase
 - `pixel_scale`: Physical scale per pixel
 
-##### `Element`
+**Core Method: `propagate()`**
+
+The `Wavefront.propagate()` method is **the heart of HELIOS**. All optical simulations fundamentally rely on this method to propagate electromagnetic wavefronts through space.
+
+**Conceptual Model:**
+- **Input**: Wavefront $\psi_0$ represented by a grid of physical size $L_0$ with resolution $N_0$ pixels (complex amplitude distribution) and a wavelength $\lambda$.
+- **Propagation**: Simulates propagation over distance $d$ using physically realistic diffraction.
+- **Output**: Wavefront $\psi_f$ that can be imaged on a detector grid of size $L_f$ with resolution $N_f$ pixels.
+
+The goal of this high-level method is to encapsulate several propagation methods (Fraunhofer, Fresnel, etc.) and automatically select the appropriate one based on the input parameters.
+
+**Underlying Physics & Libraries**
+
+This complex physics engine relies on established methods. Below is a comparison of relevant libraries that inform or can be integrated into HELIOS's approach:
+
+| Library | Language / Backend | Propagation Type | Strengths | Weaknesses | Main Limitations | Link |
+|:---|:---|:---|:---|:---|:---|:---|
+| **POPPY** | Python (NumPy) | Fresnel / Fraunhofer | Astro standard (JWST), excellent doc, Astropy units | CPU only, rigid architecture | Not flexible outside astro, FFT-centric | [Link](https://poppy-optics.readthedocs.io) |
+| **HCIPy** | Python (NumPy/C++) | FFT, Fresnel, MFT | Very complete (AO, polarization), end-to-end | Complex API, steep learning curve | Scalar by default, tricky sampling | [Link](https://hcipy.readthedocs.io) |
+| **PROPER** | IDL / Python / Matlab | Fresnel (FFT) | NASA/JPL reference, very robust | Aging API, not very Pythonic | Strictly propagation | [Link](https://proper-library.sourceforge.net) |
+| **dLux** | Python (JAX, XLA) | Differentiable Fourier optics | Autodiff, GPU/TPU, inverse calibration | Small community, JAX mindset | GPU VRAM usage, young project | [Link](https://github.com/LouisDesdoigts/dLux) |
+| **Diffractio** | Python | RS, BPM, Fresnel, Vector | Educational, vector support, X-ray | Modest performance | Not scalable for heavy pipelines | [Link](https://diffractio.readthedocs.io) |
+| **waveprop** | Python (NumPy / PyTorch) | Angular Spectrum, Fresnel | Simple, GPU possible, clear | Few optical elements | Low level | [Link](https://github.com/ebezzam/waveprop) |
+| **LightPipes** | C++ / Python | Scalar FFT | Fast, laser modes, cavities | Not astro-focused, weak unit support | Older model | [Link](https://opticspy.github.io/lightpipes) |
+| **PyOptica** | Python | Scalar diffraction | Lightweight, readable | Small community | Few advanced elements | [Link](https://pypi.org/project/pyoptica) |
+| **PyNX** | Python (CUDA/OpenCL) | Fresnel / FFT | Very fast, GPU, HPC | Not generalist | X-ray oriented | [Link](https://pynx.esrf.fr) |
+
+**Note**: While the `Wavefront` class encapsulates complex logic beyond a simple grid (multiple sources, metadata, history tracking), the fundamental principle is that any wavefront can be imaged with a grid of arbitrary size $L$ and resolution $N$ at any location in the optical system. This flexibility is what makes `propagate()` the foundation of all optical simulations in HELIOS.
+
+##### `Component`
 Abstract base class for all individual physical components. Each element can process a wavefront independently.
 
 **Key Methods:**
@@ -461,7 +498,7 @@ Main simulation orchestrator. Manages the sequence of layers and the execution o
 
 ##### Astronomical Scene
 
-**`Scene`**: Layer containing all celestial objects
+**`PlanetarySystem`**: Layer containing all celestial objects
 - Manages distance to the star system
 - Contains stars, planets, and zodiacal light
 
@@ -538,7 +575,7 @@ Main simulation orchestrator. Manages the sequence of layers and the execution o
 #### Inheritance Hierarchy
 
 ```
-Element (abstract)
+Component (abstract)
 ├── CelestialBody (abstract)
 │   ├── Star
 │   ├── Planet
@@ -553,7 +590,7 @@ Element (abstract)
 └── BeamSplitter
 
 Layer (abstract)
-├── Scene
+├── PlanetarySystem
 ├── TelescopeArray
 ├── FiberIn
 ├── FiberOut
@@ -565,8 +602,8 @@ Layer (abstract)
 #### Composition
 
 - **Pipeline** contains **Layers**
-- **Layer** contains **Elements**
-- **Scene** contains **CelestialBodies**
+- **Layer** contains **Components**
+- **PlanetarySystem** contains **CelestialBodies**
 - **TelescopeArray** contains **Collectors**
 - **Collector** contains a **Pupil**
 - **PhotonicChip** contains photonic **Layers**
@@ -575,21 +612,21 @@ Layer (abstract)
 
 1. **Pipeline.observe()** initializes a **Wavefront**
 2. The **Wavefront** passes sequentially through each **Layer**
-3. Each **Layer** applies its **Elements** to the **Wavefront**
+3. Each **Layer** applies its **Components** to the **Wavefront**
 4. The final result is returned (image, intensity, etc.)
 
 #### Typical Chain Example
 
 ```
-Scene → TelescopeArray → Atmosphere → AdaptiveOptics → Coronagraph → Camera
+PlanetarySystem → TelescopeArray → Atmosphere → AdaptiveOptics → Coronagraph → Camera
 ```
 
 Each component transforms the wavefront according to its physical properties, enabling realistic end-to-end simulation of astronomical observations.
 
 ### Implementation Notes
 
-- Abstract classes (`Element`, `Layer`) define the common interface
-- All classes inheriting from `Element` or `Layer` must implement `process()`
-- Bidirectional references (`Element.layer`, `Layer.pipeline`) allow access to the global pipeline
+- Abstract classes (`Component`, `Layer`) define the common interface
+- All classes inheriting from `Component` or `Layer` must implement `process()`
+- Bidirectional references (`Component.layer`, `Layer.pipeline`) allow access to the global pipeline
 - `_get_detailed_attributes()` methods allow generation of detailed descriptions
 - Static methods (marked `$`) are factory methods for creating predefined configurations

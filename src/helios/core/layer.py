@@ -25,6 +25,73 @@ class Layer:
     
     num_outputs: int = 1
 
+    def get_index(self) -> int:
+        """
+        Get the index of this layer in the pipeline.
+        
+        Returns
+        -------
+        int
+            Index in pipeline.layers.
+        
+        Raises
+        ------
+        RuntimeError
+            If layer is not attached to a pipeline or not found.
+        """
+        if self.pipeline is None:
+            raise RuntimeError("Layer is not attached to a pipeline.")
+            
+        for i, item in enumerate(self.pipeline.layers):
+            if item is self:
+                return i
+            if isinstance(item, list) and self in item:
+                return i
+        
+        raise RuntimeError("Layer not found in pipeline.")
+
+    def next(self) -> Any:
+        """
+        Get the next layer in the pipeline.
+        
+        Returns
+        -------
+        Layer or List[Layer]
+            The next layer or set of parallel layers.
+        
+        Raises
+        ------
+        RuntimeError
+            If not attached to pipeline.
+        IndexError
+            If this is the last layer.
+        """
+        idx = self.get_index()
+        if idx >= len(self.pipeline.layers) - 1:
+            raise IndexError("This is the last layer in the pipeline.")
+        return self.pipeline.layers[idx + 1]
+
+    def previous(self) -> Any:
+        """
+        Get the previous layer in the pipeline.
+        
+        Returns
+        -------
+        Layer or List[Layer]
+            The previous layer or set of parallel layers.
+        
+        Raises
+        ------
+        RuntimeError
+            If not attached to pipeline.
+        IndexError
+            If this is the first layer.
+        """
+        idx = self.get_index()
+        if idx <= 0:
+            raise IndexError("This is the first layer in the pipeline.")
+        return self.pipeline.layers[idx - 1]
+
     def invalidate_cache(self):
         """Invalidate the cache of this layer and trigger propagation."""
         self._cached_input = None
@@ -71,16 +138,16 @@ class Layer:
             
         return new_layer
 
-    def add_element(self, component: Component):
+    def add_component(self, component: Component):
         """Add a component to this layer."""
         self.elements.append(component)
         component.layer = self
         if self.pipeline is not None:
             component.pipeline = self.pipeline
     
-    def add_component(self, component: Component):
-        """Add a component to this layer (alias)."""
-        self.add_element(component)
+    def add_element(self, component: Component):
+        """Add a component to this layer (alias for backward compatibility)."""
+        self.add_component(component)
     
     @property
     def components(self) -> List[Component]:
@@ -119,7 +186,16 @@ class Layer:
         return {}
 
     def process(self, wavefront: Any) -> Any:
-        raise NotImplementedError("Subclasses must implement process()")
+        """
+        Process the wavefront through all components in this layer.
+        
+        The default implementation sequentially processes the wavefront
+        through each element in self.elements.
+        """
+        current_signal = wavefront
+        for element in self.elements:
+            current_signal = element.process(current_signal)
+        return current_signal
 
     def to_dict(self) -> dict:
         """Serialize layer configuration to dictionary."""

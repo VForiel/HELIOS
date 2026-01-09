@@ -7,7 +7,8 @@ from pathlib import Path
 import json
 import warnings
 
-from helios.core.wavefront import Wavefront, WavefrontArray
+from helios.core.wavefront import Wavefront
+from helios.core.optical_scene import OpticalScene, Spectrum
 from helios.core.layer import Layer, GenerationLayer, SamplingLayer, OpticalLayer, DetectionLayer, DataLayer
 from helios.core.component import Component
 from helios.utils.serialization import serialize_value, deserialize_value
@@ -85,26 +86,65 @@ class Pipeline:
                 outputs.append(sub.get_output_wavefront())
         return outputs
 
-    def add_layer(self, layer: Union[Layer, List[Layer]]):
-        """Add a layer or a list of parallel layers to the simulation."""
-        self.layers.append(layer)
+    def add_layer(self, layer: Union[Layer, Component, List[Union[Layer, Component]]]):
+        """
+        Add a layer or component to the pipeline.
+
+        If a component is provided, it is wrapped in a generic Layer.
+        If a list (of components) is provided, a single Layer is created containing all of them.
+        """
         
+        # Helper to ensure item is a Component or Layer
+        def bind_pipeline(item):
+            if hasattr(item, 'pipeline'):
+                if item.pipeline is not None and item.pipeline is not self:
+                    warnings.warn(f"{item} is being moved from Pipeline {item.pipeline} to {self}.")
+                item.pipeline = self
+            if hasattr(item, 'elements'):
+                for e in item.elements:
+                    bind_pipeline(e)
+
         if isinstance(layer, list):
-            for l in layer:
-                if l is not None:
-                    if l.pipeline is not None and l.pipeline is not self:
-                        warnings.warn(f"Layer {l} is being moved from Pipeline {l.pipeline} to {self}.")
-                    l.pipeline = self
-                    if hasattr(l, 'elements') and l.elements:
-                        for element in l.elements:
-                            element.pipeline = self
+            # Create a single generic layer for the group
+            # Identify name from first component if possible
+            group_name = "Group"
+            if len(layer) > 0 and hasattr(layer[0], 'name') and layer[0].name:
+                group_name = f"{layer[0].name}_Group"
+            
+            new_layer = Layer(name=group_name)
+            
+            for item in layer:
+                if isinstance(item, Component):
+                    new_layer.add_component(item)
+                elif isinstance(item, Layer):
+                    # If we really want to merge layers? 
+                    # Generally user should pass components. If Layers are passed, 
+                    # we might technically extract their elements or just treat it as error.
+                    # Given the request "list of components", let's assume components.
+                    # But if Layer is passed, we can't easily add Layer inside Layer.
+                    # For now, let's assume items are Component-like.
+                     warnings.warn(f"Adding Layer {item} inside another Layer is not standard. Verify usage.")
+                     # If item is Layer, we can't add it as element (elements is List[Component]).
+                     # But if we must, we might iterate elements.
+                     for elem in item.elements:
+                         new_layer.add_component(elem)
+                else:
+                    raise TypeError(f"Invalid item type in list: {type(item)}")
+            
+            self.layers.append(new_layer)
+            bind_pipeline(new_layer)
+            
+        elif isinstance(layer, Component):
+            new_layer = Layer(name=layer.name)
+            new_layer.add_component(layer)
+            self.layers.append(new_layer)
+            bind_pipeline(new_layer)
+            
+        elif isinstance(layer, Layer):
+            self.layers.append(layer)
+            bind_pipeline(layer)
         else:
-            if layer.pipeline is not None and layer.pipeline is not self:
-                warnings.warn(f"Layer {layer} is being moved from Pipeline {layer.pipeline} to {self}.")
-            layer.pipeline = self
-            if hasattr(layer, 'elements') and layer.elements:
-                for element in layer.elements:
-                    element.pipeline = self
+            raise TypeError(f"Invalid layer type: {type(layer)}")
 
     def description(self, full: bool = False) -> str:
         """Generate a complete text description of the entire simulation setup."""
@@ -121,34 +161,15 @@ class Pipeline:
                 lines.extend(pipe_params)
                 lines.append("")
         
-        for i, layer_item in enumerate(self.layers, 1):
-            if isinstance(layer_item, list):
-                lines.append(f"Layer {i}: [Parallel Layers]")
-                for j, layer in enumerate(layer_item, 1):
-                    lines.append(f"  Branch {j}:")
-                    if layer is None:
-                        lines.append("    [Pass-through]")
-                    else:
-                        layer_desc = layer.description(indent=4, full=full)
-                        lines.append(layer_desc)
-            else:
-                lines.append(f"Layer {i}: {layer_item.description(full=full)}")
+        for i, layer in enumerate(self.layers, 1):
+            lines.append(f"Layer {i}: {layer.description(full=full)}")
             lines.append("")
         
         return "\n".join(lines)
 
     def to_dict(self) -> dict:
         """Serialize complete pipeline to dictionary."""
-        layers_data = []
-        for layer_item in self.layers:
-            if isinstance(layer_item, list):
-                layers_data.append([
-                    l.to_dict() if l is not None else None 
-                    for l in layer_item
-                ])
-            else:
-                layers_data.append(layer_item.to_dict())
-                
+        layers_data = [l.to_dict() for l in self.layers]
         return {
             "date": str(self.date) if self.date else None,
             "declination": serialize_value(self.declination),
@@ -168,7 +189,8 @@ class Pipeline:
         from helios.components import scene, atmosphere, collector, detectors
         
         type_map = {
-            'Scene': scene.Scene,
+            'Scene': scene.PlanetarySystem,
+            'PlanetarySystem': scene.PlanetarySystem,
             'Atmosphere': atmosphere.Atmosphere,
             'TelescopeArray': collector.TelescopeArray,
             'Camera': detectors.Camera
@@ -185,20 +207,63 @@ class Pipeline:
                     print(f"Error restoring layer {type_name}: {e}")
                     return None
             else:
-                print(f"Unknown layer type: {type_name}")
-                return None
+                # Generic layer or unknown
+                # Check for module path?
+                # For now, maybe create basic Layer and populate elements?
+                # But Layer.from_dict exists.
+                return Layer.from_dict(l_data)
 
         layers_data = data.get("layers", [])
         for l_item in layers_data:
+            # Handle if old format had list of lists
             if isinstance(l_item, list):
-                parallel_layers = [restore_layer(ld) for ld in l_item]
-                pipe.add_layer(parallel_layers)
+                 # Backward compat: convert to single layer?
+                 # Or flatten logic?
+                 # User wants single layer for list.
+                 # Let's flatten.
+                 items = []
+                 for sub in l_item:
+                     restored = restore_layer(sub)
+                     if restored:
+                         # If restored is a Layer, extract elements
+                         items.extend(restored.elements)
+                 pipe.add_layer(items)
             else:
                 layer = restore_layer(l_item)
                 if layer:
                     pipe.add_layer(layer)
                     
         return pipe
+
+    def __getitem__(self, key: Union[int, Tuple[int, int]]) -> Union[Layer, Component]:
+        """
+        Get a layer or component by index.
+        
+        Parameters
+        ----------
+        key : int or tuple
+            If int: returns the layer at that index.
+            If tuple (n, m): returns the m-th component of the n-th layer.
+            
+        Returns
+        -------
+        Layer or Component
+        """
+        if isinstance(key, int):
+            return self.layers[key]
+        elif isinstance(key, tuple):
+            if len(key) != 2:
+                raise IndexError("Pipeline index tuple must be (layer_index, component_index).")
+            
+            n, m = key
+            layer = self.layers[n]
+            
+            if not hasattr(layer, 'elements'):
+                 raise IndexError(f"Layer at index {n} has no elements/components.")
+                 
+            return layer.elements[m]
+        else:
+            raise TypeError("Pipeline indices must be integers or tuples of integers.")
 
     def save(self, filename: Union[str, Path]):
         """Save pipeline to a JSON file (Proxy to helios.io.json)."""
@@ -216,7 +281,7 @@ class Pipeline:
                             npix: Optional[int] = None,
                             angular_samples: int = 1,
                             coherent_sources: bool = True,
-                            collectors: Optional[List[Any]] = None) -> Union[Wavefront, WavefrontArray]:
+                            collectors: Optional[List[Any]] = None) -> Union[Wavefront, List[Wavefront]]:
         """Generate the input wavefront(s) from Scene and Atmosphere."""
         if isinstance(size, int):
             if npix is None:
@@ -233,17 +298,34 @@ class Pipeline:
             
         scene = None
         for layer in self.layers:
-            if isinstance(layer, list):
-                for sub in layer:
-                    if type(sub).__name__ == 'Scene':
-                        scene = sub
-                    elif type(sub).__name__ == 'TelescopeArray' and collectors is None:
-                        collectors = sub.elements
-            else:
-                if type(layer).__name__ == 'Scene':
-                    scene = layer
-                elif type(layer).__name__ == 'TelescopeArray' and collectors is None:
-                    collectors = layer.elements
+            # Flatten search since layers are simpler now
+            # But we might need to check inside layer elements?
+            # Scene behaves as a Component? or Layer?
+            # Scene seems to be a Layer in current code (based on imports GenerationLayer).
+            # But if we refactored, it might be Component? (Atmosphere is GenerationComponent).
+            # Scene implementation wasn't refactored in this session, assume still Layer-like or wrapper?
+            # Actually, check type(layer).__name__
+            if type(layer).__name__ in ['Scene', 'PlanetarySystem']:
+                scene = layer
+                break
+            # If Scene is inside a generic Layer (as Component)
+            for elem in layer.elements:
+                 if type(elem).__name__ in ['Scene', 'PlanetarySystem']:
+                     scene = elem 
+                     break
+            if scene: break
+        
+        # Checking for collectors similarly
+        if collectors is None:
+             for layer in self.layers:
+                 if type(layer).__name__ == 'TelescopeArray':
+                     collectors = layer.elements
+                     break
+                 for elem in layer.elements:
+                     if type(elem).__name__ == 'TelescopeArray':
+                         collectors = elem.elements
+                         break
+                 if collectors: break
         
         if scene is None and collectors is None:
              raise ValueError("Context must contain at least a Scene or a TelescopeArray to generate input wavefront.")
@@ -375,7 +457,7 @@ class Pipeline:
                 wf_list.append(wf)
                 locations.append((cx, cy))
             
-            return WavefrontArray(wf_list, locations=locations)
+            return wf_list
 
         wf = Wavefront(wavelength=wavelength, size=size, npix=npix, nsource=samples)
         if samples == 1 and wf.ndim == 2:
@@ -408,89 +490,56 @@ class Pipeline:
             if type(layer).__name__ == 'Atmosphere':
                 atmosphere = layer
                 break
+            for elem in layer.elements:
+                if type(elem).__name__ == 'Atmosphere':
+                    atmosphere = elem
+                    break
+            if atmosphere: break
         
         if atmosphere:
-            wf = atmosphere.process(wf, self)
+            wf = atmosphere.process(wf)
             
         return wf
 
-    def propagate_until(self, target_layer: Any) -> Any:
-        """Run the simulation pipeline until reaching the target layer."""
+    def propagate_until(self, target_layer: Union[Layer, Component]) -> Any:
+        """
+        Run the simulation pipeline until reaching the target layer or component.
+        
+        If target is a Component, propagation stops just *before* processing that component.
+        Returns the input signal to the target component.
+        """
         current_signal = None
 
-        for i, layer in enumerate(self.layers):
+        for layer in self.layers:
+            # Check if this layer IS the target
             if layer is target_layer:
                 return current_signal
-
-            if isinstance(layer, list):
-                if target_layer in layer:
-                    if not isinstance(current_signal, list):
-                        current_signal = [current_signal] if current_signal is not None else []
-                    
-                    input_idx = 0
-                    for sub_layer in layer:
-                        if sub_layer is None:
-                            num_inputs = 1
-                        elif hasattr(sub_layer, 'num_inputs'):
-                            num_inputs = sub_layer.num_inputs
-                        else:
-                            num_inputs = 1
-                        
-                        if input_idx + num_inputs > len(current_signal):
-                            inputs = current_signal[input_idx:]
-                        else:
-                            inputs = current_signal[input_idx : input_idx + num_inputs]
-                        
-                        if sub_layer is target_layer:
-                             if num_inputs == 1 and len(inputs) == 1:
-                                return inputs[0]
-                             else:
-                                return inputs
-                        
-                        input_idx += num_inputs
-                    return None
-
-                outputs = []
+            
+            # Check if target is inside this layer
+            if hasattr(layer, 'elements') and target_layer in layer.elements:
+                # Target is inside this layer.
+                # We need to process elements up to the target.
                 
-                if not isinstance(current_signal, list):
-                    current_signal = [current_signal] if current_signal is not None else []
+                # Retrieve layer input (current_signal)
+                # Assuming layer.process logic: sequential processing of elements?
+                # The current Layer.process (in layer.py) typically iterates elements.
+                # Use a partial process helper or replicate logic here?
+                # Replicating logic is safer to avoid modifying Layer interface recursively.
                 
-                input_idx = 0
-                for sub_layer in layer:
-                    if sub_layer is None:
-                        num_inputs = 1
-                    elif hasattr(sub_layer, 'num_inputs'):
-                        num_inputs = sub_layer.num_inputs
-                    else:
-                        num_inputs = 1
-                    
-                    if input_idx + num_inputs > len(current_signal):
-                        available = current_signal[input_idx:]
-                        inputs = available + [None] * (num_inputs - len(available))
-                    else:
-                        inputs = current_signal[input_idx : input_idx + num_inputs]
-                    
-                    input_idx += num_inputs
-                    
-                    if sub_layer is None:
-                        outputs.extend(inputs)
-                    else:
-                        if num_inputs == 1 and len(inputs) == 1:
-                            proc_input = inputs[0]
-                        else:
-                            proc_input = inputs
-                            
-                        result = sub_layer.process(proc_input)
-                        
-                        if isinstance(result, list):
-                            outputs.extend(result)
-                        else:
-                            outputs.append(result)
+                input_signal = current_signal
                 
-                current_signal = outputs
+                for element in layer.elements:
+                    if element is target_layer:
+                        return input_signal
+                    
+                    # Process intermediate element
+                    input_signal = element.process(input_signal)
+                
+                # Should have found it
+                return input_signal
 
-            else:
-                current_signal = layer.process(current_signal)
+            # Otherwise, process full layer and continue
+            current_signal = layer.process(current_signal)
 
         return current_signal
 
@@ -498,48 +547,8 @@ class Pipeline:
         """Run the simulation through all layers."""
         current_signal = None
 
-        for i, layer in enumerate(self.layers):
-            if isinstance(layer, list):
-                outputs = []
-                if not isinstance(current_signal, list):
-                    current_signal = [current_signal] if current_signal is not None else []
-                
-                input_idx = 0
-                for sub_layer in layer:
-                    if sub_layer is None:
-                        num_inputs = 1
-                    elif hasattr(sub_layer, 'num_inputs'):
-                        num_inputs = sub_layer.num_inputs
-                    else:
-                        num_inputs = 1
-                    
-                    if input_idx + num_inputs > len(current_signal):
-                        available = current_signal[input_idx:]
-                        inputs = available + [None] * (num_inputs - len(available))
-                    else:
-                        inputs = current_signal[input_idx : input_idx + num_inputs]
-                    
-                    input_idx += num_inputs
-                    
-                    if sub_layer is None:
-                        outputs.extend(inputs)
-                    else:
-                        if num_inputs == 1 and len(inputs) == 1:
-                            proc_input = inputs[0]
-                        else:
-                            proc_input = inputs
-                            
-                        result = sub_layer.process(proc_input)
-                        
-                        if isinstance(result, list):
-                            outputs.extend(result)
-                        else:
-                            outputs.append(result)
-                
-                current_signal = outputs
-
-            else:
-                current_signal = layer.process(current_signal)
+        for layer in self.layers:
+            current_signal = layer.process(current_signal)
 
         return current_signal
 

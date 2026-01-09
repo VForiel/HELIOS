@@ -9,8 +9,8 @@ from ...core.pipeline import Pipeline
 from ...core.wavefront import Wavefront
 
 
-class BeamSplitter(OpticalLayer):
-    """Optical beam splitter layer.
+class BeamSplitter(OpticalComponent):
+    """Optical beam splitter component.
     
     Splits an incoming wavefront into two or more output wavefronts.
     

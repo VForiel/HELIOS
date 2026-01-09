@@ -1,14 +1,14 @@
 import numpy as np
-from typing import Optional, Tuple, Any
+from typing import Optional, Tuple, Any, List
 from astropy import units as u
 
 from ...core.component import Component, OpticalComponent
 from ...core.layer import Layer, OpticalLayer
 from ...core.pipeline import Pipeline
-from ...core.wavefront import Wavefront, WavefrontArray
+from ...core.wavefront import Wavefront
 
 
-class Lens(OpticalLayer):
+class Lens(OpticalComponent):
     """
     Thin lens element applying a quadratic phase to the pupil plane field.
 
@@ -35,7 +35,7 @@ class Lens(OpticalLayer):
     -----
     - Coordinates are derived from the wavefront's `pixel_scale` (meters per pixel).
       If `pixel_scale` is not set, a default of `1 m/pixel` is used.
-    - For `WavefrontArray`, the phase is applied independently to each channel.
+    - For list of `Wavefront`, the phase is applied independently to each wavefront.
     - This element operates in the pupil plane; propagation to the focal plane
       should be performed downstream (e.g., by a detector or dedicated propagator).
     """
@@ -82,22 +82,24 @@ class Lens(OpticalLayer):
 
         Parameters
         ----------
-        wavefront : Wavefront or WavefrontArray
+        wavefront : Wavefront or List[Wavefront]
             Input wavefront(s) in the pupil plane.
 
         Returns
         -------
-        Wavefront or WavefrontArray
+        Wavefront or List[Wavefront]
             Wavefront(s) with lens phase applied.
         """
         if wavefront is None:
             return None
 
-        # Handle WavefrontArray
-        if isinstance(wavefront, WavefrontArray):
-            out = wavefront.copy()
-            for i in range(len(out)):
-                out[i] = self._apply_to_wavefront(out[i])
+        # Handle list
+        if isinstance(wavefront, list):
+            out = []
+            for wf in wavefront:
+                new_wf = wf.copy()
+                self._apply_to_wavefront(new_wf)
+                out.append(new_wf)
             return out
 
         # Single wavefront

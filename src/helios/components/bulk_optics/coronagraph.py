@@ -14,8 +14,8 @@ from ...core.pipeline import Pipeline
 from ...core.wavefront import Wavefront
 
 
-class Coronagraph(OpticalLayer):
-    """Coronagraph focal-plane mask layer.
+class Coronagraph(OpticalComponent):
+    """Coronagraph focal-plane mask component.
     
     Applies phase and/or amplitude masks in the focal plane to suppress
     on-axis stellar light, enabling high-contrast imaging of faint companions.

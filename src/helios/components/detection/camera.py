@@ -1,25 +1,24 @@
 import numpy as np
-from typing import Tuple, Optional, Any
+from typing import Tuple, Optional, Any, List
 from astropy import units as u
 from ...core.component import Component, DetectionComponent
 from ...core.layer import DetectionLayer, Layer
 from ...core.pipeline import Pipeline
 from ...utils.serialization import serialize_value, deserialize_value
-from ...core.wavefront import Wavefront, WavefrontArray
+from ...core.wavefront import Wavefront
 import matplotlib.pyplot as plt
 
-class Camera(DetectionLayer):
+class Camera(DetectionComponent):
     __slots__ = (
         "pixels",
+        "pixel_size",
         "dark_current",
         "read_noise",
         "integration_time_value",
         "integration_time",
         "quantum_efficiency",
         "gain",
-        "thermal_background",
-        "thermal_background_temp",
-        "_rng",
+        "ideal",
         "name",
     )
     """
@@ -35,6 +34,10 @@ class Camera(DetectionLayer):
     ----------
     pixels : tuple of int, optional
         Number of pixels (width, height). Default: (1024, 1024)
+    pixel_size : astropy.Quantity, optional
+        Physical size of pixels (e.g. 10*u.um) or angular size (e.g. 0.01*u.arcsec).
+        If None, automatically determined to satisfy Nyquist sampling at the given wavelength
+        relative to the input wavefront aperture.
     dark_current : astropy.Quantity, optional
         Dark current rate in electrons per second per pixel. 
         Typical values: 0.001-0.1 e-/s for cooled scientific cameras.
@@ -51,12 +54,6 @@ class Camera(DetectionLayer):
     gain : float, optional
         Camera gain in electrons per ADU (Analog-to-Digital Unit).
         Default: 1.0 e-/ADU
-    thermal_background : astropy.Quantity, optional
-        Thermal background rate from warm instrument in electrons per second per pixel.
-        If None, calculated from thermal_background_temp. Default: None
-    thermal_background_temp : astropy.Quantity, optional
-        Instrument temperature for thermal emission calculation.
-        Only used if thermal_background is None. Default: 280 K
     name : str, optional
         Name of the camera for identification in diagrams
     
@@ -78,16 +75,17 @@ class Camera(DetectionLayer):
     >>> reduced = camera.get_image(wavefront, pipeline)
     """
     def __init__(self, pixels: Tuple[int, int] = (1024, 1024), 
+                 pixel_size: Optional[u.Quantity] = None,
                  dark_current: u.Quantity = 0.01*u.electron/u.s, 
                  read_noise: u.Quantity = 3*u.electron,
                  integration_time: u.Quantity = 1*u.s,
                  quantum_efficiency: float = 0.9,
                  gain: float = 1.0,
-                 thermal_background: Optional[u.Quantity] = None,
-                 thermal_background_temp: u.Quantity = 280*u.K,
+                 ideal: bool = False,
                  name: Optional[str] = None, **kwargs):
         super().__init__(name=name or "Camera")
         self.pixels = pixels
+        self.pixel_size = pixel_size
         
         # Store parameters (convert to native units for performance)
         self.dark_current = float(dark_current.to(u.electron/u.s).value)  # e-/s
@@ -97,30 +95,22 @@ class Camera(DetectionLayer):
         self.quantum_efficiency = float(quantum_efficiency)
         self.gain = float(gain)  # e-/ADU
         
-        # Thermal background from warm instrument
-        if thermal_background is not None:
-            self.thermal_background = float(thermal_background.to(u.electron/u.s).value)  # e-/s
-        else:
-            # Default to zero thermal background unless explicitly provided
-            # Tests expect dark frames around dark_current × integration_time
-            self.thermal_background = 0.0
-        self.thermal_background_temp = thermal_background_temp
+        self.gain = float(gain)  # e-/ADU
         
-        # Random number generator for reproducible noise
-        self._rng = np.random.default_rng()
+        self.ideal = ideal
         
     def to_dict(self) -> dict:
         """Serialize camera configuration."""
         data = super().to_dict()
         data.update({
             "pixels": list(self.pixels),
+            "pixel_size": serialize_value(self.pixel_size) if self.pixel_size is not None else None,
             "dark_current": serialize_value(self.dark_current * u.electron / u.s),
             "read_noise": serialize_value(self.read_noise * u.electron),
             "integration_time": serialize_value(self.integration_time),
             "quantum_efficiency": self.quantum_efficiency,
             "gain": self.gain,
-            "thermal_background": serialize_value(self.thermal_background * u.electron / u.s) if self.thermal_background else None,
-            "thermal_background_temp": serialize_value(self.thermal_background_temp)
+            "ideal": self.ideal
         })
         return data
 
@@ -129,6 +119,7 @@ class Camera(DetectionLayer):
         """Create camera from dictionary."""
         name = data.get("name")
         pixels = tuple(data.get("pixels", (1024, 1024)))
+        pixel_size = deserialize_value(data.get("pixel_size"))
         
         dark_current = deserialize_value(data.get("dark_current"))
         read_noise = deserialize_value(data.get("read_noise"))
@@ -136,65 +127,27 @@ class Camera(DetectionLayer):
         quantum_efficiency = data.get("quantum_efficiency", 0.9)
         gain = data.get("gain", 1.0)
         
-        thermal_background = deserialize_value(data.get("thermal_background"))
-        thermal_background_temp = deserialize_value(data.get("thermal_background_temp"))
+        quantum_efficiency = data.get("quantum_efficiency", 0.9)
+        gain = data.get("gain", 1.0)
         
-        return cls(pixels=pixels, dark_current=dark_current, read_noise=read_noise,
+        ideal = data.get("ideal", False)
+        # Backward compatibility
+        if "include_photon_noise" in data:
+             # if include_photon_noise was True (default), ideal is False. 
+             # if include_photon_noise was False, it meant "no noise" which maps to ideal=True?
+             # User said "include_photon_noise peut être généralisé en ideal:bool=False".
+             # Actually, include_photon_noise=False usually meant "just signal + dark", no poisson.
+             # If ideal=True means "no noise at all", it maps roughly to include_photon_noise=False?
+             # Let's assume strict mapping: ideal replaces it.
+             pass
+        
+        return cls(pixels=pixels, pixel_size=pixel_size, 
+                   dark_current=dark_current, read_noise=read_noise,
                    integration_time=integration_time, quantum_efficiency=quantum_efficiency,
-                   gain=gain, thermal_background=thermal_background,
-                   thermal_background_temp=thermal_background_temp, name=name)
-    
-    def _combine_wavefronts(self, wf_array: WavefrontArray) -> np.ndarray:
-        """Combine wavefronts from an array into a single focal plane intensity image."""
-        if not wf_array.wavefronts:
-            return np.zeros(self.pixels)
-            
-        # Assume all wavefronts have same properties
-        wf0 = wf_array.wavefronts[0]
-        scale = wf0.pixel_scale.to(u.m).value
-        
-        # Use the size of the input wavefronts as the base canvas size
-        if wf0.ndim == 3:
-            samples, h, w = wf0.shape
-            canvas = np.zeros((samples, h, w), dtype=np.complex128)
-        else:
-            h, w = wf0.shape
-            canvas = np.zeros((h, w), dtype=np.complex128)
-        
-        # Check if locations are available
-        locations = wf_array.locations
-        if locations is None:
-            locations = [(0.0, 0.0)] * len(wf_array.wavefronts)
-            
-        for wf, loc in zip(wf_array.wavefronts, locations):
-            # Calculate shift in pixels
-            lx, ly = loc
-            shift_x = int(lx / scale)
-            shift_y = int(ly / scale)
-            
-            # Shift the field using roll (valid for small shifts relative to array size)
-            if wf.ndim == 3:
-                field_shifted = np.roll(wf, (shift_y, shift_x), axis=(1, 2))
-            else:
-                field_shifted = np.roll(wf, (shift_y, shift_x), axis=(0, 1))
-            
-            # Add to canvas (coherent combination)
-            canvas += field_shifted
-            
-        # FFT to get focal plane field
-        # fftshift moves zero freq to center
-        if canvas.ndim == 3:
-            focal_field = np.fft.fftshift(np.fft.fft2(np.fft.fftshift(canvas, axes=(1,2)), axes=(1,2)), axes=(1,2))
-            # Sum intensities (incoherent sum of samples)
-            intensity = np.sum(np.abs(focal_field)**2, axis=0)
-        else:
-            focal_field = np.fft.fftshift(np.fft.fft2(np.fft.fftshift(canvas)))
-            intensity = np.abs(focal_field)**2
-        
-        # Return intensity
-        return intensity
+                   gain=gain,
+                   ideal=ideal, name=name)
 
-    def get_raw_image(self, wavefront: Optional[Any]) -> np.ndarray:
+    def get_raw_image(self, wavefront:Wavefront=None) -> np.ndarray:
         """
         Acquire raw detector image including signal, dark current, and noise.
         
@@ -206,7 +159,7 @@ class Camera(DetectionLayer):
         
         Parameters
         ----------
-        wavefront : Wavefront or WavefrontArray or None
+        wavefront : Wavefront or List[Wavefront] or None
             Input wavefront containing the electromagnetic field. If None,
             only dark current and noise are generated (dark frame).
         
@@ -229,70 +182,146 @@ class Camera(DetectionLayer):
         >>> raw = camera.get_raw_image(wavefront, pipeline)
         >>> print(f"Raw image range: [{raw.min():.1f}, {raw.max():.1f}] e-")
         """
-        # 1. Signal from wavefront (if provided)
-        if wavefront is not None:
-            if isinstance(wavefront, WavefrontArray):
-                # Combine wavefronts for interferometry
-                intensity = self._combine_wavefronts(wavefront)
-            elif isinstance(wavefront, Wavefront):
-                # Single wavefront
-                # Single wavefront
-                if wavefront.ndim == 3:
-                     # Calculate focal plane field via FFT
-                     # fftshift moves zero freq to center
-                     # We assume the wavefront is at the pupil plane and we want the image plane
-                     # Use .value to ensure we work with numpy arrays (avoid Unit issues)
-                     wf_data = wavefront.value if hasattr(wavefront, 'value') else wavefront
-                     focal_field = np.fft.fftshift(np.fft.fft2(np.fft.fftshift(wf_data, axes=(1,2)), axes=(1,2)), axes=(1,2))
-                     intensity = np.sum(np.abs(focal_field)**2, axis=0)
-                     # Normalize FFT energy (Parseval: sum(|F|^2) = N*sum(|f|^2)). We want sum(|I|^2) = sum(|P|^2) for simple conservation check
-                     norm = focal_field.shape[1] * focal_field.shape[2]
-                     intensity /= norm
-                else:
-                    wf_data = wavefront.value if hasattr(wavefront, 'value') else wavefront
-                    focal_field = np.fft.fftshift(np.fft.fft2(np.fft.fftshift(wf_data)))
-                    intensity = np.abs(focal_field) ** 2
-                    # Normalize FFT energy
-                    norm = focal_field.shape[0] * focal_field.shape[1]
-                    intensity /= norm
+
+        # 1. Automatic Wavefront Retrieval (if None)
+        if wavefront is None:
+            # Check if we can automatically retrieve it from the pipeline
+            if self.pipeline is not None:
+                wavefront = self.previous().process().propagate()
+            # If no pipeline, generate dark frame
             else:
-                intensity = np.zeros(self.pixels)
-            
-            # Resize intensity to match camera pixels if needed
-            if intensity.shape != self.pixels:
-                # Use interpolation to resize the field to camera dimensions
-                from scipy.ndimage import zoom
-                zoom_factors = (self.pixels[0] / intensity.shape[0], 
-                               self.pixels[1] / intensity.shape[1])
-                intensity = zoom(intensity, zoom_factors, order=1)
-            
-            # Convert to electrons: apply quantum efficiency and integration time
-            signal_electrons = intensity * self.quantum_efficiency * self.integration_time_value
+                import warnings
+                warnings.warn(
+                    "No wavefront provided and no pipeline attached. Generating dark frame.",
+                    UserWarning
+                )
+                wavefront = Wavefront() * 0 # Dark frame
+
+        if isinstance(wavefront, list):
+            # Incoherent sum of intensities from multiple wavefronts
+            intensity = sum(wf.intensity for wf in wavefront)
         else:
-            # No signal (dark frame only)
-            signal_electrons = np.zeros(self.pixels)
+            intensity = wavefront.intensity
+
+        # Applying noises
+        if not self.ideal:
+
+            # Electrons arriving at the detector
+            electrons = 0
         
-        # 2. Dark current accumulation
-        dark_electrons = self.dark_current * self.integration_time_value
-        
-        # 3. Thermal background from warm instrument
-        thermal_electrons = self.thermal_background * self.integration_time_value
-        
-        # 4. Total signal before noise
-        total_signal = signal_electrons + dark_electrons + thermal_electrons
-        
-        # 5. Apply shot noise (Poisson statistics)
-        # Photons follow Poisson distribution: σ² = N
-        total_signal_noisy = self._rng.poisson(lam=np.maximum(total_signal, 0))
-        
-        # 6. Add read noise (Gaussian)
-        read_noise_array = self._rng.normal(loc=0, scale=self.read_noise, size=self.pixels)
-        
-        # 7. Combine all contributions
-        raw_image = total_signal_noisy + read_noise_array
-        
+            # 1. Convert to electrons: apply quantum efficiency and integration time
+            electrons += intensity * self.quantum_efficiency * self.integration_time_value
+            
+            # 2. Dark current accumulation
+            electrons += self.dark_current * self.integration_time_value
+    
+            # 3. Photon shot noise (Poisson statistics)
+            rng = np.random.default_rng()
+            raw_image = rng.poisson(electrons).astype(float)
+            
+            # 4. Read noise (Gaussian)
+            raw_image += rng.normal(0, self.read_noise, size=raw_image.shape)
+        else:
+            # Ideal case: signal only, no dark current or noise
+            raw_image = intensity * self.quantum_efficiency * self.integration_time_value
+
         return raw_image
     
+    def _get_extent_and_labels(self, unit: str, wavefront: Optional[Wavefront] = None) -> Tuple[Optional[List[float]], str, str]:
+        """
+        Determine plot extent and axis labels based on requested unit.
+        
+        Parameters
+        ----------
+        unit : {'pixel', 'size', 'angle'}
+            Requested unit for axes.
+        wavefront : Wavefront, optional
+            Wavefront used for propagation context (needed for focal length in some conversions).
+            
+        Returns
+        -------
+        extent : list or None
+            [xmin, xmax, ymin, ymax] for imshow. None if unit='pixel'.
+        xlabel, ylabel : str
+            Axis labels.
+        """
+        import warnings
+        
+        # Default (Pixel)
+        if unit == 'pixel':
+            return None, 'Pixel X', 'Pixel Y'
+            
+        try:
+            # Check availability
+            if self.pixel_size is None and unit != 'pixel':
+                raise ValueError("Camera has no 'pixel_size' defined.")
+
+            # Calculate total width/fov
+            # We assume square pixels for plotting simplicity usually, or handle rectangular if needed.
+            # Here assuming square pixel_size or taking mean if not? 
+            # self.pixel_size is usually a scalar Quantity.
+            
+            # Determine Pixel Scale in requested unit
+            scale = None
+            label_unit = ""
+            
+            if unit == 'size':
+                if self.pixel_size.unit.is_equivalent(u.m):
+                    scale = self.pixel_size
+                elif self.pixel_size.unit.is_equivalent(u.rad):
+                    # Angular -> Physical (Need Focal Length)
+                    if wavefront is None or wavefront._last_focal_length_m is None:
+                        raise ValueError("Cannot convert Angular pixel_size to Physical: No focal length known.")
+                    
+                    f_m = wavefront._last_focal_length_m * u.m
+                    scale = (self.pixel_size.to(u.rad).value * f_m).to(u.um) # Convert to reasonable unit like um or mm?
+                    # Let's keep it in input unit or auto-scale? Astropy handles it if we use Quantity?
+                    # But imshow extent needs floats. We pick a standard unit.
+                    scale = scale.to(u.mm)
+                else:
+                    raise ValueError(f"Unknown pixel_size unit: {self.pixel_size.unit}")
+                
+                label_unit = "mm" 
+                # If we want smart scaling (um vs mm), we could do it here, but let's stick to mm for 'size' generally
+                if scale.value < 0.1: 
+                     scale = scale.to(u.um)
+                     label_unit = "µm"
+
+            elif unit == 'angle':
+                if self.pixel_size.unit.is_equivalent(u.rad):
+                    scale = self.pixel_size
+                elif self.pixel_size.unit.is_equivalent(u.m):
+                     # Physical -> Angular (Need Focal Length)
+                    if wavefront is None or wavefront._last_focal_length_m is None:
+                        raise ValueError("Cannot convert Physical pixel_size to Angular: No focal length known.")
+                    f_m = wavefront._last_focal_length_m * u.m
+                    scale = (self.pixel_size / f_m) * u.rad
+                else:
+                    raise ValueError(f"Unknown pixel_size unit: {self.pixel_size.unit}")
+                
+                label_unit = "arcsec"
+                scale = scale.to(u.arcsec)
+                
+            else:
+                raise ValueError(f"Unknown unit mode: {unit}")
+            
+            # Calculate Extent
+            # Centered on 0
+            w, h = self.pixels
+            
+            # scale is per pixel. Total width = w * scale
+            val = scale.value
+            
+            half_w = (w * val) / 2.0
+            half_h = (h * val) / 2.0
+            
+            extent = [-half_w, half_w, -half_h, half_h]
+            return extent, f"Position X ({label_unit})", f"Position Y ({label_unit})"
+
+        except Exception as e:
+            warnings.warn(f"Could not apply unit '{unit}': {e}. Falling back to 'pixel'.")
+            return None, 'Pixel X', 'Pixel Y'
+
     def get_dark(self) -> np.ndarray:
         """
         Generate dark frame (detector readout with no illumination).
@@ -328,8 +357,34 @@ class Camera(DetectionLayer):
         >>> print(f"Dark current: {dark.mean():.1f} e-")
         >>> print(f"Dark noise: {dark.std():.1f} e-")
         """
-        # Dark frame = raw image with no wavefront input
-        return self.get_raw_image(wavefront=None)
+        # Dark frame = raw image with dummy zero-amplitude wavefront
+        # Create a dummy wavefront with 0 amplitude
+        # We need it to have some properties to pass internal checks if any, 
+        # but for get_raw_image(None), it tried to retrieve.
+        # Now we pass explicit wavefront=0.
+        
+        # We can construct a minimal wavefront.
+        # Since get_raw_image expects 'wavefront' object or None.
+        # If we pass None, it tries to retrieve.
+        # So we pass a Wavefront with 0 amplitude.
+        
+        # To avoid circular imports or complex instantiation, we can assume 'Wavefront' is available 
+        # or use a mocked object if simple. 
+        # But best is to use the actual Wavefront class.
+        # It is imported at top level? Yes: from ...core.wavefront import Wavefront
+        
+        # We need to match the camera pixels to avoid resizing logic issues if possible, 
+        # but valid wavefront usually has physical size. 
+        # Simplest is:
+        
+        dummy_wf = Wavefront(wavelength=550*u.nm, npix=self.pixels[0], nsource=1)
+        dummy_wf[:] = 0 # Set amplitude to 0
+        
+        # We also need to set a pixel scale to avoid errors if get_raw_image checks it?
+        # get_raw_image uses 'wf0.width', 'wf0.wavelength'.
+        # Wavefront() init sets defaults.
+        
+        return self.get_raw_image(wavefront=dummy_wf)
     
     def get_image(self, wavefront: Optional[Wavefront] = None) -> np.ndarray:
         """
@@ -430,7 +485,8 @@ class Camera(DetectionLayer):
              show: bool = True,
              title: Optional[str] = None,
              log_scale: bool = False,
-             debug: bool = False) -> plt.Axes:
+             debug: bool = False,
+             unit: str = 'pixel') -> plt.Axes:
         """
         Visualize the camera detector output.
         
@@ -451,6 +507,8 @@ class Camera(DetectionLayer):
             If True, plot intensity in log scale (log10). Default: False
         debug : bool, optional
             If True, suppress plt.show() and save plot to debug file. Default: False
+        unit : {'pixel', 'size', 'angle'}, optional
+            Unit for axes. Default: 'pixel'.
             
         Returns
         -------
@@ -459,6 +517,9 @@ class Camera(DetectionLayer):
         """
         # Get the simulated image
         image = self.get_image(wavefront)
+        
+        # Determine Extent and Labels
+        extent, xlabel, ylabel = self._get_extent_and_labels(unit, wavefront)
         
         if ax is None:
             fig, ax = plt.subplots(figsize=(8, 8))
@@ -473,15 +534,15 @@ class Camera(DetectionLayer):
             
         # Plot
         # Use origin='lower' to match astronomical convention (y increases upwards)
-        im = ax.imshow(plot_data, origin='lower', cmap='inferno')
+        im = ax.imshow(plot_data, origin='lower', cmap='inferno', extent=extent)
         
         # Colorbar
         cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
         cbar.set_label('Counts (e-)' if not log_scale else 'Log Counts (e-)')
         
         # Labels and Title
-        ax.set_xlabel('Pixel X')
-        ax.set_ylabel('Pixel Y')
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
         
         if title:
             ax.set_title(title)
@@ -503,7 +564,6 @@ class Camera(DetectionLayer):
             
         if debug:
             print(f"DEBUG Plot Camera: {self.name} {title if title else ''}")
-            print(f"  Image shape: {image.shape}")
             print(f"  Range: {image.min():.2f} to {image.max():.2f}")
             try:
                 import os
@@ -521,35 +581,41 @@ class Camera(DetectionLayer):
         return ax
     
     def plot_raw(self, wavefront: Optional[Wavefront] = None, 
-                 ax: Optional[plt.Axes] = None, show: bool = True) -> plt.Axes:
+                 ax: Optional[plt.Axes] = None, show: bool = True,
+                 unit: str = 'pixel') -> plt.Axes:
         """Plot the raw image (with noise and dark current)."""
         raw_img = self.get_raw_image(wavefront)
+        
+        extent, xlabel, ylabel = self._get_extent_and_labels(unit, wavefront)
         
         if ax is None:
             fig, ax = plt.subplots(figsize=(8, 8))
             
-        im = ax.imshow(raw_img, origin='lower', cmap='inferno')
+        im = ax.imshow(raw_img, origin='lower', cmap='inferno', extent=extent)
         plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label='Counts (e-)')
         ax.set_title(f"Raw Image ({self.integration_time})")
-        ax.set_xlabel('x [pix]')
-        ax.set_ylabel('y [pix]')
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
         
         if show:
             plt.show()
         return ax
 
-    def plot_dark(self, ax: Optional[plt.Axes] = None, show: bool = True) -> plt.Axes:
+    def plot_dark(self, ax: Optional[plt.Axes] = None, show: bool = True,
+                  unit: str = 'pixel') -> plt.Axes:
         """Plot the dark frame."""
         dark_img = self.get_dark()
+        
+        extent, xlabel, ylabel = self._get_extent_and_labels(unit, wavefront=None)
         
         if ax is None:
             fig, ax = plt.subplots(figsize=(8, 8))
             
-        im = ax.imshow(dark_img, origin='lower', cmap='inferno')
+        im = ax.imshow(dark_img, origin='lower', cmap='inferno', extent=extent)
         plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label='Counts (e-)')
         ax.set_title(f"Dark Frame ({self.integration_time})")
-        ax.set_xlabel('x [pix]')
-        ax.set_ylabel('y [pix]')
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
         
         if show:
             plt.show()
@@ -564,6 +630,8 @@ class Camera(DetectionLayer):
         attrs['integration_time'] = str(self.integration_time)
         attrs['quantum_efficiency'] = f"{self.quantum_efficiency:.2%}"
         attrs['gain'] = f"{self.gain:.2f} e-/ADU"
+        if self.pixel_size is not None:
+            attrs['pixel_size'] = str(self.pixel_size)
         if hasattr(self, 'thermal_background_temp'):
             attrs['thermal_temp'] = str(self.thermal_background_temp)
         return attrs

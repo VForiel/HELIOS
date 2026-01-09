@@ -12,9 +12,10 @@ from copy import deepcopy as copy
 
 
 from ...utils.serialization import serialize_value, deserialize_value
+from ...core.component import SamplingComponent
 
 
-class Pupil:
+class Pupil(SamplingComponent):
     """Pupil builder and rasterizer.
 
     - You can add primitive elements (disk, hexagon, spiders, central obstruction)
@@ -23,7 +24,8 @@ class Pupil:
     - Presets: `Pupil.jwst()`, `Pupil.vlt()`, `Pupil.elt()` provide realistic basic configs
     """
 
-    def __init__(self, diameter: u.Quantity = 1.0 * u.m, focal_length: u.Quantity = 1.0 * u.m):
+    def __init__(self, diameter: u.Quantity = 1.0 * u.m, focal_length: u.Quantity = 1.0 * u.m, name: Optional[str] = None):
+        super().__init__(name=name or "Pupil")
         self.diameter = diameter
         self.focal_length = focal_length
         self.elements: List[dict] = []

@@ -16,7 +16,10 @@ All components are exposed at the top level for convenience.
 """
 
 # Generation
-from .generation.scene import Scene, CelestialBody, Star, Planet, ExoZodiacal, Zodiacal
+from .generation.scene import PlanetarySystem, CelestialBody, Star, Planet, ExoZodiacal, Zodiacal
+
+# Backward compatibility alias
+Scene = PlanetarySystem
 from .generation.atmosphere import Atmosphere
 
 # Sampling

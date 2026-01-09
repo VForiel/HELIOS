@@ -16,7 +16,8 @@ except PackageNotFoundError:
 from .core.pipeline import Pipeline, Context
 from .core.layer import Layer, GenerationLayer, SamplingLayer, OpticalLayer, DetectionLayer, DataLayer
 from .core.component import Component, GenerationComponent, SamplingComponent, OpticalComponent, DetectionComponent, DataComponent
-from .core.wavefront import Wavefront, WavefrontArray, PlaneType
+from .core.wavefront import Wavefront
+from .core.optical_scene import OpticalScene, Spectrum
 
 # Expose submodules
 from . import components
@@ -26,7 +27,7 @@ from . import sim
 # Expose all component classes directly at package level for convenience
 from .components import (
     # Scene components
-    Scene, Star, Planet, ExoZodiacal, Zodiacal,
+    PlanetarySystem, Scene, Star, Planet, ExoZodiacal, Zodiacal,
     # Optical components
     Pupil, Collector, TelescopeArray, Telescope, Coronagraph, BeamSplitter, FiberIn, FiberOut, Atmosphere, AdaptiveOptics, Lens,
     # Detector components
@@ -40,13 +41,13 @@ __all__ = [
     # Version
     '__version__',
     # Core
-    'Context', 'Layer', 'Component', 'Simulation', 'Wavefront', 'WavefrontArray',
+    'Context', 'Layer', 'Component', 'Simulation', 'Wavefront', 'Spectrum', 'OpticalScene',
     # Component types
     'GenerationComponent', 'SamplingComponent', 'OpticalComponent', 'DetectionComponent', 'DataComponent',
     # Submodules
     'components', 'core',
     # Scene components
-    'Scene', 'Star', 'Planet', 'ExoZodiacal', 'Zodiacal',
+    'PlanetarySystem', 'Scene', 'Star', 'Planet', 'ExoZodiacal', 'Zodiacal',
     # Optical components
     'Pupil', 'Collector', 'TelescopeArray', 'Telescope', 'Coronagraph', 'BeamSplitter', 'FiberIn', 'FiberOut', 'Atmosphere', 'AdaptiveOptics', 'Lens',
     # Detector components

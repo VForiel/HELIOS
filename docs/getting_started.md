@@ -34,7 +34,7 @@ import helios
 from astropy import units as u
 
 # Create a scene with a star
-scene = helios.Scene(distance=10*u.pc)
+scene = helios.PlanetarySystem(distance=10*u.pc)
 scene.add(helios.Star(temperature=5700*u.K, magnitude=5))
 
 # Define a telescope

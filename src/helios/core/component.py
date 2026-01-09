@@ -1,4 +1,4 @@
-from typing import Optional, TYPE_CHECKING, List, Any
+from typing import Optional, TYPE_CHECKING, List, Any, Tuple
 import copy
 from ..utils.serialization import serialize_value, deserialize_value
 
@@ -34,7 +34,106 @@ class Component:
         self.pipeline: Optional['Pipeline'] = None
         self.num_inputs: int = 1  # Number of inputs this component consumes
         self.num_outputs: int = 1 # Number of outputs this component produces
-        self.metadata: dict = {}  # Store for UI/Application specific data
+        
+    def get_index(self) -> Tuple[int, int]:
+        """
+        Get the (layer_index, component_index) of this component.
+        
+        Returns
+        -------
+        tuple (int, int)
+        
+        Raises
+        ------
+        RuntimeError
+            If not attached to a layer or pipeline.
+        """
+        if self.layer is None:
+            raise RuntimeError("Component is not attached to a layer.")
+            
+        try:
+            l_idx = self.layer.get_index()
+        except RuntimeError:
+            raise RuntimeError("Parent layer is not attached to a pipeline.")
+            
+        try:
+            c_idx = self.layer.elements.index(self)
+        except ValueError:
+            raise RuntimeError("Component not found in its parent layer elements.")
+            
+        return (l_idx, c_idx)
+
+    def next(self) -> 'Component':
+        """
+        Get the next component in the pipeline execution order.
+        
+        If this is the last component in a layer, returns the first component
+        of the next layer.
+        
+        Returns
+        -------
+        Component
+        
+        Raises
+        ------
+        IndexError
+            If this is the last component in the pipeline.
+        """
+        if self.layer is None:
+            raise RuntimeError("Not attached to layer.")
+            
+        # Check if there is a next component in the same layer
+        my_idx = self.layer.elements.index(self)
+        if my_idx < len(self.layer.elements) - 1:
+            return self.layer.elements[my_idx + 1]
+            
+        # Otherwise, go to next layer
+        next_layer = self.layer.next()
+        
+        # Handle parallel layers (List[Layer])
+        if isinstance(next_layer, list):
+            # Ambiguity: which branch? Default to first valid branch's first component
+            for sub in next_layer:
+                if sub and sub.elements:
+                    return sub.elements[0]
+            raise IndexError("Next layer group has no components.")
+        else:
+            if not next_layer.elements:
+                raise IndexError("Next layer is empty.")
+            return next_layer.elements[0]
+
+    def previous(self) -> 'Component':
+        """
+        Get the previous component in the pipeline execution order.
+        
+        Returns
+        -------
+        Component
+        
+        Raises
+        ------
+        IndexError
+            If this is the first component in the pipeline.
+        """
+        if self.layer is None:
+            raise RuntimeError("Not attached to layer.")
+            
+        my_idx = self.layer.elements.index(self)
+        if my_idx > 0:
+            return self.layer.elements[my_idx - 1]
+            
+        prev_layer = self.layer.previous()
+        
+        if isinstance(prev_layer, list):
+            # Default to first valid branch's last component
+            for sub in prev_layer:
+                if sub and sub.elements:
+                    return sub.elements[-1]
+            raise IndexError("Previous layer group has no components.")
+        else:
+             if not prev_layer.elements:
+                 raise IndexError("Previous layer is empty.")
+             return prev_layer.elements[-1]
 
     def twin(self) -> 'Component':
         """
