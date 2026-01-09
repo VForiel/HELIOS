@@ -314,7 +314,7 @@ with tab_anim:
         
         # Define output path
         output_filename = f"mmi_demo_{demo_choice.replace(' ', '_')}.mp4"
-        output_path = ROOT / "generated" / "streamlit" / output_filename
+        output_path = ROOT / "demo" / "generated" / output_filename
         output_path.parent.mkdir(parents=True, exist_ok=True)
         
         sim_params = {}

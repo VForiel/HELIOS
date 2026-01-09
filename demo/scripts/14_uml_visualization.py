@@ -55,7 +55,7 @@ def run_demo():
     plt.tight_layout()
     
     if os.environ.get("HELIOS_SAVE_PLOTS") == "true":
-        output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../generated/examples'))
+        output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../generated'))
         os.makedirs(output_dir, exist_ok=True)
         filename = os.path.basename(__file__).replace('.py', '_1.png')
         save_path = os.path.join(output_dir, filename)
@@ -144,7 +144,7 @@ def run_demo():
     output_file = 'uml_complex_test.png'
     
     if os.environ.get("HELIOS_SAVE_PLOTS") == "true":
-        output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../generated/examples'))
+        output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../generated'))
         os.makedirs(output_dir, exist_ok=True)
         filename = os.path.basename(__file__).replace('.py', '_2.png')
         save_path = os.path.join(output_dir, filename)

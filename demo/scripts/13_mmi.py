@@ -18,7 +18,7 @@ def _output_path(filename: str) -> str:
     """Resolve where to save the animation file."""
     base_dir = os.path.dirname(__file__)
     if os.environ.get("HELIOS_SAVE_PLOTS") == "true":
-        target_dir = os.path.abspath(os.path.join(base_dir, "../generated/examples"))
+        target_dir = os.path.abspath(os.path.join(base_dir, "../generated"))
     else:
         target_dir = base_dir
 

@@ -29,7 +29,7 @@ def run_all_demos():
         print("Running in SAVE mode. Plots will be saved to 'generated/examples/' instead of shown.")
         os.environ["HELIOS_SAVE_PLOTS"] = "true"
         # Create output directory
-        output_dir = os.path.join(examples_dir, "../generated/examples")
+        output_dir = os.path.join(examples_dir, "../generated")
         os.makedirs(output_dir, exist_ok=True)
     else:
         print("Running in INTERACTIVE mode. Plots will be shown.")

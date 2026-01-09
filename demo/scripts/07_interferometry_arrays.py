@@ -27,7 +27,7 @@ def run_demo():
     vlti.plot_array(show_pupils=True, pupil_scale=0.5)
     
     if os.environ.get("HELIOS_SAVE_PLOTS") == "true":
-        output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../generated/examples'))
+        output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../generated'))
         os.makedirs(output_dir, exist_ok=True)
         filename = os.path.basename(__file__).replace('.py', '.png')
         save_path = os.path.join(output_dir, filename)

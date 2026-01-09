@@ -34,7 +34,7 @@ def run_demo():
     ax.grid(True, alpha=0.3)
     
     if os.environ.get("HELIOS_SAVE_PLOTS") == "true":
-        output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../generated/examples'))
+        output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../generated'))
         os.makedirs(output_dir, exist_ok=True)
         filename = os.path.basename(__file__).replace('.py', '.png')
         save_path = os.path.join(output_dir, filename)

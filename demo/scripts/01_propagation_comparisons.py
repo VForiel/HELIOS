@@ -167,7 +167,7 @@ def demonstrate_propagation():
         
         # Save or Show
         if os.environ.get("HELIOS_SAVE_PLOTS") == "true":
-            output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../generated/examples'))
+            output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../generated'))
             os.makedirs(output_dir, exist_ok=True)
             
             # Sanitize name
