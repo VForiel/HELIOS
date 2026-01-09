@@ -1,5 +1,5 @@
 """
-HELIOS: Hierarchical End-to-end Lightpath & Instrumental response Simulation
+HELIOS: Hierarchical End-to-end Lightpath & Instrumental response Observational Simulation
 """
 
 try:

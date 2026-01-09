@@ -64,48 +64,48 @@ with st.expander("Configuration", expanded=True):
             pupil.add_central_obscuration(diameter=obs_diam * u.m)
         if n_spiders > 0:
             pupil.add_spiders(arms=n_spiders, width=spider_width * u.m)
-            
-        ax.set_title(f'Manual Pupil ({prim_diam}m)')
 
     else: # Preset
         with col_p:
             preset_name = st.selectbox("Select Preset", ["JWST", "ELT", "VLT"]) 
-    # Note: ELT/VLT might not be in helios yet, so let's wrap in try/except or check.
-    # The example only showed JWST.
-    
-    try:
-        if preset_name == "JWST":
-            pupil = helios.Pupil.like('JWST')
-        elif preset_name == "ELT":
-            # Assuming functionality exists or fallback
-             pupil = helios.Pupil(39*u.m) # Placeholder if 'like' fails or just try
-             # Actually let's try .like() if implemented
-             try:
-                 pupil = helios.Pupil.like('ELT')
-             except:
-                 st.warning("ELT preset not fully implemented, showing placeholder.")
-                 pupil = helios.Pupil(39*u.m)
-                 pupil.add_disk(39/2*u.m)
-                 pupil.add_central_obscuration(11*u.m)
-                 pupil.add_spiders(6, 0.5*u.m)
-        elif preset_name == "VLT":
-             pupil = helios.Pupil(8.2*u.m)
-             pupil.add_disk(4.1*u.m)
-             pupil.add_central_obscuration(1.1*u.m)
         
-        ax.set_title(f'{preset_name} Pupil')
-        
-    except Exception as e:
-        st.error(f"Error loading preset: {e}")
+        try:
+            if preset_name == "JWST":
+                pupil = helios.Pupil.like('JWST')
+            elif preset_name == "ELT":
+                 try:
+                     pupil = helios.Pupil.like('ELT')
+                 except:
+                     st.warning("ELT preset not fully implemented, showing placeholder.")
+                     pupil = helios.Pupil(39*u.m)
+                     pupil.add_disk(39/2*u.m)
+                     pupil.add_central_obscuration(11*u.m)
+                     pupil.add_spiders(6, 0.5*u.m)
+            elif preset_name == "VLT":
+                 pupil = helios.Pupil(8.2*u.m)
+                 pupil.add_disk(4.1*u.m)
+                 pupil.add_central_obscuration(1.1*u.m)
+            
+            # ax.set_title handled below
+            
+        except Exception as e:
+            st.error(f"Error loading preset: {e}")
 
 if pupil:
     npix = st.select_slider("Resolution", options=[128, 256, 512, 1024, 2048], value=512)
     
     arr = pupil.get_array(npix=npix)
     
+    fig, ax = plt.subplots(figsize=(6, 6))
     ax.imshow(arr, origin='lower', cmap='gray')
     ax.axis('off')
+    
+    if mode == "Manual":
+        ax.set_title(f'Manual Pupil ({prim_diam}m)')
+    else:
+        ax.set_title(f'{preset_name} Pupil')
     
     st.pyplot(fig)
     
     st.info(f"Shape: {arr.shape}, Fill Factor: {arr.mean():.3%}")
+    plt.close(fig)

@@ -35,7 +35,7 @@ Generate automated **UML Block Diagrams** of your optical pipeline.
 """)
 
 # --- Show Code ---
-EXAMPLE_PATH = ROOT / "demo" / "scripts" / "15_uml_visualization.py"
+EXAMPLE_PATH = ROOT / "demo" / "scripts" / "14_uml_visualization.py"
 display_code(EXAMPLE_PATH)
 
 st.divider()
@@ -63,7 +63,7 @@ if st.button("Generate Diagram", type="primary"):
             camera1 = helios.Camera(pixels=(512, 512), name="Cam 1")
             camera2 = helios.Camera(pixels=(256, 256), name="Cam 2")
 
-            exo_ctx = helios.Context()
+            exo_ctx = helios.Pipeline()
             exo_ctx.add_layer(exo_scene)
             exo_ctx.add_layer(atmosphere)
             exo_ctx.add_layer(elt)
@@ -81,7 +81,7 @@ if st.button("Generate Diagram", type="primary"):
             plt.axis('off')
 
         else: # Beam Combiner
-            ctx = helios.Context()
+            ctx = helios.Pipeline()
             scene = helios.Scene(distance=10*u.pc, name="Target System")
             scene.add(helios.Star(temperature=5700*u.K, magnitude=5))
             scene.add(helios.Planet(mass=1*u.M_jup, position=(1*u.AU, 0*u.AU)))

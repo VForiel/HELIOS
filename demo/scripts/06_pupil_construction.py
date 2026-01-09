@@ -1,5 +1,5 @@
 """
-03_pupil_construction.py
+06_pupil_construction.py
 
 Demonstrates how to construct telescope pupils using manual primitives and presets.
 """
@@ -9,12 +9,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 from astropy import units as u
 
-# Add src to path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../src')))
-
 import helios
 
-def run_demo():
+def run_demo(save=False):
     # 1. Manual pupil construction
     print("Constructing manual pupil...")
     p_manual = helios.Pupil(8*u.m)
@@ -41,13 +38,14 @@ def run_demo():
 
     plt.tight_layout()
     
-    if os.environ.get("HELIOS_SAVE_PLOTS") == "true":
+    if save:
         output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../generated'))
         os.makedirs(output_dir, exist_ok=True)
-        filename = os.path.basename(__file__).replace('.py', '.png')
+        filename = "06_pupil_construction.png"
         save_path = os.path.join(output_dir, filename)
         plt.savefig(save_path)
         print(f"Saved plot to {save_path}")
+        plt.close()
     else:
         plt.show()
         

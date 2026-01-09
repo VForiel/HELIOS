@@ -76,7 +76,7 @@ class Lens(OpticalComponent):
         wf._last_focal_length_m = self.focal_length_m
         return wf
 
-    def process(self, wavefront: Any, context: Optional['Context'] = None) -> Any:
+    def process(self, wavefront: Any, pipeline: Optional['Pipeline'] = None) -> Any:
         """
         Apply the thin lens phase to a `Wavefront` or each channel in a `WavefrontArray`.
 

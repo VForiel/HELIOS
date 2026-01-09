@@ -20,7 +20,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-st.title("HELIOS: Hierarchical End-to-end Lightpath & Instrumental response Optical Simulation ☀️")
+st.title("HELIOS: Hierarchical End-to-end Lightpath & Instrumental response Observational Simulation ☀️")
 
 st.markdown(
     """

@@ -1,5 +1,5 @@
 """
-15_uml_visualization.py
+14_uml_visualization.py
 
 Demonstrates how to generate UML diagrams of the optical pipeline.
 Includes two examples:
@@ -13,14 +13,11 @@ import numpy as np
 from astropy import units as u
 from copy import deepcopy as copy
 
-# Add src to path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../src')))
-
 import helios
 import helios.components.photonics as photonics
 import helios.components.photonics.fibers as fibers
 
-def run_demo():
+def run_demo(save=False):
     # --- Example 1: Exoplanet Detection System ---
     print("1. Generating Exoplanet Detection System UML...")
     
@@ -37,7 +34,7 @@ def run_demo():
     camera1 = helios.Camera(pixels=(512, 512))
     camera2 = helios.Camera(pixels=(256, 256))
 
-    exo_ctx = helios.Context()
+    exo_ctx = helios.Pipeline()
     exo_ctx.add_layer(exo_scene)
     exo_ctx.add_layer(atmosphere)
     exo_ctx.add_layer(elt)
@@ -54,20 +51,21 @@ def run_demo():
     plt.title('1. Complete Exoplanet Detection System', fontsize=14, fontweight='bold', pad=15)
     plt.tight_layout()
     
-    if os.environ.get("HELIOS_SAVE_PLOTS") == "true":
+    if save:
         output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../generated'))
         os.makedirs(output_dir, exist_ok=True)
-        filename = os.path.basename(__file__).replace('.py', '_1.png')
+        filename = "14_uml_exoplanet.png"
         save_path = os.path.join(output_dir, filename)
         plt.savefig(save_path)
         print(f"Saved plot to {save_path}")
+        plt.close()
     else:
         plt.show()
 
     # --- Example 2: Interferometric Beam Combiner ---
     print("2. Generating Interferometric Beam Combiner UML...")
 
-    ctx = helios.Context()
+    ctx = helios.Pipeline()
 
     # Scene
     scene = helios.Scene(distance=10*u.pc, name="Target System")
@@ -141,20 +139,15 @@ def run_demo():
     fig = ctx.plot_uml_diagram(figsize=(20, 12), layer_spacing=2.5)
     plt.title("2. Interferometric Beam Combiner - UML Diagram", fontsize=16, fontweight='bold', pad=20)
     
-    output_file = 'uml_complex_test.png'
-    
-    if os.environ.get("HELIOS_SAVE_PLOTS") == "true":
+    if save:
+        output_file = "14_uml_complex.png"
         output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../generated'))
-        os.makedirs(output_dir, exist_ok=True)
-        filename = os.path.basename(__file__).replace('.py', '_2.png')
-        save_path = os.path.join(output_dir, filename)
+        save_path = os.path.join(output_dir, output_file)
         plt.savefig(save_path)
-        print(f"Saved plot to {save_path}")
-        
-        # Also save to local file as originally intended
-        plt.savefig(output_file)
-        print(f"Complex diagram saved to {output_file}")
+        print(f"Complex diagram saved to {save_path}")
+        plt.close()
     else:
+        output_file = 'uml_complex_test.png'
         plt.savefig(output_file)
         print(f"Complex diagram saved to {output_file}")
         plt.show()

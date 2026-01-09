@@ -1,5 +1,5 @@
 """
-06_atmospheric_turbulence.py
+08_atmospheric_turbulence.py
 
 Demonstrates atmospheric turbulence effects:
 1. Frozen-flow temporal evolution (6 snapshots) using a JWST pupil.
@@ -12,16 +12,13 @@ import numpy as np
 from astropy import units as u
 from IPython.display import HTML
 
-# Add src to path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../src')))
-
 import helios
 
-def run_demo():
+def run_demo(save=False):
     # 1. Frozen-Flow Evolution (JWST Pupil)
     print("Simulating frozen-flow evolution (JWST Pupil)...")
     
-    class ObservationContext(helios.Context):
+    class ObservationContext(helios.Pipeline):
         def __init__(self, time):
             super().__init__()
             self.time = time
@@ -59,13 +56,14 @@ def run_demo():
     cbar = fig.colorbar(im, cax=cbar_ax, orientation='horizontal')
     cbar.set_label('Phase (radians)', fontsize=11)
     
-    if os.environ.get("HELIOS_SAVE_PLOTS") == "true":
+    if save:
         output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../generated'))
         os.makedirs(output_dir, exist_ok=True)
-        filename = os.path.basename(__file__).replace('.py', '.png')
+        filename = "08_atmospheric_turbulence.png"
         save_path = os.path.join(output_dir, filename)
         plt.savefig(save_path)
         print(f"Saved plot to {save_path}")
+        plt.close()
     else:
         plt.show()
 
@@ -85,12 +83,19 @@ def run_demo():
         figsize=(8, 8)
     )
     
-    try:
-        anim_vlti.save('animation_vlti.mp4', writer='ffmpeg')
-        print("Saved animation_vlti.mp4")
-    except Exception as e:
-        print(f"Could not save MP4 (ffmpeg might be missing): {e}")
-        print("Animation object created successfully.")
+    if save:
+        output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../generated'))
+        os.makedirs(output_dir, exist_ok=True)
+        anim_path = os.path.join(output_dir, '08_animation_vlti.mp4')
+        try:
+            anim_vlti.save(anim_path, writer='ffmpeg')
+            print(f"Saved animation to {anim_path}")
+        except Exception as e:
+            print(f"Could not save MP4 (ffmpeg might be missing): {e}")
+    else:
+        # Just creating the animation object is enough for display in notebooks, 
+        # but for scripts we might want to show it or just skip.
+        print("Animation object created.")
 
 if __name__ == "__main__":
     run_demo()

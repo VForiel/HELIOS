@@ -1,6 +1,6 @@
 # 🔭 HELIOS Documentation
 
-**Hierarchical End-to-end Lightpath & Instrumental response Simulation**
+**Hierarchical End-to-end Lightpath & Instrumental response Observational Simulation**
 
 HELIOS is a Python framework for end-to-end simulation of astronomical observations, from celestial scenes through optical systems to detector outputs.
 

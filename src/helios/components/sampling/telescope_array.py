@@ -98,6 +98,8 @@ class TelescopeArray(Telescope):
         super().__init__(pupil=pupil, position=first_position, size=size, 
                         name=name or "TelescopeArray")
         
+        self.pupil = pupil
+        
         # Add array-specific attributes
         self.positions = positions
         self.latitude = latitude
@@ -105,10 +107,10 @@ class TelescopeArray(Telescope):
         self.altitude = altitude
 
     @property
-    def elements(self) -> List['Telescope']:
+    def collectors(self) -> List['Telescope']:
         """
         Generate list of individual Telescope objects for each position.
-        This provides compatibility with pipeline logic expecting 'elements'.
+        Refactored from 'elements' to avoid collision with Component.elements.
         """
         telescopes = []
         for i, pos in enumerate(self.positions):
@@ -116,14 +118,6 @@ class TelescopeArray(Telescope):
                           name=f"{self.name}-{i+1}")
             telescopes.append(tel)
         return telescopes
-
-    @property
-    def collectors(self) -> List['Telescope']:
-        """
-        Alias for elements to maintain backward compatibility with old Collector class API.
-        Many places in code (e.g. Atmosphere) might look for .collectors
-        """
-        return self.elements
 
     def to_dict(self) -> dict:
         """Serialize telescope array, extending parent Telescope serialization."""

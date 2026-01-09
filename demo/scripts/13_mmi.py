@@ -5,19 +5,17 @@ Demonstrates `simulate_contributions` for two photonic MMI layouts:
 1. A 2x2 Bracewell-style nuller
 2. A 4x4 kernel nuller
 
-If the environment variable `HELIOS_SAVE_PLOTS` is set to "true", animations are
-written under `generated/examples/`. Otherwise they are saved next to this script.
+If save=True, animations are written under `generated/examples/`.
 """
 import os
 import numpy as np
 
 from helios.sim.mmi import simulate_contributions
 
-
-def _output_path(filename: str) -> str:
+def _output_path(filename: str, save: bool) -> str:
     """Resolve where to save the animation file."""
     base_dir = os.path.dirname(__file__)
-    if os.environ.get("HELIOS_SAVE_PLOTS") == "true":
+    if save:
         target_dir = os.path.abspath(os.path.join(base_dir, "../generated"))
     else:
         target_dir = base_dir
@@ -36,10 +34,11 @@ def _run_case(label: str, **kwargs) -> None:
     print("-" * 60)
 
 
-def run_demo() -> None:
+def run_demo(save=False) -> None:
     """Execute both MMI contribution demonstrations."""
-    two_by_two_path = _output_path("../generated/examples/13_mmi_2x2_nuller_mmi.mp4")
-    four_by_four_path = _output_path("../generated/examples/13_mmi_4x4_kernel_nuller_mmi.mp4")
+    # We always define an output path for MP4s, but location depends on save flag
+    two_by_two_path = _output_path("13_mmi_2x2_nuller_mmi.mp4", save)
+    four_by_four_path = _output_path("13_mmi_4x4_kernel_nuller_mmi.mp4", save)
 
     cases = [
         (

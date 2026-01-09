@@ -1,5 +1,5 @@
 """
-10_photonic_circuit.py
+12_photonic_circuit.py
 
 Demonstrates a simple photonic integrated circuit simulation.
 """
@@ -9,15 +9,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 from astropy import units as u
 
-# Add src to path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../src')))
-
 import helios
 import helios.components.photonics as photonics
 import helios.components.photonics.fibers as fibers
 from helios.core.wavefront import Wavefront
 
-def run_demo():
+def run_demo(save=False):
     # Components
     fiber_in = fibers.FiberIn(modes=1)
     splitter = photonics.YSplitter()
@@ -33,7 +30,9 @@ def run_demo():
     x = np.linspace(-5, 5, 128)
     X, Y = np.meshgrid(x, x)
     R = np.sqrt(X**2 + Y**2)
-    wf_in.field = np.exp(-R**2).astype(np.complex128)
+    # Ensure field is 3D (samples, y, x) for MMI einsum compatibility
+    field_2d = np.exp(-R**2).astype(np.complex128)
+    wf_in.field = field_2d[None, :, :]
 
     # Process
     print("Processing through circuit...")
@@ -59,13 +58,14 @@ def run_demo():
     axes[2].imshow(np.abs(out2_2d)**2, cmap='inferno')
     axes[2].set_title("Output Port 2")
     
-    if os.environ.get("HELIOS_SAVE_PLOTS") == "true":
+    if save:
         output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../generated'))
         os.makedirs(output_dir, exist_ok=True)
-        filename = os.path.basename(__file__).replace('.py', '.png')
+        filename = "12_photonic_circuit.png"
         save_path = os.path.join(output_dir, filename)
         plt.savefig(save_path)
         print(f"Saved plot to {save_path}")
+        plt.close()
     else:
         plt.show()
 

@@ -1,5 +1,5 @@
 """
-02_spectral_energy_distribution.py
+03_spectral_energy_distribution.py
 
 Demonstrates how to visualize the Spectral Energy Distributions (SEDs) of
 astronomical objects.
@@ -9,12 +9,9 @@ import os
 import matplotlib.pyplot as plt
 from astropy import units as u
 
-# Add src to path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../src')))
-
 import helios
 
-def run_demo():
+def run_demo(save=False):
     # Create objects
     scene = helios.Scene(distance=10*u.pc)
     star = helios.Star(temperature=5700*u.K, magnitude=5, mass=1*u.M_sun, position=(0*u.AU, 0*u.AU))
@@ -33,13 +30,14 @@ def run_demo():
     ax.legend()
     ax.grid(True, alpha=0.3)
     
-    if os.environ.get("HELIOS_SAVE_PLOTS") == "true":
+    if save:
         output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../generated'))
         os.makedirs(output_dir, exist_ok=True)
-        filename = os.path.basename(__file__).replace('.py', '.png')
+        filename = "03_spectral_energy_distribution.png"
         save_path = os.path.join(output_dir, filename)
         plt.savefig(save_path)
         print(f"Saved plot to {save_path}")
+        plt.close()
     else:
         plt.show()
 

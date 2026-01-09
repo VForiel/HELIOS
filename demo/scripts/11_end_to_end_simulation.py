@@ -1,5 +1,5 @@
 """
-09_end_to_end_simulation.py
+11_end_to_end_simulation.py
 
 Runs a full end-to-end simulation with multi-sample Wavefronts:
 Scene -> TelescopeArray (collectors) -> Camera. Compatible with 3D
@@ -10,12 +10,9 @@ import os
 import matplotlib.pyplot as plt
 from astropy import units as u
 
-# Add src to path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../src')))
-
 import helios
 
-def run_demo():
+def run_demo(save=False):
     # 1. Scene
     scene = helios.Scene(distance=10*u.pc)
     star = helios.Star(temperature=5700*u.K, magnitude=5, mass=1*u.M_sun, position=(0*u.arcsec, 0*u.arcsec))
@@ -24,7 +21,6 @@ def run_demo():
     scene.add(star)
     scene.add(planet)
 
-    # 2. Collectors (simple single-aperture or array)
     # 2. Collectors (simple single-aperture or array)
     pupil_obs = helios.Pupil(diameter=2*u.m)
     pupil_obs.add_disk(center=(0*u.m, 0*u.m), radius=1*u.m)
@@ -36,14 +32,14 @@ def run_demo():
 
     # 4. Context & Simulation
     # Specify simulation parameters (wavelength and grid size)
-    context = helios.Context(wavelength=600*u.nm, npix=512)
-    context.add_layer(scene)
-    context.add_layer(collectors)
-    context.add_layer(camera)
+    pipeline = helios.Pipeline(wavelength=600*u.nm, npix=512)
+    pipeline.add_layer(scene)
+    pipeline.add_layer(collectors)
+    pipeline.add_layer(camera)
 
     print("Running simulation...")
     # observe() internally builds input wavefront; returns camera image (numpy array)
-    result = context.observe()
+    result = pipeline.observe()
     
     print(f"Simulation complete!")
     print(f"Result shape: {result.shape}")
@@ -54,13 +50,14 @@ def run_demo():
     plt.colorbar(label='Intensity')
     plt.title('Simulated Observation Result')
     
-    if os.environ.get("HELIOS_SAVE_PLOTS") == "true":
+    if save:
         output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../generated'))
         os.makedirs(output_dir, exist_ok=True)
-        filename = os.path.basename(__file__).replace('.py', '.png')
+        filename = "11_end_to_end_simulation.png"
         save_path = os.path.join(output_dir, filename)
         plt.savefig(save_path)
         print(f"Saved plot to {save_path}")
+        plt.close()
     else:
         plt.show()
 

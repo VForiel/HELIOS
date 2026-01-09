@@ -1,5 +1,5 @@
 """
-07_chromatic_psf.py
+10_chromatic_psf.py
 
 Demonstrates chromatic PSF degradation due to atmospheric turbulence.
 """
@@ -9,12 +9,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 from astropy import units as u
 
-# Add src to path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../src')))
-
 import helios
 
-def run_demo():
+def run_demo(save=False):
     N = 512
     pupil = helios.Pupil.like('JWST')
     p_amp = pupil.get_array(npix=N, soft=True)
@@ -69,13 +66,14 @@ def run_demo():
 
     plt.tight_layout()
     
-    if os.environ.get("HELIOS_SAVE_PLOTS") == "true":
+    if save:
         output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../generated'))
         os.makedirs(output_dir, exist_ok=True)
-        filename = os.path.basename(__file__).replace('.py', '.png')
+        filename = "10_chromatic_psf.png"
         save_path = os.path.join(output_dir, filename)
         plt.savefig(save_path)
         print(f"Saved plot to {save_path}")
+        plt.close()
     else:
         plt.show()
 

@@ -77,8 +77,8 @@ with col2:
     scale = st.slider("Pupil Scale", 0.1, 5.0, 0.5)
     
     # Plot
-    # plot_array likely uses plt.gca() or creates a new figure.
-    # We'll create a figure to be safe.
-    fig = plt.figure(figsize=(8, 8))
-    interferometer.plot_array(show_pupils=show_pupils, pupil_scale=scale)
+    # plot_array expects ax or creates new figure. We must capture it or pass ax.
+    fig, ax = plt.subplots(figsize=(8, 8))
+    interferometer.plot_array(ax=ax, show_pupils=show_pupils, pupil_scale=scale)
     st.pyplot(fig)
+    plt.close(fig)

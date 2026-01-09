@@ -30,7 +30,7 @@ class BeamSplitter(OpticalComponent):
         super().__init__(name=name or "BeamSplitter")
         self.cutoff = cutoff
 
-    def process(self, wavefront: Wavefront, context: Optional['Context'] = None) -> List[Wavefront]:
+    def process(self, wavefront: Wavefront, pipeline: Optional['Pipeline'] = None) -> List[Wavefront]:
         """Split wavefront into two paths.
         
         Parameters

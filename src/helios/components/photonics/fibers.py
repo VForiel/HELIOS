@@ -36,15 +36,15 @@ class FiberIn(OpticalComponent):
         super().__init__(name=name)
         self.num_inputs = 1
     
-    def process(self, wavefront: Wavefront, context: Optional['Context'] = None) -> Wavefront:
+    def process(self, wavefront: Wavefront, pipeline: Optional['Pipeline'] = None) -> Wavefront:
         """Couple wavefront into fiber.
         
         Parameters
         ----------
         wavefront : Wavefront
             Input free-space wavefront
-        context : Context, optional
-            Simulation context.
+        pipeline : Pipeline, optional
+            Simulation pipeline.
         
         Returns
         -------
@@ -81,15 +81,15 @@ class FiberOut(OpticalComponent):
         super().__init__(name=name)
         self.num_inputs = 1
 
-    def process(self, wavefront: Wavefront, context: Optional['Context'] = None) -> Wavefront:
+    def process(self, wavefront: Wavefront, pipeline: Optional['Pipeline'] = None) -> Wavefront:
         """Output light from fiber.
         
         Parameters
         ----------
         wavefront : Wavefront
             Input fiber-guided wavefront
-        context : Context, optional
-            Simulation context.
+        pipeline : Pipeline, optional
+            Simulation pipeline.
         
         Returns
         -------

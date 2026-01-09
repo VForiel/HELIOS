@@ -104,47 +104,30 @@ class Pipeline:
                 for e in item.elements:
                     bind_pipeline(e)
 
-        if isinstance(layer, list):
-            # Create a single generic layer for the group
-            # Identify name from first component if possible
-            group_name = "Group"
-            if len(layer) > 0 and hasattr(layer[0], 'name') and layer[0].name:
-                group_name = f"{layer[0].name}_Group"
+    if isinstance(layer, list):
+        # Add list directly as a parallel layer group
+        # Validate items in list
+        for item in layer:
+            if item is None:
+                continue
+            if isinstance(item, (Component, Layer)):
+                bind_pipeline(item)
+            else:
+                raise TypeError(f"Invalid item type in list: {type(item)}")
+        
+        self.layers.append(layer)
             
-            new_layer = Layer(name=group_name)
-            
-            for item in layer:
-                if isinstance(item, Component):
-                    new_layer.add_component(item)
-                elif isinstance(item, Layer):
-                    # If we really want to merge layers? 
-                    # Generally user should pass components. If Layers are passed, 
-                    # we might technically extract their elements or just treat it as error.
-                    # Given the request "list of components", let's assume components.
-                    # But if Layer is passed, we can't easily add Layer inside Layer.
-                    # For now, let's assume items are Component-like.
-                     warnings.warn(f"Adding Layer {item} inside another Layer is not standard. Verify usage.")
-                     # If item is Layer, we can't add it as element (elements is List[Component]).
-                     # But if we must, we might iterate elements.
-                     for elem in item.elements:
-                         new_layer.add_component(elem)
-                else:
-                    raise TypeError(f"Invalid item type in list: {type(item)}")
-            
-            self.layers.append(new_layer)
-            bind_pipeline(new_layer)
-            
-        elif isinstance(layer, Component):
-            new_layer = Layer(name=layer.name)
-            new_layer.add_component(layer)
-            self.layers.append(new_layer)
-            bind_pipeline(new_layer)
-            
-        elif isinstance(layer, Layer):
-            self.layers.append(layer)
-            bind_pipeline(layer)
-        else:
-            raise TypeError(f"Invalid layer type: {type(layer)}")
+    elif isinstance(layer, Component):
+        new_layer = Layer(name=layer.name)
+        new_layer.add_component(layer)
+        self.layers.append(new_layer)
+        bind_pipeline(new_layer)
+        
+    elif isinstance(layer, Layer):
+        self.layers.append(layer)
+        bind_pipeline(layer)
+    else:
+        raise TypeError(f"Invalid layer type: {type(layer)}")
 
     def description(self, full: bool = False) -> str:
         """Generate a complete text description of the entire simulation setup."""

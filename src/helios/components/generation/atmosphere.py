@@ -301,8 +301,8 @@ class Atmosphere(GenerationComponent):
         ----------
         wavefront : Wavefront or List[Wavefront]
             Input wavefront(s).
-        context : Context, optional
-            Simulation context (may contain time information) - Now accessed via self.context
+        pipeline : Pipeline, optional
+            Simulation pipeline (may contain time information) - Now accessed via self.pipeline
         
         Returns
         -------

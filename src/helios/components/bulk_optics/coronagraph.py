@@ -57,15 +57,15 @@ class Coronagraph(OpticalComponent):
         # Optional physical diameter (focal-plane mask scale reference)
         self.diameter = diameter if diameter is None else diameter.to(u.m)
 
-    def process(self, wavefront: Wavefront, context: Optional['Context'] = None, auto_magnify: Optional[bool] = None) -> Wavefront:
+    def process(self, wavefront: Wavefront, pipeline: Optional['Pipeline'] = None, auto_magnify: Optional[bool] = None) -> Wavefront:
         """Apply coronagraph mask to wavefront.
         
         Parameters
         ----------
         wavefront : Wavefront
             Input wavefront (pupil plane)
-        context : Context, optional
-            The simulation context (unused in Coronagraph but required by Layer protocol).
+        pipeline : Pipeline, optional
+            The simulation pipeline (unused in Coronagraph but required by Layer protocol).
         
         Returns
         -------
@@ -79,10 +79,10 @@ class Coronagraph(OpticalComponent):
         2. Multiply by focal-plane mask (phase and/or amplitude)
         3. Inverse FFT → back to pupil/image plane
         """
-        # Backwards compatibility: if context is passed as boolean, treat it as auto_magnify
-        if isinstance(context, bool) and auto_magnify is None:
-            auto_magnify = context
-            context = None
+        # Backwards compatibility: if pipeline is passed as boolean, treat it as auto_magnify
+        if isinstance(pipeline, bool) and auto_magnify is None:
+            auto_magnify = pipeline
+            pipeline = None
 
         # Auto-magnify/crop behavior if physical diameter is provided
         if self.diameter is not None:

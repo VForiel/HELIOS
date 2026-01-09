@@ -1,5 +1,5 @@
 """
-06_coronagraphy.py
+09_coronagraphy.py
 
 Demonstrates the effect of coronagraphic phase masks (Vortex, 4-Quadrant) on
 starlight suppression and planet detection.
@@ -10,12 +10,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 from astropy import units as u
 
-# Add src to path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../src')))
-
 import helios
 
-def run_demo():
+def run_demo(save=False):
     # Setup Scene
     scene = helios.Scene(distance=10*u.pc)
     star = helios.Star(temperature=5700*u.K, magnitude=5, mass=1*u.M_sun, position=(0*u.AU, 0*u.AU))
@@ -72,13 +69,14 @@ def run_demo():
 
     plt.tight_layout()
     
-    if os.environ.get("HELIOS_SAVE_PLOTS") == "true":
+    if save:
         output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../generated'))
         os.makedirs(output_dir, exist_ok=True)
-        filename = os.path.basename(__file__).replace('.py', '.png')
+        filename = "09_coronagraphy.png"
         save_path = os.path.join(output_dir, filename)
         plt.savefig(save_path)
         print(f"Saved plot to {save_path}")
+        plt.close()
     else:
         plt.show()
 

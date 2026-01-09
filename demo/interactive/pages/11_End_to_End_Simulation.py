@@ -78,12 +78,12 @@ if run_btn:
         camera = helios.Camera(pixels=(256, 256))
 
         # 4. Context & Simulation
-        context = helios.Context(wavelength=wavelength_nm*u.nm, npix=512)
-        context.add_layer(scene)
-        context.add_layer(collectors)
-        context.add_layer(camera)
+        pipeline = helios.Pipeline(wavelength=wavelength_nm*u.nm, npix=512)
+        pipeline.add_layer(scene)
+        pipeline.add_layer(collectors)
+        pipeline.add_layer(camera)
 
-        result = context.observe()
+        result = pipeline.observe()
         
         # Display
         fig, ax = plt.subplots(figsize=(8, 6))
