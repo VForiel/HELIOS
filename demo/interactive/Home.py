@@ -8,7 +8,7 @@ import sys
 import os
 
 # Add src to path
-ROOT = Path(__file__).parent.parent
+ROOT = Path(__file__).parent.parent.parent
 SRC = ROOT / "src"
 if SRC.exists() and str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))

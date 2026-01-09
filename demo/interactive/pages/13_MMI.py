@@ -1,45 +1,47 @@
-﻿"""
-14_mmi_streamlit.py
-
-Streamlit port of the MMI GUI notebook.
-- Explore MMI layouts (NÃ—M), geometry, wavelength, and indices.
-- Run simulations via `plot_mmi_interactive`.
-- Calibrate input phases and jointly calibrate n_core + phases (with progress bars).
-
-Launch with:
-    streamlit run 14_mmi_streamlit.py
-"""
-
-from __future__ import annotations
-
+import streamlit as st
+import matplotlib.pyplot as plt
+import numpy as np
+from typing import List
 import os
 import sys
 import warnings
-from typing import List
+from pathlib import Path
 
-import matplotlib.pyplot as plt
-import numpy as np
-import streamlit as st
+# --- Path Setup ---
+ROOT = Path(__file__).parent.parent.parent.parent
+SRC = ROOT / "src"
+if SRC.exists() and str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
+    
+# Import utils
+UTILS = Path(__file__).parent.parent / "utils"
+if str(UTILS.parent) not in sys.path:
+    sys.path.insert(0, str(UTILS.parent))
 
+from utils.display import display_code
 from helios.sim.mmi import (
     calibrate_input_phases_genetic,
     calibrate_n_core_and_phases,
     plot_mmi_interactive,
+    simulate_contributions
 )
 from helios.sim.lp_modes import suppress_lp_warnings
 
+# --- Page Config ---
+st.set_page_config(
+    page_title="MMI Studio",
+    page_icon="🎛️",
+    layout="wide"
+)
 
-def _in_streamlit_runtime() -> bool:
-    """Best-effort check to know if running inside Streamlit."""
-    try:  # streamlit >= 1.31
-        from streamlit.runtime import exists
+st.title("MMI Studio 🎛️")
+st.markdown("""
+Comprehensive suite for Multimode Interference (MMI) coupler design and visualization.
+""")
 
-        return bool(exists())
-    except Exception:
-        return bool(os.environ.get("STREAMLIT_SERVER_RUNNING"))
+# --- Helper Functions ---
 
-
-def _um(value_um: float) -> float | None:
+def _um(value_um: float):
     """Convert microns to meters; treat 0 or negative as None (auto)."""
     if value_um is None or value_um <= 0:
         return None
@@ -60,27 +62,7 @@ def _normalize_real(amplitudes: List[float]) -> List[float]:
     return amplitudes
 
 
-def _load_doc(section: str) -> str:
-    """Load a markdown doc section from docs/learn/mmi."""
-    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../docs/learn/mmi"))
-    filename = {
-        "Overview": "index.md",
-        "Physical Principles": "physics.md",
-        "Design Rules": "design.md",
-        "Numerical Implementation": "numerics.md",
-        "Usage": "usage.md",
-        "Validation": "validation.md",
-    }.get(section)
-    if filename is None:
-        return ""
-    path = os.path.join(base_dir, filename)
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return f.read()
-    except FileNotFoundError:
-        return f"âš ï¸ Documentation file not found: {filename}"
-    except Exception as exc:
-        return f"âš ï¸ Error loading documentation: {exc}"
+
 
 
 def _collect_inputs(num_inputs: int):
@@ -99,7 +81,7 @@ def _collect_inputs(num_inputs: int):
             f"Amplitude {i+1}", 0.0, 2.0, st.session_state[amp_key], 0.05, key=amp_key
         )
         phase_pi = col_phase.slider(
-            f"Phase {i+1} (Ã—Ï€ rad)", 0.0, 2.0, st.session_state[phase_key], 0.01, key=phase_key
+            f"Phase {i+1} (×π rad)", 0.0, 2.0, st.session_state[phase_key], 0.01, key=phase_key
         )
         amps.append(amp_val)
         phases.append(phase_pi * np.pi)
@@ -129,7 +111,7 @@ def run_simulation(params, complex_inputs):
             Sout=params["Sout"],
             verbose=False,
         )
-        st.pyplot(fig, width="stretch")
+        st.pyplot(fig, use_container_width=True)
         plt.close(fig)
     except Exception as exc:
         st.error(f"Simulation Error: {exc}")
@@ -183,20 +165,19 @@ def run_phase_calibration(params, magnitudes):
             ax.grid(True, alpha=0.3)
             ax.legend(fontsize=10)
             plt.tight_layout()
-            st.pyplot(fig, width="stretch")
+            st.pyplot(fig)
             plt.close(fig)
         else:
             st.warning("Metric array is empty; no convergence plot to display.")
     else:
         st.warning("Result does not contain a 'metric' history; no plot to display.")
 
-    # Stage updates and offer manual apply to avoid immediate rerun clearing the plot
     st.session_state["phase_updates"] = [float(phi / np.pi) for phi in result["best_phases"]]
     st.info("Calibrated phases are staged. Click 'Apply calibrated phases' to update sliders.")
     if st.button("Apply calibrated phases", key="apply_phases_btn"):
         st.rerun()
 
-    return result  # Unreachable after rerun, but kept for completeness
+    return result
 
 
 def run_ncore_calibration(params, magnitudes):
@@ -211,7 +192,7 @@ def run_ncore_calibration(params, magnitudes):
         status_coarse.write(f"Stage 1: {current}/{total}")
 
     def cb_grad(iteration, delta_n):
-        status_grad.write(f"Stage 2: iteration {iteration}, Î”n_core = {delta_n:.4f}")
+        status_grad.write(f"Stage 2: iteration {iteration}, Δn_core = {delta_n:.4f}")
 
     try:
         with suppress_lp_warnings(), warnings.catch_warnings():
@@ -259,7 +240,6 @@ def run_ncore_calibration(params, magnitudes):
     )
     st.write(f"Best phases [rad]: {result['best_phases']}")
 
-    # Plot two-stage optimization results
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
     
     # Left: Coarse scan
@@ -268,11 +248,7 @@ def run_ncore_calibration(params, magnitudes):
         ax_left.semilogy(
             result["n_core_values_coarse"],
             result["metrics_coarse"],
-            "o-",
-            lw=2,
-            markersize=6,
-            color="coral",
-            label="Coarse Scan"
+            "o-", lw=2, markersize=6, color="coral", label="Coarse Scan"
         )
         ax_left.axvline(x=result["best_n_core"], color="red", linestyle="--", lw=2, label=f"Best: {result['best_n_core']:.4f}")
         ax_left.set_xlabel("n_core", fontsize=11)
@@ -288,11 +264,7 @@ def run_ncore_calibration(params, magnitudes):
         ax_right.semilogy(
             range(n_iter),
             result["metrics_gradient"],
-            "s-",
-            lw=2,
-            markersize=6,
-            color="mediumseagreen",
-            label="Gradient Descent"
+            "s-", lw=2, markersize=6, color="mediumseagreen", label="Gradient Descent"
         )
         ax_right.axhline(y=result["best_metric"], color="red", linestyle="--", lw=2, label=f"Best: {result['best_metric']:.3e}")
         ax_right.set_xlabel("Iteration", fontsize=11)
@@ -300,35 +272,95 @@ def run_ncore_calibration(params, magnitudes):
         ax_right.set_title("Stage 2: Gradient Descent Refinement", fontsize=12, fontweight="bold")
         ax_right.grid(True, alpha=0.3)
         ax_right.legend(fontsize=10)
-        # Annotate best iteration
-        best_idx = np.argmin(result["metrics_gradient"])
-        ax_right.annotate(
-            f"Min @ iter {best_idx}",
-            xy=(best_idx, result["metrics_gradient"][best_idx]),
-            xytext=(best_idx + n_iter*0.1, result["metrics_gradient"][best_idx]*2),
-            arrowprops=dict(arrowstyle="->", color="red", lw=1.5),
-            fontsize=10,
-            color="red"
-        )
-    
+        
     plt.tight_layout()
-    st.pyplot(fig, width="stretch")
+    st.pyplot(fig)
     plt.close(fig)
 
-    # Defer widget-bound updates to next run to avoid key mutation errors
     st.session_state["n_core_override"] = float(result["best_n_core"])
     st.session_state["phase_updates"] = [float(phi / np.pi) for phi in result["best_phases"]]
     st.rerun()
 
-    return result  # Unreachable after rerun, but kept for completeness
+    return result
 
+# Show code for animation script
+EXAMPLE_PATH_ANIM = ROOT / "demo" / "scripts" / "13_mmi.py"
+if EXAMPLE_PATH_ANIM.exists():
+    display_code(EXAMPLE_PATH_ANIM)
 
-def main():
-    st.set_page_config(page_title="HELIOS MMI Streamlit Demo", layout="wide")
-    st.title("HELIOS — MMI Interactive Demo (Streamlit)")
-    st.caption("Explore multimode interference couplers, calibrate phases, and optimize n_core.")
+    # External Documentation Links
+    col_doc1, col_doc2 = st.columns(2)
+    with col_doc1:
+        st.link_button("📚 Learn: MMI Guide", "https://helios-project.readthedocs.io/en/latest/learn/mmi.html", use_container_width=True)
+    with col_doc2:
+        st.link_button("🔧 API: helios.sim.mmi", "https://helios-project.readthedocs.io/en/latest/api/sim/mmi.html", use_container_width=True)
+    
+st.divider()
 
-    with st.sidebar:
+# --- Main Layout ---
+
+tab_anim, tab_lab = st.tabs(["Animations", "Interactive Lab"])
+
+# -----------------
+# TAB 1: ANIMATIONS
+# -----------------
+with tab_anim:
+    st.markdown("### MMI Propagation Animations")
+    st.markdown("Generate animations showing Multimode Interference (MMI) propagation contributions.")
+
+    demo_choice = st.radio("Choose Simulation Template", ["2x2 Bracewell Nuller", "4x4 Kernel Nuller"])
+
+    if st.button("Generate & View Animation", type="primary"):
+        
+        # Define output path
+        output_filename = f"mmi_demo_{demo_choice.replace(' ', '_')}.mp4"
+        output_path = ROOT / "generated" / "streamlit" / output_filename
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        sim_params = {}
+        
+        with st.spinner("Running simulation and generating video... (This may take a minute)"):
+            try:
+                if demo_choice == "2x2 Bracewell Nuller":
+                    sim_params = dict(
+                        N=2, M=2, L=100e-6, W=10.0e-6,
+                        Din=5.0e-6, Dout=5.0e-6, Sin=2.5e-6, Sout=2.5e-6,
+                        n_core=2.0458, delta_n=0.0958, wavelength=1.55e-6,
+                        input_amplitudes=np.sqrt(0.5) * np.array([1, 1j], dtype=complex),
+                        num_modes=50, z_resolution=1.0e-6,
+                        output_file=str(output_path),
+                        verbose=False 
+                    )
+                else:
+                    sim_params = dict(
+                        N=4, M=4, L=400e-6, W=20e-6,
+                        Din=4.0e-6, Dout=4.0e-6, Sin=5.0e-6, Sout=5.0e-6,
+                        n_core=2.0458, delta_n=0.0958, wavelength=1.55e-6,
+                        input_amplitudes=np.sqrt(0.25) * np.array([1, 1j, 1, 1j], dtype=complex),
+                        num_modes=50, z_resolution=1.0e-6,
+                        output_file=str(output_path),
+                        verbose=False
+                    )
+
+                simulate_contributions(**sim_params)
+                
+                st.success("Animation generated!")
+                if output_path.exists():
+                    st.video(str(output_path))
+                else:
+                    st.error("Output file not found.")
+
+            except Exception as e:
+                st.error(f"Error during simulation: {e}")
+                st.info("Ensure ffmpeg is installed and accessible.")
+
+# -----------------
+# TAB 2: INTERACTIVE
+# -----------------
+with tab_lab:
+    st.markdown("### Interactive Design & Calibration")
+
+    with st.expander("Geometry & Materials", expanded=True):
         st.header("Geometry & Materials")
         N = st.number_input("N inputs", 1, 8, 4)
         M = st.number_input("M outputs", 1, 8, 4)
@@ -344,7 +376,7 @@ def main():
         n_core_val = st.number_input("n_core", 1.0, 4.0, st.session_state.get("n_core_override", 2.0458), format="%.4f")
         delta_n_val = st.number_input("Δn (n_core − n_clad)", 0.001, 0.5, 0.0958, format="%.4f")
         num_modes = st.number_input("Num modes (upper bound)", value=200, min_value=10, max_value=200, step=1)
-        bright_idx = st.number_input("Bright output index", 0, max(0, M - 1), 0)
+        bright_idx = st.number_input("Bright output index", 0, max(0, int(M) - 1), 0)
 
     # Apply any pending phase updates before widgets are instantiated
     if "phase_updates" in st.session_state:
@@ -353,7 +385,7 @@ def main():
             st.session_state[f"phase_{i}"] = float(val)
 
     st.subheader("Input amplitudes & phases")
-    complex_inputs, magnitudes, phases = _collect_inputs(N)
+    complex_inputs, magnitudes, phases = _collect_inputs(int(N))
 
     params = dict(
         N=int(N),
@@ -393,32 +425,4 @@ def main():
     st.markdown(
         "**Tips:** Set L=0 to auto-pick from the self-imaging formula; set Din/Dout/Sin/Sout to 0 to use defaults."
     )
-
-    st.markdown("---")
-    st.subheader("Documentation (learn/mmi)")
-    doc_section = st.selectbox(
-        "Choose a section",
-        [
-            "Overview",
-            "Physical Principles",
-            "Design Rules",
-            "Numerical Implementation",
-            "Usage",
-            "Validation",
-        ],
-    )
-    doc_content = _load_doc(doc_section)
-    if doc_content:
-        st.markdown(doc_content)
-    else:
-        st.info("No documentation available for this section.")
-
-
-if __name__ == "__main__":
-    if _in_streamlit_runtime():
-        main()
-    else:
-        print("This demo is intended for Streamlit. Run: streamlit run 14_mmi_streamlit.py")
-        sys.exit(0)
-
-
+    

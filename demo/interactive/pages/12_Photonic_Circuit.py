@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 
 # --- Path Setup ---
-ROOT = Path(__file__).parent.parent.parent
+ROOT = Path(__file__).parent.parent.parent.parent
 SRC = ROOT / "src"
 if SRC.exists() and str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
@@ -36,7 +36,7 @@ Simulates a simple photonic integrated circuit:
 """)
 
 # --- Show Code ---
-EXAMPLE_PATH = ROOT / "examples" / "12_photonic_circuit.py"
+EXAMPLE_PATH = ROOT / "demo" / "scripts" / "12_photonic_circuit.py"
 display_code(EXAMPLE_PATH)
 
 st.divider()

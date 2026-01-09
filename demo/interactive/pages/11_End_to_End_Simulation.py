@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 
 # --- Path Setup ---
-ROOT = Path(__file__).parent.parent.parent
+ROOT = Path(__file__).parent.parent.parent.parent
 SRC = ROOT / "src"
 if SRC.exists() and str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
@@ -32,7 +32,7 @@ Runs a full end-to-end simulation: **Scene ⮕ Telescope ⮕ Camera**.
 """)
 
 # --- Show Code ---
-EXAMPLE_PATH = ROOT / "examples" / "11_end_to_end_simulation.py"
+EXAMPLE_PATH = ROOT / "demo" / "scripts" / "11_end_to_end_simulation.py"
 display_code(EXAMPLE_PATH)
 
 st.divider()

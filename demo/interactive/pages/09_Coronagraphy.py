@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 
 # --- Path Setup ---
-ROOT = Path(__file__).parent.parent.parent
+ROOT = Path(__file__).parent.parent.parent.parent
 SRC = ROOT / "src"
 if SRC.exists() and str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
@@ -32,7 +32,7 @@ Demonstrates starlight suppression using coronagraphic phase masks.
 """)
 
 # --- Show Code ---
-EXAMPLE_PATH = ROOT / "examples" / "09_coronagraphy.py"
+EXAMPLE_PATH = ROOT / "demo" / "scripts" / "09_coronagraphy.py"
 display_code(EXAMPLE_PATH)
 
 st.divider()

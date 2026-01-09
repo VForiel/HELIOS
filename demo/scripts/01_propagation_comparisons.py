@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 from astropy import units as u
 
 # Add source to path for local execution
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../src')))
 
 import helios
 from helios import Wavefront

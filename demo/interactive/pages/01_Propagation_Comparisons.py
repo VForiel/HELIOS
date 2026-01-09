@@ -7,7 +7,7 @@ import sys
 import os
 
 # --- Path Setup ---
-ROOT = Path(__file__).parent.parent.parent
+ROOT = Path(__file__).parent.parent.parent.parent
 SRC = ROOT / "src"
 if SRC.exists() and str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
@@ -36,7 +36,7 @@ using various algorithms (Fraunhofer, Fresnel, ASM) to compare their results and
 """)
 
 # --- Show Code ---
-EXAMPLE_PATH = ROOT / "examples" / "01_propagation_comparisons.py"
+EXAMPLE_PATH = ROOT / "demo" / "scripts" / "01_propagation_comparisons.py"
 display_code(EXAMPLE_PATH)
 
 st.divider()

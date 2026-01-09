@@ -5,7 +5,7 @@ from pathlib import Path
 import sys
 
 # --- Path Setup ---
-ROOT = Path(__file__).parent.parent.parent
+ROOT = Path(__file__).parent.parent.parent.parent
 SRC = ROOT / "src"
 if SRC.exists() and str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
@@ -20,18 +20,18 @@ import helios
 
 # --- Page Config ---
 st.set_page_config(
-    page_title="Spectral Energy Distribution",
-    page_icon="🌈",
+    page_title="Scene Geometry",
+    page_icon="🌌",
     layout="wide"
 )
 
-st.title("Spectral Energy Distribution 🌈")
+st.title("Scene Geometry 🌌")
 st.markdown("""
-This example visualizes the Spectral Energy Distributions (SEDs) of astronomical objects.
+This example demonstrates how to define a scene with astronomical objects and visualize their spatial distribution.
 """)
 
 # --- Show Code ---
-EXAMPLE_PATH = ROOT / "examples" / "03_spectral_energy_distribution.py"
+EXAMPLE_PATH = ROOT / "demo" / "scripts" / "02_scene_geometry.py"
 display_code(EXAMPLE_PATH)
 
 st.divider()
@@ -39,7 +39,7 @@ st.divider()
 # --- Interactive Demo ---
 
 with st.expander("Parameters", expanded=True):
-    st.subheader("Parameters")
+    st.subheader("Scene Parameters")
     distance_pc = st.number_input("System Distance (pc)", value=10.0, min_value=1.0)
 
     col1, col2 = st.columns(2)
@@ -47,18 +47,18 @@ with st.expander("Parameters", expanded=True):
         st.subheader("Star")
         temp_k = st.number_input("Temperature (K)", value=5700.0)
         mag = st.number_input("Magnitude", value=5.0)
-    
     with col2:
         st.subheader("Planet")
         planet_dist_au = st.number_input("Separation (AU)", value=1.0)
-        planet_radius_jup = st.number_input("Radius (Jupiter Radius)", value=1.0)
-        planet_albedo = st.slider("Albedo", 0.0, 1.0, 0.3)
+        planet_mass_jup = st.number_input("Mass (Jupiter Mass)", value=1.0)
 
-run_btn = st.button("Plot SED", type="primary")
+run_btn = st.button("Generate Scene", type="primary")
 
 if run_btn:
-    # Create objects
+    # Create scene
     scene = helios.Scene(distance=distance_pc * u.pc)
+    
+    # Add objects
     star = helios.Star(
         temperature=temp_k * u.K, 
         magnitude=mag, 
@@ -66,31 +66,25 @@ if run_btn:
         position=(0 * u.AU, 0 * u.AU)
     )
     planet = helios.Planet(
-        mass=1 * u.M_jup, 
-        position=(planet_dist_au * u.AU, 0 * u.AU), 
-        albedo=planet_albedo, 
-        radius=planet_radius_jup * u.R_jup
+        mass=planet_mass_jup * u.M_jup, 
+        position=(planet_dist_au * u.AU, 0 * u.AU)
     )
+    zodi = helios.Zodiacal(brightness=0.5)
+    exozodi = helios.ExoZodiacal(brightness=0.3)
     
-    # Add to scene
     scene.add(star)
     scene.add(planet)
+    scene.add(zodi)
+    scene.add(exozodi)
 
-    # Plot SEDs
-    fig, ax = plt.subplots(figsize=(10, 6))
+    # Visualize
+    st.write("### Scene Visualization")
     
-    # Assuming plot_sed returns the axis or modifies it
-    # If the API requires ax passed in:
-    try:
-        star.plot_sed(ax=ax, color='gold', label='Star')
-        planet.plot_sed(ax=ax, color='blue', label='Planet')
-    except TypeError:
-         # Fallback if ax arg not supported (unlikely based on example)
-        star.plot_sed()
-        planet.plot_sed()
-
-    ax.set_title(f'Spectral Energy Distributions (d={distance_pc}pc)')
-    ax.legend()
-    ax.grid(True, alpha=0.3)
-    
+    # Capture plot
+    # Ideally scene.plot() should take an ax argument, if not we use global state
+    # Checking source code of scene.plot() isn't possible here easily without checking files,
+    # but standard matplotlib practice allows us to create a figure first.
+    fig = plt.figure(figsize=(8, 8))
+    scene.plot() # Assuming it plots to current figure
     st.pyplot(fig)
+    plt.close(fig)

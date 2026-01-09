@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 
 # --- Path Setup ---
-ROOT = Path(__file__).parent.parent.parent
+ROOT = Path(__file__).parent.parent.parent.parent
 SRC = ROOT / "src"
 if SRC.exists() and str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
@@ -43,7 +43,7 @@ of various astronomical objects (Stars, Solar System bodies, Exoplanets) from ex
 """)
 
 # --- Show Code ---
-EXAMPLE_PATH = ROOT / "examples" / "04_sed_query.py"
+EXAMPLE_PATH = ROOT / "demo" / "scripts" / "04_sed_query.py"
 display_code(EXAMPLE_PATH)
 
 st.divider()
