@@ -104,30 +104,33 @@ class Pipeline:
                 for e in item.elements:
                     bind_pipeline(e)
 
-    if isinstance(layer, list):
-        # Add list directly as a parallel layer group
-        # Validate items in list
-        for item in layer:
-            if item is None:
-                continue
-            if isinstance(item, (Component, Layer)):
-                bind_pipeline(item)
-            else:
-                raise TypeError(f"Invalid item type in list: {type(item)}")
-        
-        self.layers.append(layer)
+        if isinstance(layer, list):
+            # Add list directly as a parallel layer group
+            # Filter None values first
+            clean_list = [item for item in layer if item is not None]
             
-    elif isinstance(layer, Component):
-        new_layer = Layer(name=layer.name)
-        new_layer.add_component(layer)
-        self.layers.append(new_layer)
-        bind_pipeline(new_layer)
-        
-    elif isinstance(layer, Layer):
-        self.layers.append(layer)
-        bind_pipeline(layer)
-    else:
-        raise TypeError(f"Invalid layer type: {type(layer)}")
+            # Validate items in list
+            for item in clean_list:
+                if isinstance(item, (Component, Layer)):
+                    bind_pipeline(item)
+                else:
+                    raise TypeError(f"Invalid item type in list: {type(item)}")
+            
+            # Only append if valid items exist
+            if clean_list:
+                self.layers.append(clean_list)
+                
+        elif isinstance(layer, Component):
+            new_layer = Layer(name=layer.name)
+            new_layer.add_component(layer)
+            self.layers.append(new_layer)
+            bind_pipeline(new_layer)
+            
+        elif isinstance(layer, Layer):
+            self.layers.append(layer)
+            bind_pipeline(layer)
+        else:
+            raise TypeError(f"Invalid layer type: {type(layer)}")
 
     def description(self, full: bool = False) -> str:
         """Generate a complete text description of the entire simulation setup."""

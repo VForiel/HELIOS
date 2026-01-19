@@ -124,10 +124,10 @@ if st.button("Generate Diagram", type="primary"):
             ctx.add_layer(swap1)
             ctx.add_layer([copy(tops) for _ in range(4)])
             ctx.add_layer([copy(mmi) for _ in range(2)])
-            ctx.add_layer([None] + [copy(y_splitter) for _ in range(3)])
+            ctx.add_layer([copy(y_splitter) for _ in range(3)])
             ctx.add_layer(swap2)
-            ctx.add_layer([None] + [copy(tops) for _ in range(6)])
-            ctx.add_layer([None] + [copy(cross_mmi) for _ in range(3)])
+            ctx.add_layer([copy(tops) for _ in range(6)])
+            ctx.add_layer([copy(cross_mmi) for _ in range(3)])
             ctx.add_layer([copy(fiber_out) for _ in range(7)])
             ctx.add_layer([copy(cam) for _ in range(7)])
 
