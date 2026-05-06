@@ -11,6 +11,7 @@ openpyxl
 requests
 xlrd
 streamlit
+numba
 
 # External Propagation Libraries
 poppy
