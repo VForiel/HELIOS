@@ -2,6 +2,7 @@ import numpy as np
 from astropy import units as u
 from typing import List, Union, Optional, Any, Tuple
 import copy
+import importlib
 import matplotlib.pyplot as plt
 from pathlib import Path
 import json
@@ -155,7 +156,10 @@ class Pipeline:
 
     def to_dict(self) -> dict:
         """Serialize complete pipeline to dictionary."""
-        layers_data = [l.to_dict() for l in self.layers]
+        layers_data = [
+            [sub_l.to_dict() for sub_l in l] if isinstance(l, list) else l.to_dict()
+            for l in self.layers
+        ]
         return {
             "date": str(self.date) if self.date else None,
             "declination": serialize_value(self.declination),
@@ -172,48 +176,80 @@ class Pipeline:
         
         pipe = cls(date=date, declination=declination, **kwargs)
         
-        from helios.components import scene, atmosphere, collector, detectors
+        from helios import components
+        from helios.core.layer import Layer, GenerationLayer, SamplingLayer, OpticalLayer, DetectionLayer, DataLayer
         
         type_map = {
-            'Scene': scene.PlanetarySystem,
-            'PlanetarySystem': scene.PlanetarySystem,
-            'Atmosphere': atmosphere.Atmosphere,
-            'TelescopeArray': collector.TelescopeArray,
-            'Camera': detectors.Camera
+            name: getattr(components, name)
+            for name in getattr(components, "__all__", [])
+            if hasattr(components, name)
         }
+        type_map.update({
+            "Layer": Layer,
+            "GenerationLayer": GenerationLayer,
+            "SamplingLayer": SamplingLayer,
+            "OpticalLayer": OpticalLayer,
+            "DetectionLayer": DetectionLayer,
+            "DataLayer": DataLayer,
+            "Scene": components.Scene,
+        })
+
+        def resolve_type(item_data):
+            type_name = item_data.get("type")
+            if type_name in type_map:
+                return type_map[type_name]
+
+            module_name = item_data.get("module")
+            if module_name:
+                try:
+                    module = importlib.import_module(module_name)
+                    return getattr(module, type_name)
+                except (ImportError, AttributeError, TypeError):
+                    pass
+
+            return None
+
+        def restore_item(item_data):
+            if item_data is None:
+                return None
+
+            cls_obj = resolve_type(item_data)
+            if cls_obj is None:
+                return Layer.from_dict(item_data)
+
+            try:
+                if hasattr(cls_obj, "from_dict"):
+                    return cls_obj.from_dict(item_data)
+                return cls_obj(name=item_data.get("name"))
+            except Exception as e:
+                print(f"Error restoring {item_data.get('type')}: {e}")
+                return None
         
         def restore_layer(l_data):
-            if l_data is None: return None
+            if l_data is None:
+                return None
             
-            type_name = l_data.get("type")
-            if type_name in type_map:
-                try:
-                    return type_map[type_name].from_dict(l_data)
-                except Exception as e:
-                    print(f"Error restoring layer {type_name}: {e}")
-                    return None
-            else:
-                # Generic layer or unknown
-                # Check for module path?
-                # For now, maybe create basic Layer and populate elements?
-                # But Layer.from_dict exists.
-                return Layer.from_dict(l_data)
+            restored = restore_item(l_data)
+            if restored is None:
+                return None
+
+            if hasattr(restored, "elements") and "elements" in l_data:
+                existing = list(getattr(restored, "elements", []))
+                if not existing:
+                    for element_data in l_data.get("elements", []):
+                        element = restore_item(element_data)
+                        if element is not None:
+                            restored.add_component(element)
+
+            return restored
 
         layers_data = data.get("layers", [])
         for l_item in layers_data:
-            # Handle if old format had list of lists
             if isinstance(l_item, list):
-                 # Backward compat: convert to single layer?
-                 # Or flatten logic?
-                 # User wants single layer for list.
-                 # Let's flatten.
-                 items = []
-                 for sub in l_item:
-                     restored = restore_layer(sub)
-                     if restored:
-                         # If restored is a Layer, extract elements
-                         items.extend(restored.elements)
-                 pipe.add_layer(items)
+                layers = [restore_layer(sub) for sub in l_item]
+                layers = [layer for layer in layers if layer is not None]
+                if layers:
+                    pipe.add_layer(layers)
             else:
                 layer = restore_layer(l_item)
                 if layer:

@@ -23,13 +23,20 @@ from astropy import units as u
 scene = helios.Scene(distance=10*u.pc)
 scene.add(helios.Star(temperature=5700*u.K, magnitude=5))
 
-# Define telescope array (automatic single/interferometric detection)
-telescope = helios.TelescopeArray(latitude=0*u.deg, longitude=0*u.deg, altitude=2000*u.m)
 pupil = helios.Pupil(diameter=8*u.m)
-telescope.add_collector(pupil=pupil, position=(0, 0), size=8*u.m)
 
-# For interferometry, add more collectors at different baselines:
-# telescope.add_collector(pupil=pupil, position=(47, 0), size=8*u.m)
+# Define telescope array (automatic single/interferometric detection)
+telescope = helios.TelescopeArray(
+    pupil=pupil,
+    size=8*u.m,
+    positions=[(0, 0)],
+    latitude=0*u.deg,
+    longitude=0*u.deg,
+    altitude=2000*u.m,
+)
+
+# For interferometry, add more positions at different baselines:
+# telescope.add_position(47, 0)
 # telescope.is_interferometric()  # Returns True if multiple non-colocated collectors
 
 # Setup context
@@ -47,5 +54,5 @@ Full documentation is available on ReadTheDocs.
 
 ## Web Interface
 A web-based graphical interface is available to easily experiment with HELIOS.
-See `web_interface/README.md` for instructions on how to run it using Docker.
+See `web/README.md` for instructions on how to run it using Docker.
 

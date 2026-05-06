@@ -27,6 +27,7 @@ dependencies = { file = ["requirements.txt"] }
 [tool.pytest.ini_options]
 minversion = "6.0"
 addopts = "-ra -q"
+cache_dir = "C:/tmp/helios_pytest_cache"
 testpaths = [
     "tests",
 ]

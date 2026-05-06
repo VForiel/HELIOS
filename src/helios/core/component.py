@@ -30,6 +30,7 @@ class Component:
     """
     def __init__(self, name: Optional[str] = None):
         self.name = name
+        self.metadata: dict = {}
         self.layer: Optional['Layer'] = None
         self.pipeline: Optional['Pipeline'] = None
         self.num_inputs: int = 1  # Number of inputs this component consumes

@@ -41,7 +41,7 @@ __all__ = [
     # Version
     '__version__',
     # Core
-    'Context', 'Layer', 'Component', 'Simulation', 'Wavefront', 'Spectrum', 'OpticalScene',
+    'Context', 'Pipeline', 'Layer', 'Component', 'Wavefront', 'Spectrum', 'OpticalScene',
     # Component types
     'GenerationComponent', 'SamplingComponent', 'OpticalComponent', 'DetectionComponent', 'DataComponent',
     # Submodules

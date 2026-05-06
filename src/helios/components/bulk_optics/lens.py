@@ -9,7 +9,7 @@ from ...core.wavefront import Wavefront
 
 
 class Lens(OpticalComponent):
-    """
+    r"""
     Thin lens element applying a quadratic phase to the pupil plane field.
 
     A paraxial thin lens introduces a phase term corresponding to a quadratic
