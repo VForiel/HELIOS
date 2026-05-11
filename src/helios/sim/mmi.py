@@ -14,6 +14,32 @@ import shutil
 import subprocess
 from joblib import Parallel, delayed
 
+
+def _integrate_trapezoid(y, x, axis=-1):
+    """Integrate using the trapezoidal rule across NumPy versions.
+
+    NumPy 2.x removed ``np.trapz`` in favor of ``np.trapezoid``. This helper
+    keeps HELIOS compatible with both APIs without changing the physics.
+
+    Parameters
+    ----------
+    y : array-like
+        Samples to integrate.
+    x : array-like
+        Sample positions.
+    axis : int, default=-1
+        Integration axis.
+
+    Returns
+    -------
+    numpy.ndarray or float or complex
+        Trapezoidal integral of ``y`` over ``x``.
+    """
+    trapezoid = getattr(np, "trapezoid", None)
+    if trapezoid is not None:
+        return trapezoid(y, x, axis=axis)
+    return np.trapz(y, x, axis=axis)
+
 # Import LP mode calculation utilities
 try:
     from .lp_modes import (
@@ -312,30 +338,16 @@ def calibrate_input_phases_genetic(
             return float("inf")
         return null_sum / bright
 
-    if _HAS_LP_MODES:
-        # Suppress verbose LP-mode fallback/cutoff warnings during calibration
-        with suppress_lp_warnings():
-            result = _calibrate_phases_genetic_like(
-                evaluate_metric=evaluate_metric,
-                n_phases=N,
-                beta=beta,
-                initial_step=initial_step,
-                epsilon=epsilon,
-                initial_phases=start_phases,
-                fixed_indices=None,
-                verbose=verbose,
-            )
-    else:
-        result = _calibrate_phases_genetic_like(
-            evaluate_metric=evaluate_metric,
-            n_phases=N,
-            beta=beta,
-            initial_step=initial_step,
-            epsilon=epsilon,
-            initial_phases=start_phases,
-            fixed_indices=None,
-            verbose=verbose,
-        )
+    result = _calibrate_phases_genetic_like(
+        evaluate_metric=evaluate_metric,
+        n_phases=N,
+        beta=beta,
+        initial_step=initial_step,
+        epsilon=epsilon,
+        initial_phases=start_phases,
+        fixed_indices=None,
+        verbose=verbose,
+    )
     result["bright_output_idx"] = int(bright_output_idx)
     return result
 
@@ -369,97 +381,33 @@ def calibrate_n_core_and_phases(
     progress_callback_coarse=None,
     progress_callback_gradient=None,
 ):
-    """Calibrate n_core and input phases to optimize null depth using coarse scan + gradient descent.
-    
-    This function performs a hierarchical optimization strategy:
-    
-    **Stage 1: Coarse Scan**
-        - Explores wide range from 1.0 to 2×n_core_initial
-        - Identifies promising starting point with deep nulls
-    
-    **Stage 2: Gradient Descent**
-        - Starting from best coarse point, descends gradient
-        - Adaptive step size with convergence when |Δn_core| < threshold
-        - Automatically stops when no further improvement possible
-    
-    This approach efficiently finds optimal n_core even when it lies far from
-    the initial guess, then refines to high precision via gradient descent.
-    
-    Parameters
-    ----------
-    N, M, L, W, delta_n, wavelength, input_amplitudes, bright_output_idx, num_modes, num_z_steps, z_resolution :
-        Same meaning as in :func:`calibrate_input_phases_genetic`.
-    n_core_min : float, optional
-        Minimum n_core for coarse scan. Defaults to 1.0.
-    n_core_max : float, optional
-        Maximum n_core for coarse scan. Defaults to 2 × n_core_initial.
-    n_core_initial : float, default=2.0458
-        Initial/center value for n_core (used to set default range).
-    n_core_steps_coarse : int, default=20
-        Number of n_core values in coarse scan.
-    gradient_convergence_threshold : float, default=1e-3
-        Stop gradient descent when |Δn_core| < this value.
-    gradient_initial_step : float, default=0.01
-        Initial step size for gradient descent.
-    Din, Dout, Sin, Sout, beta, initial_step, epsilon :
-        Same as in :func:`calibrate_input_phases_genetic`.
-    verbose : bool
-        Print progress.
-    progress_callback_coarse : callable, optional
-        Function called after each coarse scan evaluation: callback(current_step, total_steps).
-    progress_callback_gradient : callable, optional
-        Function called after each gradient step: callback(iteration, delta_n_core).
-    
-    Returns
-    -------
-    dict
-        Dictionary with:
-        - ``n_core_values_coarse``: array of coarse scan n_core values
-        - ``metrics_coarse``: corresponding metrics for coarse scan
-        - ``n_core_values_gradient``: list of n_core values visited during gradient descent
-        - ``metrics_gradient``: corresponding metrics for gradient descent
-        - ``best_n_core``: optimal n_core value (from gradient descent)
-        - ``best_metric``: best null depth metric achieved
-        - ``best_phases``: optimal phases [rad] for the best n_core
-        - ``bright_output_idx``: bright output index
+    """Jointly optimize core index n_core and input phases to minimize null depth.
+
+    Strategy: two-stage search.
+    1) Coarse scan over n_core, running phase calibration at each sample
+    2) Gradient descent on n_core, refining around the best coarse value
+
+    Returns a dict with coarse and gradient histories, best_n_core, best_metric,
+    and best_phases.
     """
-    # Set default search range for coarse scan
     if n_core_min is None:
         n_core_min = 1.0
     if n_core_max is None:
         n_core_max = 2.0 * n_core_initial
-    
+
     if n_core_min >= n_core_max:
         raise ValueError(f"n_core_min ({n_core_min}) must be < n_core_max ({n_core_max})")
-    
     if n_core_steps_coarse < 2:
         raise ValueError(f"n_core_steps_coarse must be >= 2, got {n_core_steps_coarse}")
-    
-    # Suppress LP-mode warnings during both coarse scan and gradient descent
-    ctx = suppress_lp_warnings() if _HAS_LP_MODES else nullcontext()
-    with ctx:
-        # ========================================================================
-        # STAGE 1: COARSE SCAN
-        # ========================================================================
-        if verbose:
-            print("="*70)
-            print("STAGE 1: COARSE N_CORE SCAN")
-            print("="*70)
-            print(f"n_core range: [{n_core_min:.4f}, {n_core_max:.4f}]")
-            print(f"n_core steps: {n_core_steps_coarse}")
-            print(f"Bright output: {bright_output_idx}")
-            print("="*70)
-    
-    n_core_values_coarse = np.linspace(n_core_min, n_core_max, n_core_steps_coarse)
+
+    n_core_values_coarse = np.linspace(n_core_min, n_core_max, int(n_core_steps_coarse))
     metrics_coarse = []
     all_phases_coarse = []
-    
+
     for i, n_core_test in enumerate(n_core_values_coarse):
         if verbose:
-            print(f"\n[Coarse {i+1}/{n_core_steps_coarse}] Testing n_core = {n_core_test:.4f}")
-        
-        # Calibrate phases for this n_core
-        result = calibrate_input_phases_genetic(
+            print(f"[Coarse {i+1}/{n_core_steps_coarse}] n_core = {n_core_test:.4f}")
+        result_phase = calibrate_input_phases_genetic(
             N=N,
             M=M,
             L=L,
@@ -481,51 +429,25 @@ def calibrate_n_core_and_phases(
             epsilon=epsilon,
             verbose=False,
         )
-        
-        metric = result['best_metric']
-        phases = result['best_phases']
-        
-        metrics_coarse.append(metric)
-        all_phases_coarse.append(phases)
-        
+
+        metrics_coarse.append(float(result_phase["best_metric"]))
+        all_phases_coarse.append(np.asarray(result_phase["best_phases"], dtype=float))
+
         if progress_callback_coarse is not None:
-            progress_callback_coarse(i + 1, n_core_steps_coarse)
-        
-        if verbose:
-            print(f"   Metric: {metric:.3e}")
-    
-    metrics_coarse = np.array(metrics_coarse)
-    best_coarse_idx = np.argmin(metrics_coarse)
-    best_coarse_n_core = n_core_values_coarse[best_coarse_idx]
-    best_coarse_metric = metrics_coarse[best_coarse_idx]
-    
-    if verbose:
-        print("\n" + "="*70)
-        print("COARSE SCAN COMPLETE")
-        print("="*70)
-        print(f"Best coarse n_core: {best_coarse_n_core:.4f}")
-        print(f"Best coarse metric: {best_coarse_metric:.3e}")
-        print("="*70)
-    
-        # ========================================================================
-        # STAGE 2: GRADIENT DESCENT
-        # ========================================================================
-        if verbose:
-            print("\n" + "="*70)
-            print("STAGE 2: GRADIENT DESCENT")
-            print("="*70)
-            print(f"Starting from: n_core = {best_coarse_n_core:.4f}")
-            print(f"Convergence threshold: |Δn_core| < {gradient_convergence_threshold}")
-            print("="*70)
-    
-    # Helper function to evaluate metric at a given n_core
-    def evaluate_n_core(n_core_val):
-        result = calibrate_input_phases_genetic(
+            progress_callback_coarse(i + 1, int(n_core_steps_coarse))
+
+    metrics_coarse = np.asarray(metrics_coarse, dtype=float)
+    best_coarse_idx = int(np.argmin(metrics_coarse))
+    best_coarse_n_core = float(n_core_values_coarse[best_coarse_idx])
+    best_coarse_metric = float(metrics_coarse[best_coarse_idx])
+
+    def _evaluate_n_core(nc_val: float):
+        res = calibrate_input_phases_genetic(
             N=N,
             M=M,
             L=L,
             W=W,
-            n_core=n_core_val,
+            n_core=nc_val,
             delta_n=delta_n,
             wavelength=wavelength,
             input_amplitudes=input_amplitudes,
@@ -542,118 +464,62 @@ def calibrate_n_core_and_phases(
             epsilon=epsilon,
             verbose=False,
         )
-        return result['best_metric'], result['best_phases']
-    
-    # Initialize gradient descent
+        return float(res["best_metric"]), np.asarray(res["best_phases"], dtype=float)
+
     n_core_current = best_coarse_n_core
-    metric_current = best_coarse_metric
-    phases_current = all_phases_coarse[best_coarse_idx]
-    step_size = gradient_initial_step
-    
+    metric_current, phases_current = best_coarse_metric, all_phases_coarse[best_coarse_idx]
+    step_size = float(gradient_initial_step)
+
     n_core_values_gradient = [n_core_current]
     metrics_gradient = [metric_current]
-    all_phases_gradient = [phases_current]
-    
+
     iteration = 0
-    max_iterations = 100  # Safety limit
-    
+    max_iterations = 100
+
     while iteration < max_iterations:
         iteration += 1
-        
-        # Evaluate gradient by finite differences
-        n_core_plus = n_core_current + step_size
-        n_core_minus = n_core_current - step_size
-        
-        # Clip to valid range
-        n_core_plus = np.clip(n_core_plus, n_core_min, n_core_max)
-        n_core_minus = np.clip(n_core_minus, n_core_min, n_core_max)
-        
+
+        n_plus = float(np.clip(n_core_current + step_size, n_core_min, n_core_max))
+        n_minus = float(np.clip(n_core_current - step_size, n_core_min, n_core_max))
+
         if verbose:
-            print(f"\n[Gradient {iteration}] Evaluating gradient at n_core = {n_core_current:.4f}")
-        
-        metric_plus, phases_plus = evaluate_n_core(n_core_plus)
-        metric_minus, phases_minus = evaluate_n_core(n_core_minus)
-        
-        if verbose:
-            print(f"   n_core={n_core_minus:.4f} → metric={metric_minus:.3e}")
-            print(f"   n_core={n_core_plus:.4f}  → metric={metric_plus:.3e}")
-        
-        # Determine best direction
-        if metric_plus < metric_current and metric_plus < metric_minus:
-            # Move in + direction
-            n_core_new = n_core_plus
-            metric_new = metric_plus
-            phases_new = phases_plus
-            direction = "+"
-        elif metric_minus < metric_current and metric_minus < metric_plus:
-            # Move in - direction
-            n_core_new = n_core_minus
-            metric_new = metric_minus
-            phases_new = phases_minus
-            direction = "-"
+            print(f"[Grad {iteration}] current={n_core_current:.4f}, step={step_size:.4f}")
+
+        m_plus, ph_plus = _evaluate_n_core(n_plus)
+        m_minus, ph_minus = _evaluate_n_core(n_minus)
+
+        if (m_plus < metric_current) and (m_plus < m_minus):
+            n_new, m_new, ph_new = n_plus, m_plus, ph_plus
+        elif (m_minus < metric_current) and (m_minus < m_plus):
+            n_new, m_new, ph_new = n_minus, m_minus, ph_minus
         else:
-            # No improvement, reduce step size
             step_size *= 0.5
-            if verbose:
-                print(f"   No improvement. Reducing step size to {step_size:.4f}")
-            
-            # Check convergence
+            if progress_callback_gradient is not None:
+                progress_callback_gradient(iteration, 0.0)
             if step_size < gradient_convergence_threshold:
-                if verbose:
-                    print(f"   Step size below threshold. Converged!")
                 break
             continue
-        
-        delta_n_core = abs(n_core_new - n_core_current)
-        
-        if verbose:
-            print(f"   → Moving {direction}: n_core = {n_core_new:.4f}, Δn = {delta_n_core:.4f}")
-        
-        # Update current position
-        n_core_current = n_core_new
-        metric_current = metric_new
-        phases_current = phases_new
-        
+
+        delta = abs(n_new - n_core_current)
+        n_core_current, metric_current, phases_current = n_new, m_new, ph_new
         n_core_values_gradient.append(n_core_current)
         metrics_gradient.append(metric_current)
-        all_phases_gradient.append(phases_current)
-        
-        if progress_callback_gradient is not None:
-            progress_callback_gradient(iteration, delta_n_core)
-        
-        # Check convergence
-        if delta_n_core < gradient_convergence_threshold:
-            if verbose:
-                print(f"   Converged! |Δn_core| = {delta_n_core:.4f} < {gradient_convergence_threshold}")
-            break
-    
-        if iteration >= max_iterations:
-            if verbose:
-                print(f"\n   Warning: Max iterations ({max_iterations}) reached without convergence")
-    
-    best_n_core = n_core_current
-    best_metric = metric_current
-    best_phases = phases_current
 
-    if verbose:
-        print("\n" + "="*70)
-        print("OPTIMIZATION COMPLETE")
-        print("="*70)
-        print(f"Gradient iterations: {len(n_core_values_gradient) - 1}")
-        print(f"Optimal n_core: {best_n_core:.4f}")
-        print(f"Best metric (null/bright): {best_metric:.3e}")
-        print(f"Best phases [rad]: {best_phases}")
-        print("="*70)
+        if progress_callback_gradient is not None:
+            progress_callback_gradient(iteration, float(delta))
+
+        if delta < gradient_convergence_threshold:
+            break
 
     return {
         "n_core_values_coarse": n_core_values_coarse,
         "metrics_coarse": metrics_coarse,
-        "n_core_values_gradient": np.array(n_core_values_gradient),
-        "metrics_gradient": np.array(metrics_gradient),
-        "best_n_core": best_n_core,
-        "best_metric": best_metric,
-        "best_phases": best_phases,
-        "bright_output_idx": bright_output_idx,
+        "n_core_values_gradient": np.asarray(n_core_values_gradient, dtype=float),
+        "metrics_gradient": np.asarray(metrics_gradient, dtype=float),
+        "best_n_core": float(n_core_current),
+        "best_metric": float(metric_current),
+        "best_phases": np.asarray(phases_current, dtype=float),
+        "bright_output_idx": int(bright_output_idx),
     }
 
 
@@ -793,7 +659,7 @@ def _solve_slab_modes_fd(x_grid, n_profile, k0, num_modes):
 
     # Normalize modes
     for m in range(len(modes)):
-        norm = np.sqrt(np.trapz(np.abs(modes[m])**2, x_grid))
+        norm = np.sqrt(_integrate_trapezoid(np.abs(modes[m])**2, x_grid))
         if norm > 0:
             modes[m] /= norm
 
@@ -966,7 +832,7 @@ def _compute_mmi_field(N, M, L, W, n_core, delta_n, wavelength, input_amplitudes
 
     # 4. Mode Decomposition
     coeffs = np.array([
-        np.trapz(input_field * np.conj(modes[m]), x_grid) for m in range(num_modes)
+        _integrate_trapezoid(input_field * np.conj(modes[m]), x_grid) for m in range(num_modes)
     ])
     
     # 5. Propagation with mode-dependent n_eff
@@ -1385,120 +1251,20 @@ def simulate(N=2, M=2, L=None, W=10.0e-6, n_core=2.0458, delta_n=0.0958, wavelen
     if input_power > 0:
         intensity_evolution = intensity_evolution / input_power
 
-    # --- Calculation of Output Vector (Multi-Mode Waveguide Coupling) ---
-    # The output amplitudes are calculated by overlapping the MMI field at the output
-    # plane (z=L) with ALL guided modes of each output waveguide, not just LP₀₁.
-    #
-    # Physical principle (rigorous treatment):
-    # - Each output port is connected to a waveguide of core diameter Sout
-    # - The V-number determines how many modes are guided: V = (π·a/λ)·NA
-    # - For V < 2.405: Single-mode (only LP₀₁ couples)
-    # - For V > 2.405: Multi-mode (LP₀₁, LP₁₁, LP₂₁, ... all couple)
-    # - The total coupled power is: P_total = Σ_modes |∫ E(x,L) · ψ_mode(x) dx|²
-    #
-    # Key insight:
-    # When Sout is LARGE, the waveguide supports multiple modes. The MMI field
-    # couples to ALL of them, distributing energy across LP₀₁, LP₁₁, etc.
-    # This REDUCES the coupling to LP₀₁ compared to a single-mode waveguide!
-    #
-    # This is contrary to the naive "larger Sout = more overlap" intuition.
-    # It's why fiber splicing requires precise diameter matching.
-    #
-    # References:
-    # - Marcuse, D. (1977). "Loss analysis of single-mode fiber splices."
-    # - Snyder & Love (2012). "Optical Waveguide Theory", Chapter 13.
-    
+    # Calculate output amplitudes by single-mode overlap (PHISE behavior).
     output_amplitudes = []
     final_field = field_evolution[-1, :]
-    
-    # Compute n_eff for output waveguide analysis  
-    n_eff = 0.7 * n_core + 0.3 * n_clad
-    
-    # Determine output mode width
+
     Sout_use = Sout if Sout is not None else (Sin if Sin is not None else (W / N) / 4)
-    
-    # Assume typical photonic waveguide indices
-    n_core_out = n_core  # Use MMI core index for output waveguide
-    n_cladding_out = n_clad  # Use MMI cladding index for output waveguide
-    
+
     if verbose:
-        print(f"\n{'='*60}")
-        print(f"OUTPUT WAVEGUIDE COUPLING ANALYSIS")
-        print(f"{'='*60}")
-        print(f"Output core diameter (Sout = d_core) = {Sout_use*1e6:.3f} µm")
-        print(f"(NOTE: Sout is the PHYSICAL core diameter, not the Mode Field Width)")
-        print(f"       Mode Field Width is calculated internally using Marcuse formula")
-    
-    # Check V-number and warn if multimode
-    if _HAS_LP_MODES:
-        V = compute_v_number(Sout_use, wavelength, n_core_out, n_cladding_out)
-        
-        if verbose:
-            print(f"V-number = {V:.3f}")
-            
-            if V < 2.405:
-                print("✓ SINGLE-MODE regime (V < 2.405)")
-                print("  → Only LP₀₁ couples → optimal for nulling")
-            elif V < 3.832:
-                print("⚠️ WEAKLY MULTIMODE regime (2.405 < V < 3.832)")
-                print("  → LP₀₁ + LP₁₁ modes propagate")
-                print("  → Coupling splits between modes")
-                print(f"  → Consider reducing Sout to < {2.405*wavelength/(np.pi*np.sqrt(2*0.1))*1e6:.2f} µm")
-            else:
-                print("❌ STRONGLY MULTIMODE regime (V > 3.832)")
-                print("  → Multiple modes (LP₀₁, LP₁₁, LP₂₁, ...) propagate")
-                print("  → SEVERE coupling degradation to fundamental mode")
-                print(f"  → RECOMMENDED: Reduce Sout to < {2.405*wavelength/(np.pi*np.sqrt(2*0.1))*1e6:.2f} µm")
-            print()
-    
-    # Compute coupling for each output
+        print(f"Output waveguide width (Sout) = {Sout_use*1e6:.3f} µm")
+
     for j in range(M):
         center_x_out = output_positions[j]
-        
-        if _HAS_LP_MODES and V > 2.405:
-            # RIGOROUS: Compute multimode coupling
-            coupling_data = compute_multimode_coupling(
-                final_field,
-                x_grid,
-                center_x_out,
-                Sout_use,
-                wavelength,
-                n_core_out,
-                n_cladding_out,
-                max_modes=5,
-            )
-            
-            # The total coupled amplitude is the coherent sum of all mode couplings
-            # For simplicity, we use sqrt(total_coupling) as the amplitude
-            # (This is an approximation; rigorous treatment requires phase tracking)
-            total_coupling_power = coupling_data['total_coupling']
-            output_amp = np.sqrt(total_coupling_power)
-            
-            # Preserve phase from LP₀₁ dominant mode
-            lp01_coupling = coupling_data['modes'][0]['coupling'] if coupling_data['modes'] else 0
-            if lp01_coupling > 1e-10:
-                # Compute LP01 overlap to get phase
-                psi_lp01 = _compute_mode_profile(x_grid, center_x_out, Sout_use)
-                overlap_lp01 = np.sum(final_field * np.conj(psi_lp01)) * dx
-                phase = np.angle(overlap_lp01)
-                output_amp = output_amp * np.exp(1j * phase)
-            
-            if verbose and j == 0:
-                # Print detailed mode breakdown for first output
-                print(f"Output #{j+1} - Multimode Coupling Breakdown:")
-                print(f"  Total coupling efficiency: {total_coupling_power:.4f}")
-                for mode_info in coupling_data['modes']:
-                    fraction = mode_info['coupling'] / total_coupling_power if total_coupling_power > 1e-10 else 0
-                    print(f"    {mode_info['label']}: {mode_info['coupling']:.4f} ({fraction*100:.1f}%)")
-                print()
-                
-        else:
-            # SINGLE-MODE or fallback: Use Gaussian approximation
-            psi_out = _compute_mode_profile(x_grid, center_x_out, Sout_use)
-            overlap = np.sum(final_field * np.conj(psi_out)) * dx
-            output_amp = overlap
-        
-        output_amplitudes.append(output_amp)
+        psi_out = _compute_mode_profile(x_grid, center_x_out, Sout_use)
+        overlap = np.sum(final_field * np.conj(psi_out)) * dx
+        output_amplitudes.append(overlap)
         
     output_amplitudes = np.array(output_amplitudes)
 
